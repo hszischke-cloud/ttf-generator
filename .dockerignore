@@ -1,0 +1,7 @@
+frontend/
+**/__pycache__/
+**/*.pyc
+**/*.log
+.claude/
+*.log
+backend/test_template.pdf
