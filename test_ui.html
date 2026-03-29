@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Handwriting Font Generator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -320,6 +321,67 @@
   }
   #draw-progress-label {
     font-size: 11px; color: #a89688; font-variant-numeric: tabular-nums; font-style: italic;
+  }
+
+  /* ── Mobile ──────────────────────────────────────────────── */
+  @media (max-width: 640px) {
+    .site-nav { padding: 12px 16px; }
+    .site-nav .brand { font-size: 15px; }
+
+    .page { padding: 20px 14px; }
+    #page-draw { padding: 12px 10px; }
+
+    h1 { font-size: 22px; }
+    .home-hero { padding: 10px 0 20px; }
+    .home-hero h1 { font-size: 26px; }
+    .mode-cards { flex-direction: column; gap: 14px; }
+    .mode-card { padding: 24px 18px; }
+
+    /* Draw: stack canvas above panel */
+    .draw-layout { flex-direction: column; gap: 10px; }
+    .draw-panel { width: 100%; }
+
+    .draw-char-display { font-size: 38px; }
+
+    /* Char grid: single scrollable row instead of wrapped grid */
+    .draw-char-grid {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      max-height: none;
+      padding-bottom: 4px;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .draw-char-grid::-webkit-scrollbar { display: none; }
+    .draw-char-cell { flex-shrink: 0; width: 34px; height: 34px; font-size: 13px; }
+
+    /* Bigger touch targets for tool/ctrl buttons */
+    .tool-btn, .ctrl-btn { padding: 8px 13px; font-size: 12px; }
+    .tool-btns { gap: 6px; }
+    .draw-ctrl-btns { gap: 6px; }
+
+    /* Full-width submit */
+    #send-review-btn { width: 100%; padding: 14px; font-size: 15px; }
+
+    /* Font name input: full width */
+    .font-name-row input[type="text"] {
+      width: 100%; display: block; margin-right: 0; margin-bottom: 12px;
+    }
+
+    /* Glyph grid: smaller cells */
+    .glyph-cell { width: 68px; }
+    .glyph-cell img { width: 46px; height: 46px; }
+
+    /* Download page */
+    .download-btns { flex-direction: column; }
+    .download-btns .btn { width: 100%; }
+    .preview-text { font-size: 28px; }
+
+    /* Spacing sliders full width */
+    .slider-row { max-width: 100%; }
+
+    /* Drop zone less padding */
+    #drop-zone { padding: 36px 20px; }
   }
 </style>
 </head>
