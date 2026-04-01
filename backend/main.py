@@ -330,6 +330,7 @@ async def serve_font(job_id: str, filename: str):
         headers={
             "Access-Control-Allow-Origin": "*",
             "Content-Disposition": "inline",  # must be inline so @font-face loads it
+            "Cache-Control": "no-store",
         },
     )
 
@@ -557,10 +558,14 @@ def _pdf_to_images(pdf_path: str, dpi: int = 300) -> List[np.ndarray]:
     """Convert each page of a PDF to a BGR numpy array at the given DPI."""
     doc = fitz.open(pdf_path)
     images = []
-    zoom = dpi / 72  # fitz default is 72 dpi
-    mat = fitz.Matrix(zoom, zoom)
 
     for page in doc:
+        zoom = dpi / 72  # fitz default is 72 dpi
+        # Cap so longest side never exceeds 5000 px (prevents OOM on phone-photo PDFs)
+        longest = max(page.rect.width, page.rect.height) * zoom
+        if longest > 5000:
+            zoom = zoom * 5000 / longest
+        mat = fitz.Matrix(zoom, zoom)
         pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
         img_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
             pix.height, pix.width, 3

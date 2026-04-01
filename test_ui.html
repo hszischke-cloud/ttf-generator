@@ -841,9 +841,10 @@ async function finalize() {
 }
 
 // ── Download page ─────────────────────────────────────────────
-async function showDownloadPage(feaWarning) {
-  const otfUrl = `${API}/fonts/${jobId}/${fontSafeName}.otf`;
-  const woff2Url = `${API}/fonts/${jobId}/${fontSafeName}.woff2`;
+async function showDownloadPage(feaWarning, cacheBust) {
+  const v = cacheBust || Date.now();
+  const otfUrl = `${API}/fonts/${jobId}/${fontSafeName}.otf?v=${v}`;
+  const woff2Url = `${API}/fonts/${jobId}/${fontSafeName}.woff2?v=${v}`;
 
   document.getElementById('download-status').textContent = '';
   document.getElementById('otf-btn').disabled = false;
@@ -946,17 +947,18 @@ async function downloadFont(fmt) {
       }, 1000);
     });
 
-    // Trigger download
+    // Trigger download with cache-busting so browser fetches the newly built file
+    const bust = Date.now();
     const filename = `${fontSafeName}.${fmt}`;
-    const url = `${API}/fonts/${jobId}/${filename}`;
+    const url = `${API}/fonts/${jobId}/${filename}?v=${bust}`;
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
     a.click();
 
     status.textContent = '';
-    // Refresh the preview font with the new spacing baked in
-    showDownloadPage(null);
+    // Refresh preview with the same cache-bust so we load the newly built font
+    showDownloadPage(null, bust);
   } catch(e) {
     showError('download-error', e.message);
     status.textContent = '';

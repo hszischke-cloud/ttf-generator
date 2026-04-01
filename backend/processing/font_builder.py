@@ -365,6 +365,9 @@ def build_otf(
             g.baseline_y_in_svg, g.is_lowercase,
             upscale_factor=g.upscale_factor,
         )
+        # Keep CFF charstring width consistent with hmtx (both include letter_spacing)
+        if letter_spacing != 0 and cs.program and isinstance(cs.program[0], (int, float)):
+            cs.program[0] = advance + letter_spacing
         charstrings[g.glyph_name] = cs
         metrics[g.glyph_name] = (advance + letter_spacing, 0)
 

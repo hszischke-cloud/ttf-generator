@@ -22,7 +22,12 @@ from typing import Any, Dict, Optional
 
 from filelock import FileLock
 
-JOBS_DIR = Path(os.environ.get("JOBS_DIR", "/tmp/jobs"))
+_default_jobs_dir = (
+    Path(os.environ.get("TEMP", "C:/Temp")) / "ttf-jobs"
+    if os.name == "nt"
+    else Path("/tmp/jobs")
+)
+JOBS_DIR = Path(os.environ.get("JOBS_DIR", str(_default_jobs_dir)))
 MAX_JOB_AGE_HOURS = 24
 
 
