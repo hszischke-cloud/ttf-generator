@@ -21,9 +21,16 @@ from skimage.morphology import skeletonize
 
 from processing.vectorize import _upscale_for_tracing
 
-# Length thresholds, expressed as fractions of upscaled glyph height (px)
-SPUR_FRACTION = 0.05          # open polylines shorter than this = skeleton noise, drop
-MIN_SEGMENT_FRACTION = 0.03   # closed polylines / general min length
+# Pruning thresholds, expressed as fractions of upscaled glyph height (px).
+# Polylines are classified by endpoint type so each kind gets a fair threshold:
+#   spur     — one degree-1 endpoint (could be noise sticking out of a junction)
+#   isolated — both ends are degree-1 endpoints (complete simple stroke)
+#   bridge   — both ends are degree-3+ junctions (mandatory link between strokes)
+#   cycle    — a closed loop with no endpoints
+SPUR_FRACTION = 0.015         # endpoint→junction min length (was 0.05; too aggressive)
+ISOLATED_FRACTION = 0.015     # endpoint→endpoint min length
+CYCLE_FRACTION = 0.025        # closed loop min length (was 0.03)
+BRIDGE_MIN_PX = 5             # junction→junction absolute floor (kills 1-3px junction-cluster artefacts but keeps real bridges)
 
 # Douglas-Peucker simplification (relative to glyph height in pixels)
 DP_EPSILON_FACTOR = 0.005
@@ -196,6 +203,37 @@ def _polyline_length(pts: List[Tuple[int, int]]) -> float:
     return total
 
 
+def _classify_polyline(
+    pts: List[Tuple[int, int]],
+    closed: bool,
+    skel: np.ndarray,
+) -> str:
+    """
+    Classify a polyline by the topology of its endpoints in the skeleton.
+
+    'cycle'    — closed loop (no real endpoints in the graph)
+    'isolated' — both ends are degree-1 endpoints (a complete simple stroke)
+    'bridge'   — both ends are degree-3+ junctions (link between two strokes)
+    'spur'     — exactly one end is a degree-1 endpoint, other is a junction
+    'unknown'  — anything else (treated like spur for pruning)
+    """
+    if closed:
+        return 'cycle'
+    if len(pts) < 2:
+        return 'unknown'
+    deg_a = _neighbour_count(skel, pts[0][0], pts[0][1])
+    deg_b = _neighbour_count(skel, pts[-1][0], pts[-1][1])
+    a_end, b_end = deg_a == 1, deg_b == 1
+    a_jct, b_jct = deg_a >= 3, deg_b >= 3
+    if a_end and b_end:
+        return 'isolated'
+    if a_jct and b_jct:
+        return 'bridge'
+    if (a_end and b_jct) or (a_jct and b_end):
+        return 'spur'
+    return 'unknown'
+
+
 def _douglas_peucker(
     pts: List[Tuple[int, int]],
     epsilon: float,
@@ -272,14 +310,20 @@ def vectorize_centerline(
     if not polylines:
         return None
 
-    spur_threshold = max(3.0, h * SPUR_FRACTION)
-    min_segment = max(3.0, h * MIN_SEGMENT_FRACTION)
+    # Per-classification length thresholds (see constants above for rationale)
+    thresholds = {
+        'spur':     max(3.0, h * SPUR_FRACTION),
+        'isolated': max(3.0, h * ISOLATED_FRACTION),
+        'bridge':   float(BRIDGE_MIN_PX),
+        'cycle':    max(3.0, h * CYCLE_FRACTION),
+        'unknown':  max(3.0, h * SPUR_FRACTION),
+    }
 
     pruned: List[Tuple[List[Tuple[int, int]], bool]] = []
     for pts, closed in polylines:
         length = _polyline_length(pts)
-        threshold = min_segment if closed else spur_threshold
-        if length < threshold:
+        kind = _classify_polyline(pts, closed, skel)
+        if length < thresholds[kind]:
             continue
         pruned.append((pts, closed))
 
