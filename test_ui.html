@@ -597,6 +597,20 @@
     <span id="download-status" style="font-size:13px;color:#888;"></span>
   </div>
 
+  <div style="margin-top:28px;padding:16px 18px;border:1px solid #d6e0ee;border-radius:10px;background:#f7faff;">
+    <div style="font-weight:600;margin-bottom:4px;">Single-line version (for pen plotters)</div>
+    <p style="font-size:13px;color:#555;margin:0 0 12px 0;line-height:1.5;">
+      Each stroke is a centerline path — when you convert the OTF to SVG, the pen plotter
+      draws each letter as one line instead of tracing both edges. Preview above shows the
+      dimensional version; the line font may not render correctly in browsers.
+    </p>
+    <div class="download-btns" style="margin:0;">
+      <button id="otf-line-btn" class="btn btn-primary" onclick="downloadFont('otf', true)">Download Line OTF</button>
+      <button id="woff2-line-btn" class="btn btn-outline" onclick="downloadFont('woff2', true)">Download Line WOFF2</button>
+      <span id="line-skipped-note" style="font-size:13px;color:#a06a00;"></span>
+    </div>
+  </div>
+
   <div class="error-banner" id="download-error"></div>
   <div id="fea-warning-banner" style="display:none;margin-top:16px;padding:12px 16px;background:#fffbe6;border:1px solid #ffe58f;border-radius:8px;color:#7c5a00;font-size:0.9rem;">
     ⚠ <strong>Contextual alternates could not be compiled</strong> — the font was saved without <code>calt</code>/<code>ss01</code>/<code>ss02</code> features, so glyph forms will not cycle.<br>
@@ -849,6 +863,8 @@ async function showDownloadPage(feaWarning, cacheBust) {
   document.getElementById('download-status').textContent = '';
   document.getElementById('otf-btn').disabled = false;
   document.getElementById('woff2-btn').disabled = false;
+  document.getElementById('otf-line-btn').disabled = false;
+  document.getElementById('woff2-line-btn').disabled = false;
 
   const banner = document.getElementById('fea-warning-banner');
   if (feaWarning) {
@@ -906,15 +922,14 @@ function onSpacingChange() {
   previewEl.style.wordSpacing = ((sw - 600) / 1000) + 'em';
 }
 
-async function downloadFont(fmt) {
+async function downloadFont(fmt, line) {
   const ls = parseInt(document.getElementById('letter-spacing').value);
   const sw = parseInt(document.getElementById('space-width').value);
-  const otfBtn = document.getElementById('otf-btn');
-  const woff2Btn = document.getElementById('woff2-btn');
   const status = document.getElementById('download-status');
+  const allBtns = ['otf-btn', 'woff2-btn', 'otf-line-btn', 'woff2-line-btn']
+    .map(id => document.getElementById(id));
 
-  otfBtn.disabled = true;
-  woff2Btn.disabled = true;
+  allBtns.forEach(b => b.disabled = true);
   status.textContent = 'Building…';
   hideError('download-error');
 
@@ -936,8 +951,8 @@ async function downloadFont(fmt) {
       throw new Error(body.detail || 'Build failed');
     }
 
-    // Poll until complete
-    await new Promise((resolve, reject) => {
+    // Poll until complete (capture full status payload so we can surface line warnings)
+    const finalStatus = await new Promise((resolve, reject) => {
       const t = setInterval(async () => {
         try {
           const s = await fetch(`${API}/process/${jobId}/status`).then(r => r.json());
@@ -949,7 +964,8 @@ async function downloadFont(fmt) {
 
     // Trigger download with cache-busting so browser fetches the newly built file
     const bust = Date.now();
-    const filename = `${fontSafeName}.${fmt}`;
+    const baseName = line ? `${fontSafeName}-Line` : fontSafeName;
+    const filename = `${baseName}.${fmt}`;
     const url = `${API}/fonts/${jobId}/${filename}?v=${bust}`;
     const a = document.createElement('a');
     a.href = url;
@@ -957,14 +973,23 @@ async function downloadFont(fmt) {
     a.click();
 
     status.textContent = '';
+
+    // Surface skipped-glyph warning for the line font, if any
+    const skipped = finalStatus.line_skipped_glyphs || [];
+    const skipNote = document.getElementById('line-skipped-note');
+    if (skipped.length) {
+      skipNote.textContent = `(skipped in line font: ${skipped.join(', ')})`;
+    } else {
+      skipNote.textContent = '';
+    }
+
     // Refresh preview with the same cache-bust so we load the newly built font
     showDownloadPage(null, bust);
   } catch(e) {
     showError('download-error', e.message);
     status.textContent = '';
   } finally {
-    otfBtn.disabled = false;
-    woff2Btn.disabled = false;
+    allBtns.forEach(b => b.disabled = false);
   }
 }
 

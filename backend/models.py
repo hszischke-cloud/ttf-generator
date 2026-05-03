@@ -26,6 +26,8 @@ class JobStatusResponse(BaseModel):
     alignment_failed_image_b64: Optional[str] = None
     # Set if feaLib failed to compile OpenType features (calt/ss01/ss02 will be missing)
     fea_warning: Optional[str] = None
+    # Glyph IDs that couldn't be centerline-traced (skipped in the line font)
+    line_skipped_glyphs: List[str] = []
 
 
 class GlyphInfo(BaseModel):
@@ -61,6 +63,9 @@ class FinalizeResponse(BaseModel):
     job_id: str
     otf_url: str
     woff2_url: str
+    # Single-line / centerline companion font (for pen plotters)
+    otf_line_url: str
+    woff2_line_url: str
 
 
 class DrawGlyphRequest(BaseModel):

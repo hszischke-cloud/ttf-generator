@@ -41,6 +41,7 @@ from template import get_template_pdf
 from processing.alignment import align_page, align_page_with_manual_points, load_image_from_file
 from processing.extraction import extract_all_glyphs, ExtractedGlyph
 from processing.vectorize import vectorize_glyph
+from processing.centerline import vectorize_centerline
 from processing.font_builder import (
     GlyphData, build_otf, otf_to_woff2,
     char_to_glyph_name,
@@ -200,6 +201,7 @@ async def get_status(job_id: str):
         error_message=state.get("error_message"),
         alignment_failed_image_b64=state.get("alignment_failed_image_b64"),
         fea_warning=state.get("fea_warning"),
+        line_skipped_glyphs=state.get("line_skipped_glyphs", []),
     )
 
 
@@ -265,6 +267,8 @@ async def finalize(job_id: str, req: FinalizeRequest, background_tasks: Backgrou
         job_id=job_id,
         otf_url=f"{base}/{safe_name}.otf",
         woff2_url=f"{base}/{safe_name}.woff2",
+        otf_line_url=f"{base}/{safe_name}-Line.otf",
+        woff2_line_url=f"{base}/{safe_name}-Line.woff2",
     )
 
 
@@ -391,6 +395,7 @@ def _process_job(job_id: str):
                     "slot": glyph.slot,
                     "has_glyph": False,
                     "svg_paths": [],
+                    "svg_paths_centerline": [],
                     "svg_width": 0,
                     "svg_height": 0,
                     "baseline_y": 0,
@@ -402,12 +407,18 @@ def _process_job(job_id: str):
             img_path = glyphs_dir / f"{glyph.glyph_id}.png"
             cv2.imwrite(str(img_path), display_img)
 
-            # Vectorize
+            # Vectorize (filled outline — dimensional font)
             vec_result = vectorize_glyph(glyph.glyph_img)
             svg_paths = []
             svg_w, svg_h, upscale_factor = 0, 0, 1.0
             if vec_result:
                 svg_paths, svg_w, svg_h, upscale_factor = vec_result
+
+            # Vectorize centerline (single-line / pen-plotter font).
+            # Shares geometry (width, height, upscale_factor) with the dimensional
+            # vectorizer because both run on the same upscaled glyph image.
+            cl_result = vectorize_centerline(glyph.glyph_img)
+            svg_paths_centerline = cl_result[0] if cl_result else []
 
             # Save SVG data as JSON
             import json
@@ -415,6 +426,7 @@ def _process_job(job_id: str):
             with open(svg_json_path, "w") as f:
                 json.dump({
                     "svg_paths": svg_paths,
+                    "svg_paths_centerline": svg_paths_centerline,
                     "svg_width": svg_w,
                     "svg_height": svg_h,
                     "baseline_y": glyph.baseline_y_in_glyph,
@@ -427,6 +439,7 @@ def _process_job(job_id: str):
                 "slot": glyph.slot,
                 "has_glyph": True,
                 "svg_paths": svg_paths,
+                "svg_paths_centerline": svg_paths_centerline,
                 "svg_width": svg_w,
                 "svg_height": svg_h,
                 "baseline_y": glyph.baseline_y_in_glyph,
@@ -452,9 +465,14 @@ def _process_job(job_id: str):
 
 
 def _build_font_job(job_id: str):
-    """Font assembly pipeline: approved glyphs → OTF + WOFF2."""
-    import json as _json
+    """
+    Font assembly pipeline: approved glyphs → two OTFs + two WOFF2s.
 
+    Builds both a dimensional (filled outline) font and a single-line
+    (centerline) companion font intended for pen-plotter use. The line
+    font reuses the same family name and OpenType features (calt/ss01/ss02)
+    so substitution rules behave identically.
+    """
     try:
         state = job_store.get_state(job_id)
         approved_ids = set(state.get("approved_glyph_ids", []))
@@ -467,7 +485,9 @@ def _build_font_job(job_id: str):
         job_store.update_state(job_id, progress_pct=10)
 
         lowercase_chars = set("abcdefghijklmnopqrstuvwxyz")
-        glyph_data_list: List[GlyphData] = []
+        dimensional_glyphs: List[GlyphData] = []
+        line_glyphs: List[GlyphData] = []
+        line_skipped_chars: List[str] = []
 
         for entry in manifest:
             glyph_id = entry["glyph_id"]
@@ -479,52 +499,104 @@ def _build_font_job(job_id: str):
             char = entry["char"]
             slot = entry["slot"]
             glyph_name = char_to_glyph_name(char, slot)
+            svg_w = entry.get("svg_width", 0)
+            svg_h = entry.get("svg_height", 0)
+            baseline_y = entry.get("baseline_y", 0)
+            upscale_factor = entry.get("upscale_factor", 1.0)
+            is_lower = char in lowercase_chars
 
-            glyph_data_list.append(GlyphData(
+            dimensional_glyphs.append(GlyphData(
                 char=char,
                 slot=slot,
                 glyph_name=glyph_name,
                 svg_paths=entry.get("svg_paths", []),
-                svg_width=entry.get("svg_width", 0),
-                svg_height=entry.get("svg_height", 0),
-                baseline_y_in_svg=entry.get("baseline_y", 0),
-                is_lowercase=char in lowercase_chars,
-                upscale_factor=entry.get("upscale_factor", 1.0),
+                svg_width=svg_w,
+                svg_height=svg_h,
+                baseline_y_in_svg=baseline_y,
+                is_lowercase=is_lower,
+                upscale_factor=upscale_factor,
             ))
 
-        job_store.update_state(job_id, progress_pct=30)
+            centerline_paths = entry.get("svg_paths_centerline", [])
+            if centerline_paths:
+                line_glyphs.append(GlyphData(
+                    char=char,
+                    slot=slot,
+                    glyph_name=glyph_name,
+                    svg_paths=centerline_paths,
+                    svg_width=svg_w,
+                    svg_height=svg_h,
+                    baseline_y_in_svg=baseline_y,
+                    is_lowercase=is_lower,
+                    upscale_factor=upscale_factor,
+                ))
+            else:
+                line_skipped_chars.append(glyph_id)
 
-        if not glyph_data_list:
+        job_store.update_state(job_id, progress_pct=25)
+
+        if not dimensional_glyphs:
             raise ValueError("No valid glyphs were approved")
 
-        # Build OTF
-        otf_bytes, fea_warning = build_otf(glyph_data_list, font_name, font_style, letter_spacing, space_width)
-        job_store.update_state(job_id, progress_pct=70)
-
-        # Convert to WOFF2
+        # Build dimensional OTF + WOFF2
+        otf_bytes, fea_warning = build_otf(
+            dimensional_glyphs, font_name, font_style, letter_spacing, space_width,
+        )
+        job_store.update_state(job_id, progress_pct=50)
         woff2_bytes = otf_to_woff2(otf_bytes)
-        job_store.update_state(job_id, progress_pct=90)
+        job_store.update_state(job_id, progress_pct=65)
 
-        # Save font files
+        # Build line OTF + WOFF2 (same family, "Line" style)
+        line_otf_bytes = b""
+        line_woff2_bytes = b""
+        line_fea_warning: Optional[str] = None
+        if line_glyphs:
+            line_otf_bytes, line_fea_warning = build_otf(
+                line_glyphs, font_name, "Line", letter_spacing, space_width,
+            )
+            job_store.update_state(job_id, progress_pct=85)
+            line_woff2_bytes = otf_to_woff2(line_otf_bytes)
+
+        job_store.update_state(job_id, progress_pct=92)
+
+        # Save all files
         safe_name = font_name.replace(" ", "_")
         out_dir = job_store.output_dir(job_id)
         otf_path = out_dir / f"{safe_name}.otf"
         woff2_path = out_dir / f"{safe_name}.woff2"
-
         with open(otf_path, "wb") as f:
             f.write(otf_bytes)
         with open(woff2_path, "wb") as f:
             f.write(woff2_bytes)
 
-        extra = {"fea_warning": fea_warning} if fea_warning else {}
+        font_files = {
+            "otf": str(otf_path),
+            "woff2": str(woff2_path),
+        }
+
+        if line_otf_bytes:
+            otf_line_path = out_dir / f"{safe_name}-Line.otf"
+            woff2_line_path = out_dir / f"{safe_name}-Line.woff2"
+            with open(otf_line_path, "wb") as f:
+                f.write(line_otf_bytes)
+            with open(woff2_line_path, "wb") as f:
+                f.write(line_woff2_bytes)
+            font_files["otf_line"] = str(otf_line_path)
+            font_files["woff2_line"] = str(woff2_line_path)
+
+        extra = {}
+        if fea_warning:
+            extra["fea_warning"] = fea_warning
+        if line_fea_warning and not fea_warning:
+            extra["fea_warning"] = line_fea_warning
+        if line_skipped_chars:
+            extra["line_skipped_glyphs"] = line_skipped_chars
+
         job_store.update_state(
             job_id,
             status="complete",
             progress_pct=100,
-            font_files={
-                "otf": str(otf_path),
-                "woff2": str(woff2_path),
-            },
+            font_files=font_files,
             **extra,
         )
 
