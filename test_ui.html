@@ -544,7 +544,7 @@
   </div>
 
   <div class="spacing-controls" style="margin-top:24px;">
-    <div class="slider-row">
+    <div class="slider-row" id="letter-spacing-row">
       <label>Letter spacing</label>
       <span class="slider-hint">Adds space after every letter. 0 = default, positive = wider, negative = tighter.</span>
       <div class="slider-track">
@@ -561,6 +561,9 @@
           oninput="onSpacingChange()">
         <span class="slider-val" id="sw-val">600 units</span>
       </div>
+    </div>
+    <div id="cursive-spacing-note" style="display:none;font-size:13px;color:#8c7b6b;font-style:italic;margin-top:6px;">
+      Letter spacing is fixed to 0 in cursive — adjusting it would break the connections between letters.
     </div>
   </div>
 
@@ -790,6 +793,21 @@ async function showDownloadPage(feaWarning, cacheBust, lineInfo) {
   const v = cacheBust || Date.now();
   const otfUrl = `${API}/fonts/${jobId}/${fontSafeName}.otf?v=${v}`;
   const woff2Url = `${API}/fonts/${jobId}/${fontSafeName}.woff2?v=${v}`;
+
+  // Cursive: hide the letter-spacing slider (adjusting it breaks connections)
+  // and seed a multi-word phrase that exercises init/medi/fina rules so the
+  // user can immediately see whether letters connect.
+  const isCursive = drawMode === 'cursive';
+  document.getElementById('letter-spacing-row').style.display = isCursive ? 'none' : '';
+  document.getElementById('cursive-spacing-note').style.display = isCursive ? 'block' : 'none';
+  if (isCursive) {
+    document.getElementById('letter-spacing').value = 0;
+    const previewInput = document.getElementById('preview-input');
+    if (previewInput.value === 'The quick brown fox jumps over the lazy dog') {
+      previewInput.value = 'hello cursive writing connects letters smoothly';
+      document.getElementById('preview-text').textContent = previewInput.value;
+    }
+  }
 
   document.getElementById('download-status').textContent = '';
   document.getElementById('otf-btn').disabled = false;
