@@ -20,7 +20,14 @@ from fontTools.feaLib.builder import addOpenTypeFeatures
 from fontTools.pens.t2CharStringPen import T2CharStringPen
 from fontTools.ttLib import TTFont
 
-from template import TEMPLATE_SPEC, MM_TO_PX
+# Canvas geometry (formerly TEMPLATE_SPEC). The drawing canvas uses these
+# same guideline ratios so glyphs come in with consistent baselines.
+CELL_HEIGHT_MM = 24.0
+MM_TO_PX = 11.811                       # 300 dpi
+GUIDELINE_TOP_RATIO       = 0.15        # CAP line
+GUIDELINE_XHEIGHT_RATIO   = 0.42
+GUIDELINE_BASELINE_RATIO  = 0.72
+GUIDELINE_BOTTOM_RATIO    = 0.90        # descender
 
 # ---------------------------------------------------------------------------
 # Font metric constants (in UPM = 1000)
@@ -33,16 +40,17 @@ WIN_ASCENT = 900
 WIN_DESCENT = 200
 DEFAULT_ADVANCE_WIDTH = 600
 
-# Derive vertical metrics from TEMPLATE_SPEC so glyph scale is consistent
-_cap_to_base  = TEMPLATE_SPEC["guideline_baseline_ratio"] - TEMPLATE_SPEC["guideline_top_ratio"]
-_x_to_base    = TEMPLATE_SPEC["guideline_baseline_ratio"] - TEMPLATE_SPEC["guideline_xheight_ratio"]
-_base_to_desc = TEMPLATE_SPEC["guideline_bottom_ratio"]   - TEMPLATE_SPEC["guideline_baseline_ratio"]
+# Derive vertical metrics from the guideline ratios so the canvas and the
+# font share one coordinate system.
+_cap_to_base  = GUIDELINE_BASELINE_RATIO - GUIDELINE_TOP_RATIO
+_x_to_base    = GUIDELINE_BASELINE_RATIO - GUIDELINE_XHEIGHT_RATIO
+_base_to_desc = GUIDELINE_BOTTOM_RATIO   - GUIDELINE_BASELINE_RATIO
 
-X_HEIGHT  = int(_x_to_base  / _cap_to_base * CAP_HEIGHT)    # ≈ 368
-DESCENDER = -int(_base_to_desc / _cap_to_base * CAP_HEIGHT)  # ≈ -221
+X_HEIGHT  = int(_x_to_base  / _cap_to_base * CAP_HEIGHT)
+DESCENDER = -int(_base_to_desc / _cap_to_base * CAP_HEIGHT)
 
-# Cell-level scale: UPM per original pixel (same for ALL glyphs)
-CELL_BASELINE_Y_PX = int(TEMPLATE_SPEC["cell_height_mm"] * MM_TO_PX * _cap_to_base)
+# Cell-level scale: UPM per original canvas pixel (same for every glyph).
+CELL_BASELINE_Y_PX = int(CELL_HEIGHT_MM * MM_TO_PX * _cap_to_base)
 CELL_SCALE = CAP_HEIGHT / CELL_BASELINE_Y_PX
 
 

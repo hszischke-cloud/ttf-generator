@@ -22,61 +22,55 @@ class JobStatusResponse(BaseModel):
     status: JobStatus
     progress_pct: int = 0
     error_message: Optional[str] = None
-    # Set when alignment fails — base64 page image for manual corner selection
-    alignment_failed_image_b64: Optional[str] = None
-    # Set if feaLib failed to compile OpenType features (calt/ss01/ss02 will be missing)
     fea_warning: Optional[str] = None
-    # Glyph IDs that couldn't be centerline-traced (skipped in the line font)
     line_skipped_glyphs: List[str] = []
-    # True only if the single-line companion font was actually built and saved
     has_line_font: bool = False
 
 
 class GlyphInfo(BaseModel):
     glyph_id: str          # e.g. "e_0", "e_1", "A_0"
-    char: str              # the character this glyph represents
+    char: str
     slot: int              # 0 = primary, 1+ = alternate
-    image_b64: str         # base64-encoded PNG of the tight-cropped glyph
-    accepted: bool = True  # default: accept all
+    image_b64: str         # base64-encoded PNG of the drawn glyph
+    accepted: bool = True
 
 
 class GlyphsResponse(BaseModel):
     job_id: str
     glyphs: List[GlyphInfo]
-    alignment_warnings: List[str] = []
-
-
-class ManualAlignmentPoint(BaseModel):
-    x: float
-    y: float
+    alignment_warnings: List[str] = []  # legacy; always empty in draw-only flow
 
 
 class FinalizeRequest(BaseModel):
     approved_glyph_ids: List[str]
     font_name: str
     font_style: str = "Regular"
-    letter_spacing: int = 0    # extra UPM units added to every glyph's advance width
-    space_width: int = 600     # advance width for the space glyph in UPM units
-    # Optional manual alignment points per page (if auto-detection failed)
-    manual_alignment: Optional[List[List[ManualAlignmentPoint]]] = None
+    letter_spacing: int = 0
+    space_width: int = 600
 
 
 class FinalizeResponse(BaseModel):
     job_id: str
     otf_url: str
     woff2_url: str
-    # Single-line / centerline companion font (for pen plotters)
     otf_line_url: str
     woff2_line_url: str
 
 
 class DrawGlyphRequest(BaseModel):
-    glyph_id: str           # e.g. "a_0", "a_1"
+    """One drawn glyph from the canvas."""
+    glyph_id: str           # e.g. "a_0", "a_init", "a_medi"
     char: str
-    slot: int               # 0 = primary, 1+ = alternate
-    svg_paths: List[str]    # filled outline paths "M x y L x y C ... Z"
+    slot: int               # 0 = primary, 1+ = alternate (cycled by calt)
+    svg_paths: List[str]    # filled brush outline paths "M x y L x y C ... Z" (dimensional font)
+    pen_paths: List[List[List[float]]]  # raw pen tracks: list of strokes; each stroke is [[x,y], ...]
     svg_width: int          # canvas width in px
     svg_height: int         # canvas height in px
-    baseline_y: int         # canvas.height * 0.72 (baseline guideline Y)
+    baseline_y: int         # canvas y of the baseline guideline
     upscale_factor: float = 1.0
-    thumbnail_png_b64: str  # base64 PNG for review page
+    thumbnail_png_b64: str  # base64 PNG for review
+
+    # Cursive-mode metadata (None / 0 in print mode)
+    form: str = "iso"       # one of: iso (isolated), init, medi, fina
+    entry_y: Optional[float] = None  # y in canvas coords where this glyph wants its left connection
+    exit_y: Optional[float] = None   # y where the right connection should land
