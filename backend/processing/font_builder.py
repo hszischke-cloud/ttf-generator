@@ -371,8 +371,17 @@ def build_otf(
         charstrings[g.glyph_name] = cs
         metrics[g.glyph_name] = (advance + letter_spacing, 0)
 
+    # PostScript name must be unique per family+style combination.
+    # fontTools' setupNameTable auto-computes nameID 6 as "family-style" for
+    # non-Regular styles (e.g. "kjg-Line"); the CFF table's psName must match
+    # exactly or strict validators (Windows Font Viewer) reject the font.
+    if font_style == "Regular":
+        ps_name = font_name
+    else:
+        ps_name = f"{font_name}-{font_style.replace(' ', '')}"
+
     fb.setupCFF(
-        psName=font_name,
+        psName=ps_name,
         fontInfo={"version": "1.0", "FullName": f"{font_name} {font_style}",
                   "FamilyName": font_name, "Weight": font_style},
         charStringsDict=charstrings,
@@ -383,9 +392,15 @@ def build_otf(
 
     fb.setupHorizontalHeader(ascent=ASCENDER, descent=DESCENDER)
 
+    # nameID 6 (PostScript name) and nameID 4 (full name) are required for OTF.
+    # fontTools' setupNameTable only writes records for keys it's given, so we
+    # must pass these explicitly or strict validators (Windows Font Viewer)
+    # reject the font as "not a valid font file".
     fb.setupNameTable({
         "familyName": font_name,
         "styleName": font_style,
+        "psName": ps_name,
+        "fullName": f"{font_name} {font_style}",
     })
 
     fb.setupOS2(
