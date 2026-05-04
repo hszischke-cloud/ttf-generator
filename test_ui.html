@@ -449,7 +449,13 @@
         <div class="draw-char-grid" id="draw-char-grid"></div>
       </div>
 
-      <!-- Slot tabs -->
+      <!-- Form tabs (cursive only) -->
+      <div class="panel-section" id="form-tabs-section" style="display:none">
+        <span class="panel-label">Form (cursive position)</span>
+        <div class="draw-slot-tabs" id="draw-form-tabs"></div>
+      </div>
+
+      <!-- Slot tabs (print only) -->
       <div class="panel-section">
         <span class="panel-label">Slots (alternates)</span>
         <div class="draw-slot-tabs" id="draw-slot-tabs"></div>
@@ -691,7 +697,10 @@ function renderGlyphs() {
     });
     cell.querySelector('.redraw-btn').addEventListener('click', (e) => {
       e.stopPropagation();
-      redrawGlyph(g.char, g.slot);
+      // Recover the form from the glyph_id suffix (e.g. "a_medi" → "medi").
+      const suffix = g.glyph_id.split('_').pop();
+      const form = ['init', 'medi', 'fina', 'iso'].includes(suffix) ? suffix : 'iso';
+      redrawGlyph(g.char, g.slot, form);
     });
     grid.appendChild(cell);
   }
@@ -709,19 +718,18 @@ function toggleGlyph(id) {
   updateCount();
 }
 
-function redrawGlyph(char, slot) {
-  // Jump back to the draw page with this char/slot selected. Preserves
+function redrawGlyph(char, slot, form) {
+  // Jump back to the draw page with this char/slot/form selected. Preserves
   // existing strokes so the user can erase + redraw selectively.
-  if (!drawCanvas) {
-    // First time ever entering draw mode in this session
-    goTo('page-draw');
-    setTimeout(() => { initDrawCanvas(); selectDrawChar(char); }, 50);
-    return;
-  }
   goTo('page-draw');
   drawState.currentChar = char;
   drawState.currentSlot = slot;
-  updateDrawUI();
+  if (form) drawState.currentForm = form;
+  if (!drawCtx) {
+    setTimeout(() => { initDrawCanvas(); updateDrawUI(); }, 50);
+  } else {
+    updateDrawUI();
+  }
 }
 
 function setAll(accepted) {
@@ -971,17 +979,26 @@ const SPECIAL_IDS = {
   '@':'at', '&':'ampersand', '#':'numbersign', '%':'percent',
 };
 
-function drawCharKey(char, slot) {
-  return `${SPECIAL_IDS[char] ?? char}_${slot}`;
+function drawCharKey(char, slot, form) {
+  // Cursive: use the form name as the suffix (a_init, a_medi, a_fina, a_iso)
+  // so the backend can infer positional role from the glyph_id.
+  // Print: keep the legacy slot-based suffix (a_0, a_1, etc.).
+  const base = SPECIAL_IDS[char] ?? char;
+  if (drawMode === 'cursive') return `${base}_${form || 'iso'}`;
+  return `${base}_${slot}`;
 }
 
 // ── Draw state ────────────────────────────────────────────────
+// In print mode all glyphs are form='iso' (single form). In cursive mode
+// lowercase letters can have init/medi/fina/iso forms; capitals, digits and
+// punctuation always have form='iso' (no joining).
 const drawState = {
   currentChar: 'A',
   currentSlot: 0,
-  slotCounts: {},      // {char: count}
-  strokes: {},         // {char: {slot: [ [{x,y,p,t}] ]}}
-  redoStacks: {},      // {char: {slot: [ [{x,y,p,t}] ]}}
+  currentForm: 'iso',
+  slotCounts: {},      // {char: count} — alternates within one form (print only)
+  strokes: {},         // {char: {slot: {form: [ [{x,y,p,t}] ]}}}
+  redoStacks: {},      // {char: {slot: {form: [ [{x,y,p,t}] ]}}}
   currentStroke: [],
   isDrawing: false,
   tool: 'pen',
@@ -991,26 +1008,56 @@ const drawState = {
   smoothedPoint: null,
 };
 
-function getStrokes(char, slot) {
-  if (!drawState.strokes[char]) drawState.strokes[char] = {};
-  if (!drawState.strokes[char][slot]) drawState.strokes[char][slot] = [];
-  return drawState.strokes[char][slot];
+function _ensure(d, ...keys) {
+  let cur = d;
+  for (const k of keys) {
+    if (!cur[k]) cur[k] = {};
+    cur = cur[k];
+  }
+  return cur;
 }
-function getRedoStack(char, slot) {
+
+function getStrokes(char, slot, form) {
+  form = form || drawState.currentForm || 'iso';
+  if (!drawState.strokes[char]) drawState.strokes[char] = {};
+  if (!drawState.strokes[char][slot]) drawState.strokes[char][slot] = {};
+  if (!drawState.strokes[char][slot][form]) drawState.strokes[char][slot][form] = [];
+  return drawState.strokes[char][slot][form];
+}
+function getRedoStack(char, slot, form) {
+  form = form || drawState.currentForm || 'iso';
   if (!drawState.redoStacks[char]) drawState.redoStacks[char] = {};
-  if (!drawState.redoStacks[char][slot]) drawState.redoStacks[char][slot] = [];
-  return drawState.redoStacks[char][slot];
+  if (!drawState.redoStacks[char][slot]) drawState.redoStacks[char][slot] = {};
+  if (!drawState.redoStacks[char][slot][form]) drawState.redoStacks[char][slot][form] = [];
+  return drawState.redoStacks[char][slot][form];
 }
 function getSlotCount(char) { return drawState.slotCounts[char] || 1; }
+
+// Forms available for the current char in the current mode.
+function formsFor(char) {
+  if (drawMode !== 'cursive') return ['iso'];
+  // Capitals, digits and punctuation: isolated only (cursive convention).
+  const isLowercase = char.length === 1 && char >= 'a' && char <= 'z';
+  return isLowercase ? ['init', 'medi', 'fina', 'iso'] : ['iso'];
+}
+
+const FORM_LABELS = {iso: 'Isolated', init: 'Initial', medi: 'Medial', fina: 'Final'};
 
 // ── Navigation ────────────────────────────────────────────────
 function selectDrawChar(char) {
   drawState.currentChar = char;
   drawState.currentSlot = 0;
+  // Snap to a form that's valid for this char (capitals only have iso).
+  const forms = formsFor(char);
+  if (!forms.includes(drawState.currentForm)) drawState.currentForm = forms[0];
   updateDrawUI();
 }
 function selectDrawSlot(slot) {
   drawState.currentSlot = slot;
+  updateDrawUI();
+}
+function selectDrawForm(form) {
+  drawState.currentForm = form;
   updateDrawUI();
 }
 function addAlt() {
@@ -1022,12 +1069,17 @@ function addAlt() {
 function updateDrawUI() {
   const char = drawState.currentChar;
   const slot = drawState.currentSlot;
+  const form = drawState.currentForm;
   document.getElementById('draw-char-display').textContent = char;
-  document.getElementById('draw-slot-display').textContent =
-    slot === 0 ? 'Primary' : `Alt ${slot}`;
+  let label = slot === 0 ? 'Primary' : `Alt ${slot}`;
+  if (drawMode === 'cursive' && form !== 'iso') {
+    label = FORM_LABELS[form] || form;
+  }
+  document.getElementById('draw-slot-display').textContent = label;
   document.querySelectorAll('.draw-char-cell').forEach(el =>
     el.classList.toggle('active', el.dataset.char === char));
   renderSlotTabs();
+  renderFormTabs();
   updateNavButtons();
   renderCanvas();
 }
@@ -1037,6 +1089,13 @@ function renderSlotTabs() {
   const slot = drawState.currentSlot;
   const container = document.getElementById('draw-slot-tabs');
   container.innerHTML = '';
+  // In cursive mode, alternates aren't useful — we use forms instead, so
+  // hide the slot tabs entirely.
+  if (drawMode === 'cursive') {
+    container.parentElement.style.display = 'none';
+    return;
+  }
+  container.parentElement.style.display = '';
   for (let i = 0; i < count; i++) {
     const btn = document.createElement('button');
     btn.className = 'slot-tab' + (i === slot ? ' active' : '');
@@ -1049,6 +1108,33 @@ function renderSlotTabs() {
   addBtn.textContent = '+ Add Alt';
   addBtn.onclick = addAlt;
   container.appendChild(addBtn);
+}
+
+function renderFormTabs() {
+  const container = document.getElementById('draw-form-tabs');
+  if (!container) return;
+  if (drawMode !== 'cursive') {
+    container.parentElement.style.display = 'none';
+    return;
+  }
+  const forms = formsFor(drawState.currentChar);
+  // Capitals/digits/punct have only one form — hide the section to declutter.
+  if (forms.length === 1) {
+    container.parentElement.style.display = 'none';
+    return;
+  }
+  container.parentElement.style.display = '';
+  container.innerHTML = '';
+  for (const f of forms) {
+    const btn = document.createElement('button');
+    const active = drawState.currentForm === f;
+    btn.className = 'slot-tab' + (active ? ' active' : '');
+    // Tiny dot indicator if this form has any strokes drawn yet.
+    const has = (drawState.strokes[drawState.currentChar]?.[drawState.currentSlot]?.[f] || []).length > 0;
+    btn.textContent = (FORM_LABELS[f] || f) + (has ? ' •' : '');
+    btn.onclick = ((ff) => () => selectDrawForm(ff))(f);
+    container.appendChild(btn);
+  }
 }
 
 // ── Canvas init ───────────────────────────────────────────────
@@ -1158,8 +1244,9 @@ function renderCanvas() {
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, DRAW_W, DRAW_H);
   drawGuidelines(ctx);
-  const {currentChar: char, currentSlot: slot, tool, toolSize} = drawState;
-  for (const stroke of getStrokes(char, slot)) {
+  drawCursiveGuides(ctx);
+  const {currentChar: char, currentSlot: slot, currentForm: form, tool, toolSize} = drawState;
+  for (const stroke of getStrokes(char, slot, form)) {
     const poly = strokeToPolygon(stroke, toolSize, tool);
     renderStrokePolygon(ctx, poly, tool);
   }
@@ -1167,6 +1254,42 @@ function renderCanvas() {
     const poly = strokeToPolygon(drawState.currentStroke, toolSize, tool);
     renderStrokePolygon(ctx, poly, tool);
   }
+}
+
+// In cursive mode, paint connector hooks at the entry / exit points of the
+// active form so the user knows where to land their pen tail.
+function drawCursiveGuides(ctx) {
+  if (drawMode !== 'cursive') return;
+  const form = drawState.currentForm;
+  if (form === 'iso') return;
+  const baseline = GUIDELINES.baseline;
+  const HOOK = 18;  // canvas px — visual length of the hook
+  ctx.save();
+  ctx.strokeStyle = '#e89c5a';
+  ctx.fillStyle = '#e89c5a';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([4, 3]);
+  // Entry hook on the left for medi/fina forms — comes UP into the letter
+  if (form === 'medi' || form === 'fina') {
+    ctx.beginPath();
+    ctx.moveTo(0, baseline);
+    ctx.lineTo(HOOK, baseline);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(HOOK, baseline, 3, 0, Math.PI * 2); ctx.fill();
+  }
+  // Exit tail on the right for init/medi forms — leaves the letter and
+  // continues to the next glyph
+  ctx.setLineDash([4, 3]);
+  if (form === 'init' || form === 'medi') {
+    ctx.beginPath();
+    ctx.moveTo(DRAW_W - HOOK, baseline);
+    ctx.lineTo(DRAW_W, baseline);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(DRAW_W - HOOK, baseline, 3, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
 }
 
 function drawGuidelines(ctx) {
@@ -1334,20 +1457,41 @@ function selectTool(tool) {
 }
 
 // ── Character navigation ──────────────────────────────────────
+// Build the flat sequence of (char, form) cells we cycle through. In print
+// mode this is just one cell per char; in cursive each lowercase has 4.
+function drawCells() {
+  const out = [];
+  for (const c of DRAW_CHARS) {
+    for (const f of formsFor(c)) out.push({char: c, form: f});
+  }
+  return out;
+}
+function currentCellIndex() {
+  const cells = drawCells();
+  return cells.findIndex(x =>
+    x.char === drawState.currentChar && x.form === drawState.currentForm);
+}
 function navChar(direction) {
-  const idx = DRAW_CHARS.indexOf(drawState.currentChar);
-  const newIdx = Math.max(0, Math.min(DRAW_CHARS.length - 1, idx + direction));
-  if (DRAW_CHARS[newIdx] !== drawState.currentChar) selectDrawChar(DRAW_CHARS[newIdx]);
+  const cells = drawCells();
+  const idx = currentCellIndex();
+  const newIdx = Math.max(0, Math.min(cells.length - 1, idx + direction));
+  if (newIdx !== idx) {
+    drawState.currentChar = cells[newIdx].char;
+    drawState.currentForm = cells[newIdx].form;
+    drawState.currentSlot = 0;
+    updateDrawUI();
+  }
 }
 
 function updateNavButtons() {
-  const idx = DRAW_CHARS.indexOf(drawState.currentChar);
+  const cells = drawCells();
+  const idx = currentCellIndex();
   const prevBtn = document.getElementById('prev-char-btn');
   const nextBtn = document.getElementById('next-char-btn');
-  if (prevBtn) prevBtn.disabled = idx === 0;
-  if (nextBtn) nextBtn.disabled = idx === DRAW_CHARS.length - 1;
+  if (prevBtn) prevBtn.disabled = idx <= 0;
+  if (nextBtn) nextBtn.disabled = idx >= cells.length - 1;
   const label = document.getElementById('draw-progress-label');
-  if (label) label.textContent = `${idx + 1} / ${DRAW_CHARS.length}`;
+  if (label) label.textContent = `${Math.max(idx, 0) + 1} / ${cells.length}`;
 }
 
 // ── Keyboard shortcuts ────────────────────────────────────────
@@ -1363,13 +1507,12 @@ document.addEventListener('keydown', e => {
 
 // ── Start draw mode ───────────────────────────────────────────
 function startDrawMode(mode) {
-  if (mode === 'cursive') {
-    alert('Cursive mode is in active development — coming next. Use Print mode for now.');
-    return;
-  }
-  drawMode = mode || 'print';
+  drawMode = (mode === 'cursive') ? 'cursive' : 'print';
+  // Cursive starts on lowercase 'a' in the medial form (most common case).
+  const startChar = drawMode === 'cursive' ? 'a' : 'A';
+  const startForm = drawMode === 'cursive' ? 'medi' : 'iso';
   Object.assign(drawState, {
-    currentChar: 'A', currentSlot: 0,
+    currentChar: startChar, currentSlot: 0, currentForm: startForm,
     slotCounts: {}, strokes: {}, redoStacks: {},
     currentStroke: [], isDrawing: false,
     tool: 'pen', toolSize: 14, eraserMode: false, lastPoint: null, smoothedPoint: null,
@@ -1398,8 +1541,8 @@ function buildCharGrid() {
 // ── SVG outline path generation ───────────────────────────────
 
 // Returns {minX, maxX} of all stroke points for a glyph (for advance width calc)
-function getGlyphXBounds(char, slot) {
-  const strokes = getStrokes(char, slot);
+function getGlyphXBounds(char, slot, form) {
+  const strokes = getStrokes(char, slot, form);
   let minX = Infinity, maxX = -Infinity;
   for (const stroke of strokes) {
     for (const pt of stroke) {
@@ -1419,8 +1562,8 @@ function strokeToOutlineSVG(points, size, xShift = 0) {
   return 'M ' + pts.map(p => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L ') + ' Z';
 }
 
-function glyphToSVGPaths(char, slot, xShift = 0) {
-  return getStrokes(char, slot)
+function glyphToSVGPaths(char, slot, xShift = 0, form) {
+  return getStrokes(char, slot, form)
     .filter(s => s.length > 1)
     .map(s => strokeToOutlineSVG(s, drawState.toolSize, xShift))
     .filter(Boolean);
@@ -1428,18 +1571,18 @@ function glyphToSVGPaths(char, slot, xShift = 0) {
 
 // Raw centerline points per stroke (for the line-font Bezier fitter on the
 // backend). Format: [ [[x,y], [x,y], ...], ... ] — one inner list per stroke.
-function glyphToPenPaths(char, slot, xShift = 0) {
-  return getStrokes(char, slot)
+function glyphToPenPaths(char, slot, xShift = 0, form) {
+  return getStrokes(char, slot, form)
     .filter(s => s.length > 1)
     .map(s => s.map(pt => [pt.x - xShift, pt.y]));
 }
 
-function glyphThumbnailB64(char, slot) {
+function glyphThumbnailB64(char, slot, form) {
   const off = document.createElement('canvas');
   off.width = DRAW_W; off.height = DRAW_H;
   const ctx = off.getContext('2d');
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, DRAW_W, DRAW_H);
-  for (const stroke of getStrokes(char, slot)) {
+  for (const stroke of getStrokes(char, slot, form)) {
     const poly = strokeToPolygon(stroke, drawState.toolSize, drawState.tool);
     renderStrokePolygon(ctx, poly, drawState.tool);
   }
@@ -1461,13 +1604,15 @@ async function sendToReview() {
     const {job_id} = await createRes.json();
     jobId = job_id;
 
-    // Collect all drawn (char, slot) pairs
+    // Collect all drawn (char, slot, form) cells
     const tasks = [];
     for (const char of DRAW_CHARS) {
       const slotCount = getSlotCount(char);
       for (let slot = 0; slot < slotCount; slot++) {
-        if (getStrokes(char, slot).length > 0) {
-          tasks.push({char, slot, glyphId: drawCharKey(char, slot)});
+        for (const form of formsFor(char)) {
+          if (getStrokes(char, slot, form).length > 0) {
+            tasks.push({char, slot, form, glyphId: drawCharKey(char, slot, form)});
+          }
         }
       }
     }
@@ -1477,10 +1622,9 @@ async function sendToReview() {
       const t = tasks[i];
       document.getElementById('draw-submit-status').textContent =
         `Submitting ${i + 1} / ${tasks.length}…`;
-      // Compute tight bounding box so advance width is proportional to the actual glyph
-      const PAD = 12;  // canvas px of side bearing on each side
-      const {minX, maxX} = getGlyphXBounds(t.char, t.slot);
-      const xShift = minX - PAD;               // shift ink to start at x=PAD
+      const PAD = 12;
+      const {minX, maxX} = getGlyphXBounds(t.char, t.slot, t.form);
+      const xShift = minX - PAD;
       const svgWidth = Math.round(maxX - minX + PAD * 2);
 
       const res = await fetch(`${API}/draw/${job_id}/glyph`, {
@@ -1490,16 +1634,19 @@ async function sendToReview() {
           glyph_id: t.glyphId,
           char: t.char,
           slot: t.slot,
-          svg_paths: glyphToSVGPaths(t.char, t.slot, xShift),
-          pen_paths: glyphToPenPaths(t.char, t.slot, xShift),
+          form: t.form,
+          svg_paths: glyphToSVGPaths(t.char, t.slot, xShift, t.form),
+          pen_paths: glyphToPenPaths(t.char, t.slot, xShift, t.form),
           svg_width: svgWidth,
           svg_height: DRAW_H,
           baseline_y: Math.round(GUIDELINES.baseline),
           upscale_factor: 1.0,
-          thumbnail_png_b64: glyphThumbnailB64(t.char, t.slot),
+          thumbnail_png_b64: glyphThumbnailB64(t.char, t.slot, t.form),
         }),
       });
-      if (!res.ok) throw new Error(`Failed to submit glyph "${t.char}" slot ${t.slot}`);
+      if (!res.ok) {
+        throw new Error(`Failed to submit glyph "${t.char}" (${t.form})`);
+      }
     }
 
     document.getElementById('draw-submit-status').textContent = '';
