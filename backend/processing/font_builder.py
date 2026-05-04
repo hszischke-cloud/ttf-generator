@@ -254,7 +254,10 @@ def _build_fea_code(alternates: Dict[str, List[str]], all_glyph_names: List[str]
         alternates: {base_glyph_name: [alt1_name, alt2_name, ...]}
         all_glyph_names: full glyph order (used to build @other classes)
     """
-    MAX_DIST = 8  # look back up to 8 glyphs for the previous occurrence
+    MAX_DIST = 12  # look back up to 12 glyphs for the previous occurrence
+                    # — covers most words plus typical inter-word spacing,
+                    # so even repeated letters in a long phrase keep cycling
+                    # through their variants.
 
     if all_glyph_names is None:
         all_glyph_names = ["space"]

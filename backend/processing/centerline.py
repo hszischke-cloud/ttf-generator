@@ -244,17 +244,83 @@ def _stroke_to_svg(pts: Sequence[Sequence[float]]) -> str:
 # Public API
 # ---------------------------------------------------------------------------
 
+def _stroke_endpoints(s: Sequence[Sequence[float]]) -> Tuple[Point, Point]:
+    return (float(s[0][0]), float(s[0][1])), (float(s[-1][0]), float(s[-1][1]))
+
+
+def _dist2(a: Point, b: Point) -> float:
+    dx, dy = a[0] - b[0], a[1] - b[1]
+    return dx * dx + dy * dy
+
+
+def _optimise_stroke_order(
+    strokes: Sequence[Sequence[Sequence[float]]],
+) -> List[List[List[float]]]:
+    """
+    Reorder strokes (and reverse individual ones if it helps) so the pen
+    plotter minimises pen-up travel between them.
+
+    Greedy nearest-neighbour starting from the stroke endpoint closest to
+    top-left. Centripetal Catmull-Rom is symmetric under point reversal
+    so reversing a stroke before curve fitting traces the same curve in
+    the opposite direction — pen travel changes, visual result doesn't.
+    """
+    pool = [list(s) for s in strokes if s]
+    if len(pool) <= 1:
+        return pool
+
+    # Pick the starting stroke: whichever has its closest-to-top-left
+    # endpoint. We orient that stroke so it begins at top-left.
+    origin = (0.0, 0.0)
+    best_i, best_rev, best_d = 0, False, float('inf')
+    for i, s in enumerate(pool):
+        a, b = _stroke_endpoints(s)
+        da = _dist2(a, origin)
+        db = _dist2(b, origin)
+        if da < best_d:
+            best_d, best_i, best_rev = da, i, False
+        if db < best_d:
+            best_d, best_i, best_rev = db, i, True
+
+    first = pool.pop(best_i)
+    if best_rev:
+        first.reverse()
+    out: List[List[List[float]]] = [first]
+    pen = (float(first[-1][0]), float(first[-1][1]))
+
+    while pool:
+        best_i, best_rev, best_d = 0, False, float('inf')
+        for i, s in enumerate(pool):
+            a, b = _stroke_endpoints(s)
+            da = _dist2(a, pen)
+            db = _dist2(b, pen)
+            if da < best_d:
+                best_d, best_i, best_rev = da, i, False
+            if db < best_d:
+                best_d, best_i, best_rev = db, i, True
+        s = pool.pop(best_i)
+        if best_rev:
+            s.reverse()
+        out.append(s)
+        pen = (float(s[-1][0]), float(s[-1][1]))
+    return out
+
+
 def polyline_paths_to_svg(strokes: Sequence[Sequence[Sequence[float]]]) -> List[str]:
     """
     Convert a list of pen-stroke polylines (one polyline per stroke, each
     a list of [x, y] points) into smooth-Bezier SVG path strings.
 
-    Empty / too-short strokes are dropped. Each emitted path uses the
-    forward + tip-jog + reverse-retrace pattern so it round-trips cleanly
-    through CFF and exports as a usable single-line path.
+    Strokes are reordered via greedy nearest-neighbour TSP first so the
+    pen plotter doesn't waste time travelling between far-apart strokes.
+
+    Each emitted path uses the forward + tip-jog + reverse-retrace pattern
+    so it round-trips cleanly through CFF and exports as a usable
+    single-line path.
     """
+    ordered = _optimise_stroke_order(strokes)
     out: List[str] = []
-    for stroke in strokes:
+    for stroke in ordered:
         if not stroke:
             continue
         d = _stroke_to_svg(stroke)
