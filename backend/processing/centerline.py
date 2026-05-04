@@ -284,6 +284,7 @@ def _polyline_to_svg(pts: List[Tuple[int, int]], closed: bool) -> str:
 
 def vectorize_centerline(
     glyph_img: np.ndarray,
+    glyph_id: str = "",
 ) -> Optional[Tuple[List[str], int, int, float]]:
     """
     Extract single-line centerlines from a binary glyph image.
@@ -291,10 +292,17 @@ def vectorize_centerline(
     Returns (svg_paths, width_px, height_px, upscale_factor) — same shape as
     `vectorize_glyph()` so the font builder can consume either output
     interchangeably. None if no usable strokes were found.
+
+    `glyph_id` is only used as a tag in diagnostic prints (Railway logs).
     """
+    tag = f"[centerline:{glyph_id}]" if glyph_id else "[centerline]"
+
     if glyph_img is None or glyph_img.size == 0:
+        print(f"{tag} skip: empty image")
         return None
-    if int(np.count_nonzero(glyph_img)) < 20:
+    ink = int(np.count_nonzero(glyph_img))
+    if ink < 20:
+        print(f"{tag} skip: only {ink} ink pixels (<20)")
         return None
 
     h_orig = glyph_img.shape[0]
@@ -303,14 +311,16 @@ def vectorize_centerline(
     upscale_factor = h / h_orig if h_orig > 0 else 1.0
 
     skel = _build_skeleton(upscaled)
+    skel_count = int(skel.sum())
     if not skel.any():
+        print(f"{tag} skip: skeleton empty (input ink={ink}, upscaled to {w}x{h})")
         return None
 
     polylines = _extract_polylines(skel)
     if not polylines:
+        print(f"{tag} skip: no polylines from skeleton ({skel_count} skel px)")
         return None
 
-    # Per-classification length thresholds (see constants above for rationale)
     thresholds = {
         'spur':     max(3.0, h * SPUR_FRACTION),
         'isolated': max(3.0, h * ISOLATED_FRACTION),
@@ -320,14 +330,18 @@ def vectorize_centerline(
     }
 
     pruned: List[Tuple[List[Tuple[int, int]], bool]] = []
+    kind_counts = {'spur': 0, 'isolated': 0, 'bridge': 0, 'cycle': 0, 'unknown': 0}
     for pts, closed in polylines:
         length = _polyline_length(pts)
         kind = _classify_polyline(pts, closed, skel)
+        kind_counts[kind] = kind_counts.get(kind, 0) + 1
         if length < thresholds[kind]:
             continue
         pruned.append((pts, closed))
 
     if not pruned:
+        print(f"{tag} skip: all {len(polylines)} polylines pruned "
+              f"(kinds={kind_counts}, h={h})")
         return None
 
     epsilon = max(1.0, h * DP_EPSILON_FACTOR)
@@ -338,14 +352,17 @@ def vectorize_centerline(
             simplified.append((s, closed))
 
     if not simplified:
+        print(f"{tag} skip: simplification reduced everything below 2 points")
         return None
 
-    # Plotter-friendly stroke order: top-to-bottom, then left-to-right by start point
     simplified.sort(key=lambda pc: (pc[0][0][0], pc[0][0][1]))
 
     svg_paths = [_polyline_to_svg(pts, closed) for pts, closed in simplified]
     svg_paths = [p for p in svg_paths if p]
     if not svg_paths:
+        print(f"{tag} skip: SVG emission produced empty strings")
         return None
 
+    print(f"{tag} ok: {len(svg_paths)} paths from {len(polylines)} raw polylines "
+          f"(kept {len(pruned)} after pruning)")
     return svg_paths, w, h, upscale_factor

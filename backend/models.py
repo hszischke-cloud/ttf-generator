@@ -28,6 +28,8 @@ class JobStatusResponse(BaseModel):
     fea_warning: Optional[str] = None
     # Glyph IDs that couldn't be centerline-traced (skipped in the line font)
     line_skipped_glyphs: List[str] = []
+    # True only if the single-line companion font was actually built and saved
+    has_line_font: bool = False
 
 
 class GlyphInfo(BaseModel):

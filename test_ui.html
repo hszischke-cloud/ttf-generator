@@ -597,7 +597,7 @@
     <span id="download-status" style="font-size:13px;color:#888;"></span>
   </div>
 
-  <div style="margin-top:28px;padding:16px 18px;border:1px solid #d6e0ee;border-radius:10px;background:#f7faff;">
+  <div id="line-section" style="margin-top:28px;padding:16px 18px;border:1px solid #d6e0ee;border-radius:10px;background:#f7faff;">
     <div style="font-weight:600;margin-bottom:4px;">Single-line version (for pen plotters)</div>
     <p style="font-size:13px;color:#555;margin:0 0 12px 0;line-height:1.5;">
       Each stroke is a centerline path — when you convert the OTF to SVG, the pen plotter
@@ -608,6 +608,10 @@
       <button id="otf-line-btn" class="btn btn-primary" onclick="downloadFont('otf', true)">Download Line OTF</button>
       <button id="woff2-line-btn" class="btn btn-outline" onclick="downloadFont('woff2', true)">Download Line WOFF2</button>
       <span id="line-skipped-note" style="font-size:13px;color:#a06a00;"></span>
+    </div>
+    <div id="line-unavailable" style="display:none;margin-top:10px;font-size:13px;color:#a06a00;">
+      The single-line font couldn't be built — none of your approved letters produced a usable centerline trace.
+      Try thicker, clearer pen strokes or accept more letters.
     </div>
   </div>
 
@@ -722,7 +726,10 @@ async function poll() {
       await loadGlyphs();
     } else if (data.status === 'complete') {
       clearInterval(pollTimer);
-      showDownloadPage(data.fea_warning);
+      showDownloadPage(data.fea_warning, undefined, {
+        hasLineFont: !!data.has_line_font,
+        skipped: data.line_skipped_glyphs || [],
+      });
     } else if (data.status === 'error') {
       clearInterval(pollTimer);
       showError('processing-error', data.error_message || 'Processing failed');
@@ -855,7 +862,7 @@ async function finalize() {
 }
 
 // ── Download page ─────────────────────────────────────────────
-async function showDownloadPage(feaWarning, cacheBust) {
+async function showDownloadPage(feaWarning, cacheBust, lineInfo) {
   const v = cacheBust || Date.now();
   const otfUrl = `${API}/fonts/${jobId}/${fontSafeName}.otf?v=${v}`;
   const woff2Url = `${API}/fonts/${jobId}/${fontSafeName}.woff2?v=${v}`;
@@ -863,8 +870,19 @@ async function showDownloadPage(feaWarning, cacheBust) {
   document.getElementById('download-status').textContent = '';
   document.getElementById('otf-btn').disabled = false;
   document.getElementById('woff2-btn').disabled = false;
-  document.getElementById('otf-line-btn').disabled = false;
-  document.getElementById('woff2-line-btn').disabled = false;
+
+  // Default the line buttons to enabled; override below if we have lineInfo
+  // showing the line font wasn't actually built.
+  const hasLine = lineInfo ? !!lineInfo.hasLineFont : true;
+  document.getElementById('otf-line-btn').disabled = !hasLine;
+  document.getElementById('woff2-line-btn').disabled = !hasLine;
+  document.getElementById('line-unavailable').style.display = hasLine ? 'none' : 'block';
+  const skipNote = document.getElementById('line-skipped-note');
+  if (lineInfo && lineInfo.skipped && lineInfo.skipped.length) {
+    skipNote.textContent = `(skipped in line font: ${lineInfo.skipped.join(', ')})`;
+  } else {
+    skipNote.textContent = '';
+  }
 
   const banner = document.getElementById('fea-warning-banner');
   if (feaWarning) {
@@ -982,6 +1000,12 @@ async function downloadFont(fmt, line) {
     } else {
       skipNote.textContent = '';
     }
+
+    // Gate the line-font buttons on whether the line OTF was actually produced
+    const hasLine = !!finalStatus.has_line_font;
+    document.getElementById('otf-line-btn').disabled = !hasLine;
+    document.getElementById('woff2-line-btn').disabled = !hasLine;
+    document.getElementById('line-unavailable').style.display = hasLine ? 'none' : 'block';
 
     // Refresh preview with the same cache-bust so we load the newly built font
     showDownloadPage(null, bust);

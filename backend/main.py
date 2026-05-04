@@ -202,6 +202,7 @@ async def get_status(job_id: str):
         alignment_failed_image_b64=state.get("alignment_failed_image_b64"),
         fea_warning=state.get("fea_warning"),
         line_skipped_glyphs=state.get("line_skipped_glyphs", []),
+        has_line_font=state.get("has_line_font", False),
     )
 
 
@@ -417,7 +418,7 @@ def _process_job(job_id: str):
             # Vectorize centerline (single-line / pen-plotter font).
             # Shares geometry (width, height, upscale_factor) with the dimensional
             # vectorizer because both run on the same upscaled glyph image.
-            cl_result = vectorize_centerline(glyph.glyph_img)
+            cl_result = vectorize_centerline(glyph.glyph_img, glyph_id=glyph.glyph_id)
             svg_paths_centerline = cl_result[0] if cl_result else []
 
             # Save SVG data as JSON
@@ -488,6 +489,7 @@ def _build_font_job(job_id: str):
         dimensional_glyphs: List[GlyphData] = []
         line_glyphs: List[GlyphData] = []
         line_skipped_chars: List[str] = []
+        glyphs_dir = job_store.glyphs_dir(job_id)
 
         for entry in manifest:
             glyph_id = entry["glyph_id"]
@@ -517,7 +519,23 @@ def _build_font_job(job_id: str):
                 upscale_factor=upscale_factor,
             ))
 
-            centerline_paths = entry.get("svg_paths_centerline", [])
+            # Regenerate centerline data if missing or empty — covers stale jobs
+            # extracted before the centerline code was deployed.
+            centerline_paths = entry.get("svg_paths_centerline")
+            if not centerline_paths:
+                img_path = glyphs_dir / f"{glyph_id}.png"
+                if img_path.exists():
+                    display_img = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
+                    if display_img is not None:
+                        # Saved PNG is black-on-white (display); centerline expects
+                        # white-on-black (binary ink mask).
+                        glyph_bin = cv2.bitwise_not(display_img)
+                        cl = vectorize_centerline(glyph_bin, glyph_id=glyph_id)
+                        if cl:
+                            centerline_paths = cl[0]
+                            # Persist back so the next finalize doesn't re-run this
+                            entry["svg_paths_centerline"] = centerline_paths
+
             if centerline_paths:
                 line_glyphs.append(GlyphData(
                     char=char,
@@ -597,6 +615,7 @@ def _build_font_job(job_id: str):
             status="complete",
             progress_pct=100,
             font_files=font_files,
+            has_line_font=bool(line_otf_bytes),
             **extra,
         )
 
