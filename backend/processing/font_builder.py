@@ -419,9 +419,22 @@ def build_otf(
         sCapHeight=CAP_HEIGHT,
         fsType=0,
         panose=panose,
+        # fsSelection: 0x40 = REGULAR. fontTools defaults this to 0 which
+        # Windows reads as "no style information" and treats as malformed.
+        # USE_TYPO_METRICS (0x80) would also be useful but requires OS/2 v4+
+        # while fontTools emits v3 by default — sticking with REGULAR alone.
+        fsSelection=0x40,
     )
 
-    fb.setupPost()
+    # post table: italicAngle, underlinePosition, underlineThickness must
+    # have sensible non-zero defaults — fontTools' setupPost() leaves them
+    # at 0 which Windows treats as malformed.
+    fb.setupPost(
+        italicAngle=0.0,
+        underlinePosition=-100,    # below baseline
+        underlineThickness=50,
+        isFixedPitch=0,
+    )
 
     # head.created / head.modified default to 0 in fontTools, which becomes
     # 1904-01-01 in OpenType time — strict validators flag this as bogus.
