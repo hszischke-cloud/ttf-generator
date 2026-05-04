@@ -149,6 +149,16 @@
   .glyph-cell img { width: 56px; height: 56px; object-fit: contain; image-rendering: pixelated; }
   .glyph-cell .state-label { font-size: 9px; color: #7a9e7a; }
   .glyph-cell.rejected .state-label { color: #c0604a; }
+  .glyph-cell { position: relative; }
+  .redraw-btn {
+    position: absolute; top: 4px; right: 4px;
+    width: 22px; height: 22px; border-radius: 50%; padding: 0;
+    background: #faf7f2; color: #8c7b6b; border: 1px solid #e2d9cc;
+    font-size: 12px; line-height: 1; cursor: pointer;
+    opacity: 0; transition: opacity 0.15s;
+  }
+  .glyph-cell:hover .redraw-btn { opacity: 1; }
+  .redraw-btn:hover { background: #7a9e9f; color: #fff; border-color: #7a9e9f; }
 
   /* ── Font name input ── */
   .font-name-row { margin-top: 32px; padding-top: 24px; border-top: 1px solid #e2d9cc; }
@@ -395,63 +405,20 @@
 <div class="page active" id="page-home">
   <div class="home-hero">
     <h1>Create Your Font</h1>
-    <p class="sub">Turn your handwriting into a real font — OTF &amp; WOFF2, ready to use anywhere</p>
+    <p class="sub">Turn your handwriting into a real font — OTF + single-line OTF for pen plotters</p>
   </div>
   <div class="mode-cards">
-    <div class="mode-card" onclick="goTo('page-upload')">
-      <span class="mode-icon">🖨️</span>
-      <h2>Print &amp; Scan</h2>
-      <p>Download a template, hand-write on paper, scan or photograph it, and upload</p>
+    <div class="mode-card" onclick="startDrawMode('print')">
+      <h2>Print font</h2>
+      <p>Each letter drawn on its own. Letters don't connect — for clean, readable output.</p>
+      <p style="margin-top:10px;font-size:13px;color:#8c7b6b;">~52 cells (A-Z, a-z, digits, punctuation)</p>
     </div>
-    <div class="mode-card" onclick="startDrawMode()">
-      <span class="mode-icon">✏️</span>
-      <h2>Draw Digitally</h2>
-      <p>Draw each letter directly on screen with realistic pen tools — no printer needed</p>
-    </div>
-  </div>
-</div>
-
-<!-- ===================== PAGE 1: UPLOAD ===================== -->
-<div class="page" id="page-upload">
-  <div class="step-header">
-    <div class="step-num">1</div>
-    <div>
-      <h1>Upload Your Template</h1>
-      <p class="sub" style="margin:0">Select your filled-in and scanned handwriting template</p>
+    <div class="mode-card" onclick="startDrawMode('cursive')">
+      <h2>Cursive font</h2>
+      <p>Letters connect with entry hooks and exit tails. Three forms per lowercase letter for word-position-aware joining.</p>
+      <p style="margin-top:10px;font-size:13px;color:#8c7b6b;">~150 cells (init / medi / fina forms)</p>
     </div>
   </div>
-
-  <div id="drop-zone">
-    <p>Drag & drop your file here, or click to browse</p>
-    <p style="font-size:13px;color:#999;margin-top:6px">PDF, PNG, JPG or TIFF — max 50 MB</p>
-  </div>
-  <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.tiff,.tif">
-
-  <div style="margin-bottom:16px">
-    <a href="http://localhost:8001/template/download" target="_blank" class="btn btn-outline btn-sm">
-      Download blank template first
-    </a>
-  </div>
-
-  <button class="btn btn-primary" id="upload-btn" disabled>Process Template</button>
-  <div class="error-banner" id="upload-error"></div>
-</div>
-
-<!-- ===================== PAGE 2: PROCESSING ===================== -->
-<div class="page" id="page-processing">
-  <div class="step-header">
-    <div class="step-num">2</div>
-    <div>
-      <h1>Detecting Glyphs…</h1>
-      <p class="sub" style="margin:0">This usually takes 10–30 seconds</p>
-    </div>
-  </div>
-
-  <p class="status-text" id="status-text">Starting…</p>
-  <div class="progress-wrap">
-    <div class="progress-bar" id="progress-bar" style="width:5%"></div>
-  </div>
-  <div class="error-banner" id="processing-error"></div>
 </div>
 
 <!-- ===================== PAGE DRAW ===================== -->
@@ -638,70 +605,8 @@ function goTo(pageId) {
   window.scrollTo(0, 0);
 }
 
-// ── Upload page ──────────────────────────────────────────────
-const dropZone = document.getElementById('drop-zone');
-const fileInput = document.getElementById('file-input');
-const uploadBtn = document.getElementById('upload-btn');
-let selectedFile = null;
-
-dropZone.addEventListener('click', () => fileInput.click());
-dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag'); });
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
-dropZone.addEventListener('drop', e => {
-  e.preventDefault();
-  dropZone.classList.remove('drag');
-  const f = e.dataTransfer.files[0];
-  if (f) selectFile(f);
-});
-fileInput.addEventListener('change', () => {
-  if (fileInput.files[0]) selectFile(fileInput.files[0]);
-});
-
-function selectFile(f) {
-  if (f.size > 50 * 1024 * 1024) {
-    showError('upload-error', 'File is too large (max 50 MB)');
-    return;
-  }
-  selectedFile = f;
-  dropZone.classList.add('has-file');
-  dropZone.innerHTML = `
-    <p class="filename">📄 ${f.name}</p>
-    <p style="font-size:13px;color:#999;margin-top:6px">${(f.size/1024/1024).toFixed(1)} MB — click to change</p>
-  `;
-  uploadBtn.disabled = false;
-  hideError('upload-error');
-}
-
-uploadBtn.addEventListener('click', async () => {
-  if (!selectedFile) return;
-  uploadBtn.disabled = true;
-  uploadBtn.textContent = 'Uploading…';
-  hideError('upload-error');
-
-  const form = new FormData();
-  form.append('file', selectedFile);
-
-  try {
-    const res = await fetch(`${API}/process/upload`, { method: 'POST', body: form });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.detail || `Upload failed (${res.status})`);
-    }
-    const data = await res.json();
-    jobId = data.job_id;
-    goTo('page-processing');
-    startPolling();
-  } catch(e) {
-    showError('upload-error', e.message);
-    uploadBtn.disabled = false;
-    uploadBtn.textContent = 'Process Template';
-  }
-});
-
-// ── Polling ──────────────────────────────────────────────────
+// ── Polling (used by finalize to wait for the build to complete) ────────
 function startPolling() {
-  document.getElementById('progress-bar').style.width = '5%';
-  document.getElementById('status-text').textContent = 'Starting…';
   pollTimer = setInterval(poll, 2000);
 }
 
@@ -709,17 +614,6 @@ async function poll() {
   try {
     const res = await fetch(`${API}/process/${jobId}/status`);
     const data = await res.json();
-
-    const labels = {
-      pending: 'Queued…',
-      processing: 'Detecting glyphs…',
-      awaiting_review: 'Done!',
-      finalizing: 'Building font…',
-      complete: 'Font ready!',
-      error: 'Error',
-    };
-    document.getElementById('status-text').textContent = labels[data.status] || data.status;
-    document.getElementById('progress-bar').style.width = `${data.progress_pct || 5}%`;
 
     if (data.status === 'awaiting_review') {
       clearInterval(pollTimer);
@@ -732,7 +626,7 @@ async function poll() {
       });
     } else if (data.status === 'error') {
       clearInterval(pollTimer);
-      showError('processing-error', data.error_message || 'Processing failed');
+      showError('review-error', data.error_message || 'Build failed');
     }
   } catch(e) {
     // network hiccup — keep polling
@@ -788,8 +682,17 @@ function renderGlyphs() {
       <span class="char-label">${g.slot === 0 ? g.char : g.char + ' ·' + g.slot}</span>
       <img src="data:image/png;base64,${g.image_b64}" alt="${g.char}">
       <span class="state-label">${g.accepted ? 'accepted' : 'rejected'}</span>
+      <button class="redraw-btn" title="Redraw this letter">✎</button>
     `;
-    cell.addEventListener('click', () => toggleGlyph(g.glyph_id));
+    // Click toggles accepted; the inner ✎ button stops propagation and redraws.
+    cell.addEventListener('click', (e) => {
+      if (e.target.classList.contains('redraw-btn')) return;
+      toggleGlyph(g.glyph_id);
+    });
+    cell.querySelector('.redraw-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      redrawGlyph(g.char, g.slot);
+    });
     grid.appendChild(cell);
   }
 
@@ -804,6 +707,21 @@ function toggleGlyph(id) {
   cell.classList.toggle('rejected', !g.accepted);
   cell.querySelector('.state-label').textContent = g.accepted ? 'accepted' : 'rejected';
   updateCount();
+}
+
+function redrawGlyph(char, slot) {
+  // Jump back to the draw page with this char/slot selected. Preserves
+  // existing strokes so the user can erase + redraw selectively.
+  if (!drawCanvas) {
+    // First time ever entering draw mode in this session
+    goTo('page-draw');
+    setTimeout(() => { initDrawCanvas(); selectDrawChar(char); }, 50);
+    return;
+  }
+  goTo('page-draw');
+  drawState.currentChar = char;
+  drawState.currentSlot = slot;
+  updateDrawUI();
 }
 
 function setAll(accepted) {
@@ -850,9 +768,7 @@ async function finalize() {
       throw new Error(body.detail || 'Finalize failed');
     }
 
-    goTo('page-processing');
-    document.getElementById('status-text').textContent = 'Building your font…';
-    document.getElementById('progress-bar').style.width = '10%';
+    document.getElementById('generate-btn').textContent = 'Building your font…';
     pollTimer = setInterval(poll, 2000);
   } catch(e) {
     showError('review-error', e.message);
@@ -1446,7 +1362,12 @@ document.addEventListener('keydown', e => {
 });
 
 // ── Start draw mode ───────────────────────────────────────────
-function startDrawMode() {
+function startDrawMode(mode) {
+  if (mode === 'cursive') {
+    alert('Cursive mode is in active development — coming next. Use Print mode for now.');
+    return;
+  }
+  drawMode = mode || 'print';
   Object.assign(drawState, {
     currentChar: 'A', currentSlot: 0,
     slotCounts: {}, strokes: {}, redoStacks: {},
@@ -1457,6 +1378,8 @@ function startDrawMode() {
   goTo('page-draw');
   setTimeout(() => { initDrawCanvas(); updateDrawUI(); }, 50);
 }
+
+let drawMode = 'print';  // 'print' or 'cursive' — phase 3 lights up cursive
 
 function buildCharGrid() {
   const grid = document.getElementById('draw-char-grid');
