@@ -403,6 +403,12 @@ def build_otf(
         "fullName": f"{font_name} {font_style}",
     })
 
+    # Panose: 10-byte font classification. All-zero is "any" but some
+    # validators (notably Windows) prefer at least bFamilyType to be set.
+    from fontTools.ttLib.tables.O_S_2f_2 import Panose
+    panose = Panose()
+    panose.bFamilyType = 3  # Latin Hand Written
+
     fb.setupOS2(
         sTypoAscender=ASCENDER,
         sTypoDescender=DESCENDER,
@@ -412,10 +418,18 @@ def build_otf(
         sxHeight=X_HEIGHT,
         sCapHeight=CAP_HEIGHT,
         fsType=0,
+        panose=panose,
     )
 
     fb.setupPost()
-    fb.setupHead(unitsPerEm=UPM)
+
+    # head.created / head.modified default to 0 in fontTools, which becomes
+    # 1904-01-01 in OpenType time — strict validators flag this as bogus.
+    # Use the current time (seconds since 1904-01-01).
+    import time
+    mac_epoch_offset = 2082844800  # seconds between 1904-01-01 and 1970-01-01
+    now = int(time.time()) + mac_epoch_offset
+    fb.setupHead(unitsPerEm=UPM, created=now, modified=now)
 
     # Add OpenType features (calt, ss01, ss02)
     fea_warning = None
