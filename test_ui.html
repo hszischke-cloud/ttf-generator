@@ -1503,6 +1503,14 @@ function glyphToSVGPaths(char, slot, xShift = 0) {
     .filter(Boolean);
 }
 
+// Raw centerline points per stroke (for the line-font Bezier fitter on the
+// backend). Format: [ [[x,y], [x,y], ...], ... ] — one inner list per stroke.
+function glyphToPenPaths(char, slot, xShift = 0) {
+  return getStrokes(char, slot)
+    .filter(s => s.length > 1)
+    .map(s => s.map(pt => [pt.x - xShift, pt.y]));
+}
+
 function glyphThumbnailB64(char, slot) {
   const off = document.createElement('canvas');
   off.width = DRAW_W; off.height = DRAW_H;
@@ -1560,6 +1568,7 @@ async function sendToReview() {
           char: t.char,
           slot: t.slot,
           svg_paths: glyphToSVGPaths(t.char, t.slot, xShift),
+          pen_paths: glyphToPenPaths(t.char, t.slot, xShift),
           svg_width: svgWidth,
           svg_height: DRAW_H,
           baseline_y: Math.round(GUIDELINES.baseline),
