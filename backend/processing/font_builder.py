@@ -68,12 +68,21 @@ CHAR_TO_GLYPH_NAME: Dict[str, str] = {
     '5': 'five', '6': 'six', '7': 'seven', '8': 'eight', '9': 'nine',
 }
 
-def char_to_glyph_name(char: str, slot: int = 0) -> str:
-    """Map character + slot to an OpenType glyph name."""
+def char_to_glyph_name(char: str, slot: int = 0, form: str = "iso") -> str:
+    """
+    Map character + slot + cursive form to an OpenType glyph name.
+
+    Print mode glyphs use slot suffixes ('a', 'a.alt1', 'a.alt2').
+    Cursive positional variants use form suffixes ('a.init', 'a.medi',
+    'a.fina'); the iso form keeps the bare base name so cmap can map it
+    directly to the Unicode codepoint.
+    """
     base = CHAR_TO_GLYPH_NAME.get(char, char)
-    if slot == 0:
-        return base
-    return f"{base}.alt{slot}"
+    if form != "iso":
+        return f"{base}.{form}"
+    if slot != 0:
+        return f"{base}.alt{slot}"
+    return base
 
 
 def char_to_unicode(char: str) -> Optional[int]:
@@ -120,6 +129,36 @@ def _parse_svg_path_commands(d: str) -> List[Tuple]:
     return commands
 
 
+def _bearing_offsets(form: str, coord_scale: float) -> Tuple[float, int]:
+    """
+    Return (x_offset, advance_extra) for a glyph's positional form.
+
+    The canvas always pads the ink bbox by CANVAS_PAD pixels on each side
+    (LSB and RSB). For cursive forms with connectors we eat that padding
+    on the connecting side(s) so consecutive letters visually touch.
+
+    Returns:
+      x_offset: shift applied to every drawn point in font space (UPM)
+      advance_extra: amount added to advance = svg_width * coord_scale
+                     (positive = looser spacing, negative = tighter)
+    """
+    pad_upm = CANVAS_PAD * coord_scale
+    if form == "init":
+        # No left connector (word start) — keep canvas LSB.
+        # Right connector — strip canvas RSB so next letter starts at exit tip.
+        return 0.0, -int(pad_upm)
+    if form == "medi":
+        # Both connectors — strip both LSB and RSB.
+        return -pad_upm, -int(pad_upm)
+    if form == "fina":
+        # Left connector — strip canvas LSB.
+        # No right connector (word end) — keep canvas RSB plus a touch extra.
+        return -pad_upm, 0
+    # iso (and print mode default): keep canvas padding plus the historical
+    # +60 UPM trailing bearing for breathing room between standalone letters.
+    return 0.0, 60
+
+
 def _draw_svg_paths_to_pen(
     pen,
     svg_paths: List[str],
@@ -129,25 +168,22 @@ def _draw_svg_paths_to_pen(
     target_height: int = CAP_HEIGHT,   # unused, kept for compat
     is_lowercase: bool = False,        # unused, kept for compat
     upscale_factor: float = 1.0,
+    form: str = "iso",
 ) -> int:
     """
-    Draw SVG paths into a fonttools pen, applying coordinate transform.
-
-    Uses a cell-level scale (CELL_SCALE) derived from TEMPLATE_SPEC so that
-    ALL glyphs share the same coordinate system — descenders, punctuation, and
-    letters all align correctly relative to the baseline.
+    Draw SVG paths into a fonttools pen, applying coordinate transform and
+    cursive bearing adjustments per `form`.
 
     Returns the advance width (in UPM units).
     """
     if not svg_paths or svg_width == 0 or svg_height == 0:
         return DEFAULT_ADVANCE_WIDTH
 
-    # coord_scale: converts upscaled SVG pixels → UPM units
-    # baseline_y_in_svg is in original pixel space; CELL_SCALE converts it to UPM
     coord_scale = CELL_SCALE / upscale_factor
-    y_offset = baseline_y_in_svg * CELL_SCALE   # UPM position of the baseline
+    y_offset = baseline_y_in_svg * CELL_SCALE
 
-    advance_width = int(svg_width * coord_scale) + 60  # proportional advance + side bearings
+    x_offset, adv_extra = _bearing_offsets(form, coord_scale)
+    advance_width = int(svg_width * coord_scale) + adv_extra
 
     pen.beginPath = getattr(pen, 'beginPath', None)
 
@@ -164,7 +200,7 @@ def _draw_svg_paths_to_pen(
                 if started:
                     pen.endPath()
                 sx, sy = args[0], args[1]
-                fx = sx * coord_scale
+                fx = sx * coord_scale + x_offset
                 fy = -(sy * coord_scale) + y_offset
                 pen.moveTo((fx, fy))
                 current_x, current_y = sx, sy
@@ -172,13 +208,12 @@ def _draw_svg_paths_to_pen(
 
             elif cmd == 'L':
                 sx, sy = args[0], args[1]
-                fx = sx * coord_scale
+                fx = sx * coord_scale + x_offset
                 fy = -(sy * coord_scale) + y_offset
                 pen.lineTo((fx, fy))
                 current_x, current_y = sx, sy
 
             elif cmd == 'C':
-                # Cubic bezier: C x1 y1 x2 y2 x y
                 for j in range(0, len(args), 6):
                     if j + 5 >= len(args):
                         break
@@ -186,9 +221,9 @@ def _draw_svg_paths_to_pen(
                     x2, y2 = args[j + 2], args[j + 3]
                     x, y = args[j + 4], args[j + 5]
                     pen.curveTo(
-                        (x1 * coord_scale, -(y1 * coord_scale) + y_offset),
-                        (x2 * coord_scale, -(y2 * coord_scale) + y_offset),
-                        (x * coord_scale, -(y * coord_scale) + y_offset),
+                        (x1 * coord_scale + x_offset, -(y1 * coord_scale) + y_offset),
+                        (x2 * coord_scale + x_offset, -(y2 * coord_scale) + y_offset),
+                        (x * coord_scale + x_offset, -(y * coord_scale) + y_offset),
                     )
                     current_x, current_y = x, y
 
@@ -284,6 +319,98 @@ def _build_fea_code(alternates: Dict[str, List[str]], all_glyph_names: List[str]
     return "\n".join(lines)
 
 
+def _build_cursive_fea_code(
+    positional: Dict[str, Dict[str, str]],
+    available_glyphs: Optional[List[str]] = None,
+) -> str:
+    """
+    Build OpenType `calt` rules that swap a lowercase letter for its
+    initial / medial / final form based on whether it's surrounded by
+    other joining letters.
+
+    `positional` maps each base iso glyph name to the names of its
+    positional variants, e.g.:
+
+        {"a": {"init": "a.init", "medi": "a.medi", "fina": "a.fina"}, ...}
+
+    A letter without any of the three positional forms is skipped (stays
+    as the iso form regardless of position). Latin doesn't have native
+    init/medi/fina shaping, so we use `calt` which is on by default.
+    """
+    if not positional:
+        return ""
+
+    chars = sorted(positional.keys())
+    init_lhs, init_rhs = [], []
+    medi_lhs, medi_rhs = [], []
+    fina_lhs, fina_rhs = [], []
+    for c in chars:
+        forms = positional[c]
+        if "init" in forms:
+            init_lhs.append(c); init_rhs.append(forms["init"])
+        if "medi" in forms:
+            medi_lhs.append(c); medi_rhs.append(forms["medi"])
+        if "fina" in forms:
+            fina_lhs.append(c); fina_rhs.append(forms["fina"])
+
+    if not (init_lhs or medi_lhs or fina_lhs):
+        return ""
+
+    # @joining must include every lowercase letter present in the font, not
+    # just letters with positional forms drawn — otherwise pairs like 'ab'
+    # where only 'a' has positional forms wouldn't join (the engine would
+    # see 'b' as a word boundary). Capitals, digits, punctuation and space
+    # stay out so they correctly act as word boundaries.
+    #
+    # CRITICAL: @joining must also include the positional-form glyph names
+    # (a.init, a.medi, …). The calt lookups run in order — once `b → b.medi`
+    # has fired, the next lookup checking "is position N preceded by a
+    # joining letter?" needs to count `b.medi` as joining, not just `b`.
+    # Without this, only the medi rule fires; init and fina would silently
+    # fail to chain past it.
+    available = set(available_glyphs or [])
+    if available:
+        joining_iso = sorted(c for c in 'abcdefghijklmnopqrstuvwxyz' if c in available)
+    else:
+        joining_iso = sorted(chars)
+    if not joining_iso:
+        return ""
+
+    joining_all = list(joining_iso)
+    for c in chars:
+        forms = positional[c]
+        for f in ("init", "medi", "fina"):
+            if f in forms and forms[f] not in joining_all:
+                joining_all.append(forms[f])
+
+    lines: List[str] = []
+    lines.append(f"@joining = [{' '.join(joining_all)}];")
+    if medi_lhs:
+        lines.append(f"@medi_lhs = [{' '.join(medi_lhs)}];")
+        lines.append(f"@medi_rhs = [{' '.join(medi_rhs)}];")
+    if fina_lhs:
+        lines.append(f"@fina_lhs = [{' '.join(fina_lhs)}];")
+        lines.append(f"@fina_rhs = [{' '.join(fina_rhs)}];")
+    if init_lhs:
+        lines.append(f"@init_lhs = [{' '.join(init_lhs)}];")
+        lines.append(f"@init_rhs = [{' '.join(init_rhs)}];")
+    lines.append("")
+
+    # calt rules: most specific (medi: surrounded on both sides) first,
+    # then fina (preceded only), then init (followed only). Anything left
+    # over (no joining neighbour at all) stays as the iso form.
+    lines.append("feature calt {")
+    if medi_lhs:
+        lines.append("    sub @joining @medi_lhs' @joining by @medi_rhs;")
+    if fina_lhs:
+        lines.append("    sub @joining @fina_lhs' by @fina_rhs;")
+    if init_lhs:
+        lines.append("    sub @init_lhs' @joining by @init_rhs;")
+    lines.append("} calt;")
+
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Main font builder
 # ---------------------------------------------------------------------------
@@ -299,6 +426,13 @@ class GlyphData:
     baseline_y_in_svg: int   # in original (non-upscaled) pixel space
     is_lowercase: bool
     upscale_factor: float = 1.0
+    form: str = "iso"        # iso, init, medi, fina — cursive positional
+
+
+# Canvas PAD value — the JS-side canvas adds this many pixels of padding on
+# each side of the ink bbox. For cursive forms with connectors we strip this
+# padding from the appropriate sides so consecutive letters actually touch.
+CANVAS_PAD = 12
 
 
 def build_otf(
@@ -307,6 +441,7 @@ def build_otf(
     font_style: str = "Regular",
     letter_spacing: int = 0,
     space_width: int = DEFAULT_ADVANCE_WIDTH,
+    positional: Optional[Dict[str, Dict[str, str]]] = None,
 ) -> bytes:
     """
     Assemble an OTF font from a list of vectorized glyphs.
@@ -372,6 +507,7 @@ def build_otf(
             g.svg_paths, g.svg_width, g.svg_height,
             g.baseline_y_in_svg, g.is_lowercase,
             upscale_factor=g.upscale_factor,
+            form=g.form,
         )
         # Keep CFF charstring width consistent with hmtx (both include letter_spacing)
         if letter_spacing != 0 and cs.program and isinstance(cs.program[0], (int, float)):
@@ -452,11 +588,20 @@ def build_otf(
     now = int(time.time()) + mac_epoch_offset
     fb.setupHead(unitsPerEm=UPM, created=now, modified=now)
 
-    # Add OpenType features (calt, ss01, ss02)
+    # Add OpenType features. Two independent contributions to `calt`:
+    #   - alternates cycling (slot-based, print mode)
+    #   - positional substitution (init/medi/fina, cursive mode)
+    # Concatenated into one FEA blob; feaLib can compile multiple
+    # `feature calt { ... }` blocks just fine.
     fea_warning = None
+    fea_blocks: List[str] = []
     alternates = _collect_alternates(glyphs)
     if alternates:
-        fea_code = _build_fea_code(alternates, all_glyph_names=glyph_order)
+        fea_blocks.append(_build_fea_code(alternates, all_glyph_names=glyph_order))
+    if positional:
+        fea_blocks.append(_build_cursive_fea_code(positional, available_glyphs=glyph_order))
+    if fea_blocks:
+        fea_code = "\n\n".join(b for b in fea_blocks if b)
         try:
             addOpenTypeFeatures(fb.font, io.StringIO(fea_code))
         except Exception as e:
@@ -511,18 +656,23 @@ def _build_charstring_from_svg(
     baseline_y_in_svg: int,
     is_lowercase: bool,
     upscale_factor: float = 1.0,
+    form: str = "iso",
 ) -> Tuple["T2CharString", int]:
     """Build a CFF T2CharString by drawing SVG paths. Returns (charstring, advance_width)."""
     from fontTools.pens.t2CharStringPen import T2CharStringPen
 
     coord_scale = CELL_SCALE / upscale_factor if upscale_factor > 0 else CELL_SCALE
-    advance = int(svg_width * coord_scale) + 60 if svg_width > 0 else DEFAULT_ADVANCE_WIDTH
+    if svg_width > 0:
+        _, adv_extra = _bearing_offsets(form, coord_scale)
+        advance = int(svg_width * coord_scale) + adv_extra
+    else:
+        advance = DEFAULT_ADVANCE_WIDTH
 
     pen = T2CharStringPen(advance, glyphSet=None)
 
     _draw_svg_paths_to_pen(
         pen, svg_paths, svg_width, svg_height,
-        baseline_y_in_svg, upscale_factor=upscale_factor,
+        baseline_y_in_svg, upscale_factor=upscale_factor, form=form,
     )
 
     return pen.getCharString(), advance

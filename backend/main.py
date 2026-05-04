@@ -23,7 +23,7 @@ import traceback
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
@@ -283,6 +283,23 @@ def _build_font_job(job_id: str):
         line_glyphs: List[GlyphData] = []
         line_skipped: List[str] = []
 
+        # Cursive vs print: any glyph with a non-iso form means cursive flow.
+        # In cursive mode, the iso form gets the bare cmap mapping (a → "a")
+        # and init/medi/fina forms become named variants ("a.init", etc.)
+        # picked up by the calt positional rules.
+        is_cursive = any(
+            (e.get("form") or "iso") != "iso"
+            for e in manifest
+            if e.get("has_glyph") and e["glyph_id"] in approved_ids
+        )
+
+        from processing.centerline import polyline_paths_to_svg
+
+        # positional[char] -> {"init": "a.init", "medi": "a.medi", "fina": "a.fina"}
+        # only filled in cursive mode and only for letters that actually have
+        # those forms drawn.
+        positional: Dict[str, Dict[str, str]] = {}
+
         for entry in manifest:
             glyph_id = entry["glyph_id"]
             if glyph_id not in approved_ids:
@@ -292,7 +309,8 @@ def _build_font_job(job_id: str):
 
             char = entry["char"]
             slot = entry["slot"]
-            glyph_name = char_to_glyph_name(char, slot)
+            form = entry.get("form") or "iso"
+            glyph_name = char_to_glyph_name(char, slot, form)
             svg_w = entry.get("svg_width", 0)
             svg_h = entry.get("svg_height", 0)
             baseline_y = entry.get("baseline_y", 0)
@@ -306,13 +324,11 @@ def _build_font_job(job_id: str):
                 baseline_y_in_svg=baseline_y,
                 is_lowercase=is_lower,
                 upscale_factor=upscale_factor,
+                form=form,
             ))
 
-            # Line font: prefer raw pen_paths from the canvas (perfect centerline).
-            # Phase 1 will smooth these into Beziers. For now they go in as polylines.
             pen_paths = entry.get("pen_paths") or []
             if pen_paths:
-                from processing.centerline import polyline_paths_to_svg
                 line_svg = polyline_paths_to_svg(pen_paths)
                 if line_svg:
                     line_glyphs.append(GlyphData(
@@ -322,11 +338,56 @@ def _build_font_job(job_id: str):
                         baseline_y_in_svg=baseline_y,
                         is_lowercase=is_lower,
                         upscale_factor=upscale_factor,
+                        form=form,
                     ))
                 else:
                     line_skipped.append(glyph_id)
             else:
                 line_skipped.append(glyph_id)
+
+            # Track positional variants per base char (cursive mode only).
+            if is_cursive and is_lower and form in ("init", "medi", "fina"):
+                positional.setdefault(char, {})[form] = glyph_name
+
+        # If a cursive lowercase letter has positional forms but no iso form
+        # was drawn, cmap can't map the Unicode codepoint to anything. Fall
+        # back to medi (then fina, then init) so the letter still renders in
+        # standalone use.
+        if is_cursive:
+            existing_iso = {
+                g.char for g in dimensional_glyphs
+                if g.glyph_name == g.char and g.char in lowercase_chars
+            }
+            for char, forms in list(positional.items()):
+                if char in existing_iso:
+                    continue
+                fallback_form = next(
+                    (f for f in ("medi", "fina", "init") if f in forms),
+                    None,
+                )
+                if not fallback_form:
+                    continue
+                source_name = forms[fallback_form]
+                source_dim = next((g for g in dimensional_glyphs if g.glyph_name == source_name), None)
+                source_line = next((g for g in line_glyphs if g.glyph_name == source_name), None)
+                if source_dim:
+                    dimensional_glyphs.append(GlyphData(
+                        char=char, slot=0, glyph_name=char,
+                        svg_paths=source_dim.svg_paths,
+                        svg_width=source_dim.svg_width, svg_height=source_dim.svg_height,
+                        baseline_y_in_svg=source_dim.baseline_y_in_svg,
+                        is_lowercase=True,
+                        upscale_factor=source_dim.upscale_factor,
+                    ))
+                if source_line:
+                    line_glyphs.append(GlyphData(
+                        char=char, slot=0, glyph_name=char,
+                        svg_paths=source_line.svg_paths,
+                        svg_width=source_line.svg_width, svg_height=source_line.svg_height,
+                        baseline_y_in_svg=source_line.baseline_y_in_svg,
+                        is_lowercase=True,
+                        upscale_factor=source_line.upscale_factor,
+                    ))
 
         job_store.update_state(job_id, progress_pct=25)
 
@@ -335,6 +396,7 @@ def _build_font_job(job_id: str):
 
         otf_bytes, fea_warning = build_otf(
             dimensional_glyphs, font_name, font_style, letter_spacing, space_width,
+            positional=positional or None,
         )
         job_store.update_state(job_id, progress_pct=50)
         woff2_bytes = otf_to_woff2(otf_bytes)
@@ -346,6 +408,7 @@ def _build_font_job(job_id: str):
         if line_glyphs:
             line_otf_bytes, line_fea_warning = build_otf(
                 line_glyphs, font_name, "Line", letter_spacing, space_width,
+                positional=positional or None,
             )
             job_store.update_state(job_id, progress_pct=85)
             line_woff2_bytes = otf_to_woff2(line_otf_bytes)
