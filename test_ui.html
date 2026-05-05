@@ -258,6 +258,35 @@
     border: 1px solid #e2d9cc; border-radius: 8px; cursor: crosshair;
     touch-action: none; background: #fffef9;
   }
+  /* Wraps the canvas with margins on all sides for cursive handles. */
+  .canvas-frame {
+    position: relative;
+    padding: 18px 18px 18px 18px;  /* room for the handles outside */
+  }
+  /* Cursive connector handles — live OUTSIDE the canvas so they never
+     intercept stroke drawing. Hidden until cursive mode + non-iso form. */
+  .conn-handle {
+    position: absolute; display: none;
+    width: 18px; height: 18px;
+    background: #e89c5a; border: 2px solid #7d4f1f; border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.18);
+    cursor: grab; user-select: none; touch-action: none; z-index: 5;
+  }
+  .conn-handle:hover { background: #f0b27a; }
+  .conn-handle.dragging { cursor: grabbing; background: #d68b48; }
+  .conn-handle.locked { background: #a89688; border-color: #5c4f3e; cursor: not-allowed; opacity: 0.55; }
+  .conn-handle.locked::after {
+    content: ''; position: absolute; top: 7px; left: 1px; right: 1px;
+    height: 4px; background: #5c4f3e; border-radius: 2px;
+  }
+  /* Y handle: positioned on the LEFT margin, vertical drag */
+  .conn-y { left: -2px; }
+  /* X handles: positioned on the TOP margin, horizontal drag */
+  .conn-entry, .conn-exit { top: -2px; }
+  .canvas-cursive-hint {
+    font-size: 12px; color: #8c7b6b; margin-top: 6px; font-style: italic;
+    text-align: center;
+  }
   .draw-panel {
     width: 262px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;
   }
@@ -432,7 +461,16 @@
         <div class="draw-char-display" id="draw-char-display">A</div>
         <div class="draw-slot-display" id="draw-slot-display">Primary</div>
       </div>
-      <canvas id="draw-canvas" width="300" height="400"></canvas>
+      <!-- Canvas is wrapped so cursive connector handles can sit *outside*
+           the drawing area and never interfere with strokes. -->
+      <div class="canvas-frame" id="canvas-frame">
+        <!-- Connector handles: y on top edge (locks after first stroke),
+             entry x on left margin, exit x on right margin -->
+        <div class="conn-handle conn-y"     id="conn-handle-y"     title="Drag up/down to set the cursive connection height. Locks once you start drawing."></div>
+        <div class="conn-handle conn-entry" id="conn-handle-entry" title="Drag left/right to fine-tune the entry-hook x position for this letter."></div>
+        <div class="conn-handle conn-exit"  id="conn-handle-exit"  title="Drag left/right to fine-tune the exit-tail x position for this letter."></div>
+        <canvas id="draw-canvas" width="300" height="400"></canvas>
+      </div>
       <div class="draw-nav-row">
         <button id="prev-char-btn" class="ctrl-btn" onclick="navChar(-1)">← Prev</button>
         <span id="draw-progress-label">1 / 78</span>
@@ -1028,7 +1066,13 @@ const drawState = {
   // Default = halfway between baseline and x-height — the natural cursive
   // joining height. Shared across all letters so connections line up.
   cursiveConnY: (GUIDELINES.baseline + GUIDELINES.xheight) / 2,
-  draggingConnector: null,
+  // True once any cursive stroke has been drawn — locks the y handle so
+  // subsequent letters can't drift away from the established connection y.
+  cursiveLocked: false,
+  // Per-(char, form) entry/exit x positions. {[char_form]: {entry, exit}}.
+  // Lets each letter widen / narrow its connection points to fit its
+  // natural glyph width without affecting other letters.
+  cursiveX: {},
 };
 
 function _ensure(d, ...keys) {
@@ -1105,6 +1149,7 @@ function updateDrawUI() {
   renderFormTabs();
   updateNavButtons();
   renderCanvas();
+  positionConnectorHandles();
 }
 function renderSlotTabs() {
   const char = drawState.currentChar;
@@ -1170,6 +1215,8 @@ function initDrawCanvas() {
   drawCanvas.addEventListener('pointerup', onPointerUp);
   drawCanvas.addEventListener('pointercancel', onPointerUp);
   renderCanvas();
+  attachConnectorHandles();
+  positionConnectorHandles();
 }
 
 function toCanvasPoint(e) {
@@ -1210,14 +1257,6 @@ function onPointerDown(e) {
   drawState.smoothedPoint = null;
   const pt = toCanvasPoint(e);
   drawState.lastPoint = pt;
-  // Cursive: clicking on a connector marker starts a vertical drag instead
-  // of a stroke. The connector y is shared across all letters so dragging
-  // it on any cell repositions the connection point everywhere.
-  const hit = isOverConnector(pt.x, pt.y);
-  if (hit) {
-    drawState.draggingConnector = hit;
-    return;
-  }
   if (drawState.eraserMode) { eraseStrokeAt(pt.x, pt.y); return; }
   drawState.isDrawing = true;
   drawState.currentStroke = [pt];
@@ -1225,38 +1264,26 @@ function onPointerDown(e) {
 }
 function onPointerMove(e) {
   e.preventDefault();
+  if (!drawState.isDrawing) return;
   const pt = toCanvasPoint(e);
   drawState.lastPoint = pt;
-  if (drawState.draggingConnector) {
-    // Constrain to the cap-to-descender band so the marker can't escape.
-    const minY = GUIDELINES.cap;
-    const maxY = GUIDELINES.descender;
-    drawState.cursiveConnY = Math.max(minY, Math.min(maxY, pt.y));
-    drawCanvas.style.cursor = 'grabbing';
-    renderCanvas();
-    return;
-  }
-  if (!drawState.isDrawing) {
-    // Hover hint: cursor turns into a grab handle when over a marker
-    drawCanvas.style.cursor = isOverConnector(pt.x, pt.y) ? 'grab' : '';
-    return;
-  }
   drawState.currentStroke.push(pt);
   renderCanvas();
 }
 function onPointerUp(e) {
-  if (drawState.draggingConnector) {
-    drawState.draggingConnector = null;
-    renderCanvas();
-    return;
-  }
   if (!drawState.isDrawing) return;
   drawState.isDrawing = false;
   if (drawState.currentStroke.length > 1) {
-    const {currentChar: char, currentSlot: slot} = drawState;
+    const {currentChar: char, currentSlot: slot, currentForm: form} = drawState;
     getStrokes(char, slot).push([...drawState.currentStroke]);
     getRedoStack(char, slot).length = 0;
     updateCharCellStatus(char);
+    // First cursive stroke ever locks the global connection y so subsequent
+    // letters can't drift to a different connection height.
+    if (drawMode === 'cursive') {
+      drawState.cursiveLocked = true;
+      positionConnectorHandles();
+    }
   }
   drawState.currentStroke = [];
   renderCanvas();
@@ -1335,13 +1362,16 @@ function drawCursiveGuides(ctx) {
   }
 }
 
-// Returns {entry: {x,y}, exit: {x,y}} for the current canvas + drawState.
+// Returns {entry: {x,y}, exit: {x,y}} for the current letter's connectors.
+// X is per-(char, form) so each letter can dial in its own connection
+// position to match its natural width; y is shared across all letters so
+// they connect at the same height.
 function connectorPositions() {
-  const inset = 30;  // canvas px in from the edges — wider visual breathing room
+  const conn = getConnX(drawState.currentChar, drawState.currentForm);
   const y = drawState.cursiveConnY;
   return {
-    entry: {x: inset, y},
-    exit:  {x: DRAW_W - inset, y},
+    entry: {x: conn.entry, y},
+    exit:  {x: conn.exit,  y},
   };
 }
 
@@ -1366,16 +1396,134 @@ function drawConnectorMarker(ctx, pt, arrow) {
   ctx.restore();
 }
 
-function isOverConnector(x, y) {
-  if (drawMode !== 'cursive' || drawState.currentForm === 'iso') return null;
-  const HIT = 14;  // generous hit radius for easy grabbing
-  const p = connectorPositions();
+// Per-(char, form) entry / exit x positions. Defaults to 30 inset on each
+// side; user can drag the handles to widen/narrow per letter for natural
+// glyph-width fit.
+function getConnX(char, form) {
+  const key = `${char}_${form}`;
+  if (!drawState.cursiveX[key]) {
+    drawState.cursiveX[key] = {entry: 30, exit: DRAW_W - 30};
+  }
+  return drawState.cursiveX[key];
+}
+function setConnX(char, form, side, x) {
+  const cur = getConnX(char, form);
+  cur[side] = x;
+}
+
+// Move the three external handle DOM elements to reflect drawState.
+function positionConnectorHandles() {
+  const yEl = document.getElementById('conn-handle-y');
+  const eEl = document.getElementById('conn-handle-entry');
+  const xEl = document.getElementById('conn-handle-exit');
+  if (!yEl || !drawCanvas) return;
+  const showCursive = drawMode === 'cursive' && drawState.currentForm !== 'iso';
+  if (!showCursive) {
+    yEl.style.display = 'none';
+    eEl.style.display = 'none';
+    xEl.style.display = 'none';
+    return;
+  }
+  // Convert canvas-space coords to wrapper-relative pixels (accounts for the
+  // canvas being scaled to fit its container).
+  const wrapper = document.getElementById('canvas-frame');
+  const cRect = drawCanvas.getBoundingClientRect();
+  const wRect = wrapper.getBoundingClientRect();
+  const offX = cRect.left - wRect.left;
+  const offY = cRect.top - wRect.top;
+  const sx = cRect.width / DRAW_W;
+  const sy = cRect.height / DRAW_H;
+  const HALF = 9; // half handle size
+
+  // Y handle: vertical position = cursiveConnY (canvas coords), horizontal
+  // pinned to left edge of canvas (just inside the wrapper margin).
+  yEl.style.display = 'block';
+  yEl.style.left = (offX - HALF) + 'px';
+  yEl.style.top = (offY + drawState.cursiveConnY * sy - HALF) + 'px';
+  yEl.classList.toggle('locked', !!drawState.cursiveLocked);
+
+  const conn = getConnX(drawState.currentChar, drawState.currentForm);
   const f = drawState.currentForm;
-  if ((f === 'medi' || f === 'fina') &&
-      Math.hypot(x - p.entry.x, y - p.entry.y) <= HIT) return 'entry';
-  if ((f === 'init' || f === 'medi') &&
-      Math.hypot(x - p.exit.x, y - p.exit.y) <= HIT) return 'exit';
-  return null;
+  // Entry x handle: above canvas, x = entry x (only for medi/fina)
+  if (f === 'medi' || f === 'fina') {
+    eEl.style.display = 'block';
+    eEl.style.left = (offX + conn.entry * sx - HALF) + 'px';
+    eEl.style.top = (offY - HALF) + 'px';
+  } else {
+    eEl.style.display = 'none';
+  }
+  // Exit x handle: above canvas, x = exit x (only for init/medi)
+  if (f === 'init' || f === 'medi') {
+    xEl.style.display = 'block';
+    xEl.style.left = (offX + conn.exit * sx - HALF) + 'px';
+    xEl.style.top = (offY - HALF) + 'px';
+  } else {
+    xEl.style.display = 'none';
+  }
+}
+
+function attachConnectorHandles() {
+  const yEl = document.getElementById('conn-handle-y');
+  const eEl = document.getElementById('conn-handle-entry');
+  const xEl = document.getElementById('conn-handle-exit');
+  if (!yEl || yEl.dataset.bound === '1') return;
+
+  // Y handle: vertical drag, locked once any cursive stroke has been drawn
+  yEl.addEventListener('pointerdown', (ev) => {
+    ev.preventDefault(); ev.stopPropagation();
+    if (drawState.cursiveLocked) return;
+    const startY = ev.clientY;
+    const startVal = drawState.cursiveConnY;
+    yEl.classList.add('dragging');
+    yEl.setPointerCapture(ev.pointerId);
+    const sy = drawCanvas.getBoundingClientRect().height / DRAW_H;
+    const onMove = (e) => {
+      const dy = (e.clientY - startY) / sy;
+      const ny = Math.max(GUIDELINES.cap, Math.min(GUIDELINES.descender, startVal + dy));
+      drawState.cursiveConnY = ny;
+      positionConnectorHandles();
+      renderCanvas();
+    };
+    const onUp = () => {
+      yEl.classList.remove('dragging');
+      yEl.removeEventListener('pointermove', onMove);
+      yEl.removeEventListener('pointerup', onUp);
+    };
+    yEl.addEventListener('pointermove', onMove);
+    yEl.addEventListener('pointerup', onUp);
+  });
+
+  function bindXHandle(el, side) {
+    el.addEventListener('pointerdown', (ev) => {
+      ev.preventDefault(); ev.stopPropagation();
+      const startX = ev.clientX;
+      const conn = getConnX(drawState.currentChar, drawState.currentForm);
+      const startVal = conn[side];
+      el.classList.add('dragging');
+      el.setPointerCapture(ev.pointerId);
+      const sx = drawCanvas.getBoundingClientRect().width / DRAW_W;
+      const onMove = (e) => {
+        const dx = (e.clientX - startX) / sx;
+        const nx = Math.max(0, Math.min(DRAW_W, startVal + dx));
+        setConnX(drawState.currentChar, drawState.currentForm, side, nx);
+        positionConnectorHandles();
+        renderCanvas();
+      };
+      const onUp = () => {
+        el.classList.remove('dragging');
+        el.removeEventListener('pointermove', onMove);
+        el.removeEventListener('pointerup', onUp);
+      };
+      el.addEventListener('pointermove', onMove);
+      el.addEventListener('pointerup', onUp);
+    });
+  }
+  bindXHandle(eEl, 'entry');
+  bindXHandle(xEl, 'exit');
+  yEl.dataset.bound = '1';
+
+  // Reposition on window resize since canvas is fluid
+  window.addEventListener('resize', positionConnectorHandles);
 }
 
 function drawGuidelines(ctx) {
@@ -1603,7 +1751,8 @@ function startDrawMode(mode) {
     currentStroke: [], isDrawing: false,
     tool: 'pen', toolSize: 14, eraserMode: false, lastPoint: null, smoothedPoint: null,
     cursiveConnY: (GUIDELINES.baseline + GUIDELINES.xheight) / 2,
-    draggingConnector: null,
+    cursiveLocked: false,
+    cursiveX: {},
   });
   buildCharGrid();
   goTo('page-draw');
@@ -1715,6 +1864,16 @@ async function sendToReview() {
       const xShift = minX - PAD;
       const svgWidth = Math.round(maxX - minX + PAD * 2);
 
+      // Per-letter cursive connector x positions (in canvas coords pre-xShift).
+      // Send shifted to match the submitted stroke coordinate system so the
+      // backend can use them directly in bearing math.
+      let entryX = null, exitX = null;
+      if (drawMode === 'cursive' && t.form !== 'iso') {
+        const conn = getConnX(t.char, t.form);
+        if (t.form === 'medi' || t.form === 'fina') entryX = Math.round(conn.entry - xShift);
+        if (t.form === 'init' || t.form === 'medi') exitX = Math.round(conn.exit - xShift);
+      }
+
       const res = await fetch(`${API}/draw/${job_id}/glyph`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -1730,6 +1889,10 @@ async function sendToReview() {
           baseline_y: Math.round(GUIDELINES.baseline),
           upscale_factor: 1.0,
           thumbnail_png_b64: glyphThumbnailB64(t.char, t.slot, t.form),
+          entry_x: entryX,
+          exit_x: exitX,
+          entry_y: Math.round(drawState.cursiveConnY),
+          exit_y: Math.round(drawState.cursiveConnY),
         }),
       });
       if (!res.ok) {

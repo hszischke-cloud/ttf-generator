@@ -129,33 +129,53 @@ def _parse_svg_path_commands(d: str) -> List[Tuple]:
     return commands
 
 
-def _bearing_offsets(form: str, coord_scale: float) -> Tuple[float, int]:
+def _bearing_offsets(
+    form: str,
+    coord_scale: float,
+    svg_width: int = 0,
+    entry_x: Optional[float] = None,
+    exit_x:  Optional[float] = None,
+) -> Tuple[float, int]:
     """
     Return (x_offset, advance_extra) for a glyph's positional form.
 
-    The canvas always pads the ink bbox by CANVAS_PAD pixels on each side
-    (LSB and RSB). For cursive forms with connectors we eat that padding
-    on the connecting side(s) so consecutive letters visually touch.
+    Two paths:
 
-    Returns:
-      x_offset: shift applied to every drawn point in font space (UPM)
-      advance_extra: amount added to advance = svg_width * coord_scale
-                     (positive = looser spacing, negative = tighter)
+    * If `entry_x` and/or `exit_x` are given (post-xShift canvas px),
+      compute bearings from the user-set connection points. This lets each
+      letter dial in its own connection x to match its natural width.
+        - x_offset places `entry_x` at font x=0 (medi/fina)
+        - advance places `exit_x` at font x=advance (init/medi)
+
+    * Otherwise fall back to the canvas-PAD assumption (legacy behaviour).
     """
     pad_upm = CANVAS_PAD * coord_scale
+
+    def x_for_entry(ex: float) -> float:
+        return -float(ex) * coord_scale
+
+    def adv_for_exit(ex: float, x_off: float) -> int:
+        # advance = font x of exit point = exit_x_canvas * cs + x_offset
+        return int(float(ex) * coord_scale + x_off)
+
     if form == "init":
-        # No left connector (word start) — keep canvas LSB.
-        # Right connector — strip canvas RSB so next letter starts at exit tip.
-        return 0.0, -int(pad_upm)
+        x_off = 0.0
+        if exit_x is not None and svg_width > 0:
+            return x_off, adv_for_exit(exit_x, x_off) - int(svg_width * coord_scale)
+        return x_off, -int(pad_upm)
+
     if form == "medi":
-        # Both connectors — strip both LSB and RSB.
-        return -pad_upm, -int(pad_upm)
+        x_off = x_for_entry(entry_x) if entry_x is not None else -pad_upm
+        if exit_x is not None and svg_width > 0:
+            return x_off, adv_for_exit(exit_x, x_off) - int(svg_width * coord_scale)
+        return x_off, -int(2 * pad_upm)
+
     if form == "fina":
-        # Left connector — strip canvas LSB.
-        # No right connector (word end) — keep canvas RSB plus a touch extra.
-        return -pad_upm, 0
-    # iso (and print mode default): keep canvas padding plus the historical
-    # +60 UPM trailing bearing for breathing room between standalone letters.
+        x_off = x_for_entry(entry_x) if entry_x is not None else -pad_upm
+        return x_off, 0
+
+    # iso (and print mode default): canvas PAD + historical +60 UPM trailing
+    # breathing room between standalone letters.
     return 0.0, 60
 
 
@@ -169,6 +189,8 @@ def _draw_svg_paths_to_pen(
     is_lowercase: bool = False,        # unused, kept for compat
     upscale_factor: float = 1.0,
     form: str = "iso",
+    entry_x: Optional[float] = None,
+    exit_x:  Optional[float] = None,
 ) -> int:
     """
     Draw SVG paths into a fonttools pen, applying coordinate transform and
@@ -182,7 +204,7 @@ def _draw_svg_paths_to_pen(
     coord_scale = CELL_SCALE / upscale_factor
     y_offset = baseline_y_in_svg * CELL_SCALE
 
-    x_offset, adv_extra = _bearing_offsets(form, coord_scale)
+    x_offset, adv_extra = _bearing_offsets(form, coord_scale, svg_width, entry_x, exit_x)
     advance_width = int(svg_width * coord_scale) + adv_extra
 
     pen.beginPath = getattr(pen, 'beginPath', None)
@@ -430,6 +452,10 @@ class GlyphData:
     is_lowercase: bool
     upscale_factor: float = 1.0
     form: str = "iso"        # iso, init, medi, fina — cursive positional
+    # Per-glyph cursive connection x positions in submitted (post-xShift)
+    # canvas coordinates. None falls back to the canvas-PAD assumption.
+    entry_x: Optional[float] = None
+    exit_x:  Optional[float] = None
 
 
 # Canvas PAD value — the JS-side canvas adds this many pixels of padding on
@@ -511,6 +537,7 @@ def build_otf(
             g.baseline_y_in_svg, g.is_lowercase,
             upscale_factor=g.upscale_factor,
             form=g.form,
+            entry_x=g.entry_x, exit_x=g.exit_x,
         )
         # Keep CFF charstring width consistent with hmtx (both include letter_spacing)
         if letter_spacing != 0 and cs.program and isinstance(cs.program[0], (int, float)):
@@ -660,13 +687,15 @@ def _build_charstring_from_svg(
     is_lowercase: bool,
     upscale_factor: float = 1.0,
     form: str = "iso",
+    entry_x: Optional[float] = None,
+    exit_x:  Optional[float] = None,
 ) -> Tuple["T2CharString", int]:
     """Build a CFF T2CharString by drawing SVG paths. Returns (charstring, advance_width)."""
     from fontTools.pens.t2CharStringPen import T2CharStringPen
 
     coord_scale = CELL_SCALE / upscale_factor if upscale_factor > 0 else CELL_SCALE
     if svg_width > 0:
-        _, adv_extra = _bearing_offsets(form, coord_scale)
+        _, adv_extra = _bearing_offsets(form, coord_scale, svg_width, entry_x, exit_x)
         advance = int(svg_width * coord_scale) + adv_extra
     else:
         advance = DEFAULT_ADVANCE_WIDTH
@@ -676,6 +705,7 @@ def _build_charstring_from_svg(
     _draw_svg_paths_to_pen(
         pen, svg_paths, svg_width, svg_height,
         baseline_y_in_svg, upscale_factor=upscale_factor, form=form,
+        entry_x=entry_x, exit_x=exit_x,
     )
 
     return pen.getCharString(), advance

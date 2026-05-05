@@ -144,8 +144,10 @@ async def draw_submit_glyph(job_id: str, req: DrawGlyphRequest):
         "baseline_y": req.baseline_y,
         "upscale_factor": req.upscale_factor,
         "form": req.form,
+        "entry_x": req.entry_x,
+        "exit_x":  req.exit_x,
         "entry_y": req.entry_y,
-        "exit_y": req.exit_y,
+        "exit_y":  req.exit_y,
     }
     manifest = [e for e in manifest if e["glyph_id"] != req.glyph_id]
     manifest.append(entry)
@@ -317,6 +319,9 @@ def _build_font_job(job_id: str):
             upscale_factor = entry.get("upscale_factor", 1.0)
             is_lower = char in lowercase_chars
 
+            entry_x = entry.get("entry_x")
+            exit_x  = entry.get("exit_x")
+
             dimensional_glyphs.append(GlyphData(
                 char=char, slot=slot, glyph_name=glyph_name,
                 svg_paths=entry.get("svg_paths", []),
@@ -325,6 +330,7 @@ def _build_font_job(job_id: str):
                 is_lowercase=is_lower,
                 upscale_factor=upscale_factor,
                 form=form,
+                entry_x=entry_x, exit_x=exit_x,
             ))
 
             pen_paths = entry.get("pen_paths") or []
@@ -339,6 +345,7 @@ def _build_font_job(job_id: str):
                         is_lowercase=is_lower,
                         upscale_factor=upscale_factor,
                         form=form,
+                        entry_x=entry_x, exit_x=exit_x,
                     ))
                 else:
                     line_skipped.append(glyph_id)

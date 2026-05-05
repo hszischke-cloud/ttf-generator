@@ -72,5 +72,11 @@ class DrawGlyphRequest(BaseModel):
 
     # Cursive-mode metadata (None / 0 in print mode)
     form: str = "iso"       # one of: iso (isolated), init, medi, fina
-    entry_y: Optional[float] = None  # y in canvas coords where this glyph wants its left connection
-    exit_y: Optional[float] = None   # y where the right connection should land
+    # x positions in submitted (post-xShift) canvas coords where the user
+    # wants the connection to land. Backend uses these in bearing math
+    # instead of assuming canvas PAD, which lets each letter dial in its
+    # own connection x to fit its natural width.
+    entry_x: Optional[float] = None
+    exit_x: Optional[float] = None
+    entry_y: Optional[float] = None
+    exit_y: Optional[float] = None
