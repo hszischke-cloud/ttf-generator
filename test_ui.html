@@ -1024,6 +1024,11 @@ const drawState = {
   eraserMode: false,
   lastPoint: null,
   smoothedPoint: null,
+  // Y position of the cursive entry/exit connector markers (canvas px).
+  // Default = halfway between baseline and x-height — the natural cursive
+  // joining height. Shared across all letters so connections line up.
+  cursiveConnY: (GUIDELINES.baseline + GUIDELINES.xheight) / 2,
+  draggingConnector: null,
 };
 
 function _ensure(d, ...keys) {
@@ -1202,9 +1207,17 @@ function computePressure(rawPressure, x, y, t, pointerType) {
 function onPointerDown(e) {
   e.preventDefault();
   drawCanvas.setPointerCapture(e.pointerId);
-  drawState.smoothedPoint = null;  // reset smoothing at each new stroke
+  drawState.smoothedPoint = null;
   const pt = toCanvasPoint(e);
   drawState.lastPoint = pt;
+  // Cursive: clicking on a connector marker starts a vertical drag instead
+  // of a stroke. The connector y is shared across all letters so dragging
+  // it on any cell repositions the connection point everywhere.
+  const hit = isOverConnector(pt.x, pt.y);
+  if (hit) {
+    drawState.draggingConnector = hit;
+    return;
+  }
   if (drawState.eraserMode) { eraseStrokeAt(pt.x, pt.y); return; }
   drawState.isDrawing = true;
   drawState.currentStroke = [pt];
@@ -1212,13 +1225,31 @@ function onPointerDown(e) {
 }
 function onPointerMove(e) {
   e.preventDefault();
-  if (!drawState.isDrawing) return;
   const pt = toCanvasPoint(e);
   drawState.lastPoint = pt;
+  if (drawState.draggingConnector) {
+    // Constrain to the cap-to-descender band so the marker can't escape.
+    const minY = GUIDELINES.cap;
+    const maxY = GUIDELINES.descender;
+    drawState.cursiveConnY = Math.max(minY, Math.min(maxY, pt.y));
+    drawCanvas.style.cursor = 'grabbing';
+    renderCanvas();
+    return;
+  }
+  if (!drawState.isDrawing) {
+    // Hover hint: cursor turns into a grab handle when over a marker
+    drawCanvas.style.cursor = isOverConnector(pt.x, pt.y) ? 'grab' : '';
+    return;
+  }
   drawState.currentStroke.push(pt);
   renderCanvas();
 }
 function onPointerUp(e) {
+  if (drawState.draggingConnector) {
+    drawState.draggingConnector = null;
+    renderCanvas();
+    return;
+  }
   if (!drawState.isDrawing) return;
   drawState.isDrawing = false;
   if (drawState.currentStroke.length > 1) {
@@ -1275,39 +1306,76 @@ function renderCanvas() {
 }
 
 // In cursive mode, paint connector hooks at the entry / exit points of the
-// active form so the user knows where to land their pen tail.
+// active form so the user knows where to land their pen tail. Markers are
+// big and visible; the y-position is shared across all letters and can be
+// dragged (from any marker) to adjust globally.
 function drawCursiveGuides(ctx) {
   if (drawMode !== 'cursive') return;
   const form = drawState.currentForm;
   if (form === 'iso') return;
-  const baseline = GUIDELINES.baseline;
-  const HOOK = 18;  // canvas px — visual length of the hook
+  const positions = connectorPositions();
+
+  // Subtle horizontal guide across the whole canvas at the connector y so
+  // the user can see at a glance whether their stroke endings line up.
   ctx.save();
-  ctx.strokeStyle = '#e89c5a';
-  ctx.fillStyle = '#e89c5a';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([4, 3]);
-  // Entry hook on the left for medi/fina forms — comes UP into the letter
-  if (form === 'medi' || form === 'fina') {
-    ctx.beginPath();
-    ctx.moveTo(0, baseline);
-    ctx.lineTo(HOOK, baseline);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.beginPath(); ctx.arc(HOOK, baseline, 3, 0, Math.PI * 2); ctx.fill();
-  }
-  // Exit tail on the right for init/medi forms — leaves the letter and
-  // continues to the next glyph
-  ctx.setLineDash([4, 3]);
-  if (form === 'init' || form === 'medi') {
-    ctx.beginPath();
-    ctx.moveTo(DRAW_W - HOOK, baseline);
-    ctx.lineTo(DRAW_W, baseline);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.beginPath(); ctx.arc(DRAW_W - HOOK, baseline, 3, 0, Math.PI * 2); ctx.fill();
-  }
+  ctx.strokeStyle = 'rgba(232, 156, 90, 0.35)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([2, 4]);
+  ctx.beginPath();
+  ctx.moveTo(0, positions.entry.y);
+  ctx.lineTo(DRAW_W, positions.entry.y);
+  ctx.stroke();
   ctx.restore();
+
+  if (form === 'medi' || form === 'fina') {
+    drawConnectorMarker(ctx, positions.entry, '←');
+  }
+  if (form === 'init' || form === 'medi') {
+    drawConnectorMarker(ctx, positions.exit, '→');
+  }
+}
+
+// Returns {entry: {x,y}, exit: {x,y}} for the current canvas + drawState.
+function connectorPositions() {
+  const inset = 30;  // canvas px in from the edges — wider visual breathing room
+  const y = drawState.cursiveConnY;
+  return {
+    entry: {x: inset, y},
+    exit:  {x: DRAW_W - inset, y},
+  };
+}
+
+function drawConnectorMarker(ctx, pt, arrow) {
+  ctx.save();
+  // Bright orange fill with a ring so it pops against any underlying strokes
+  ctx.fillStyle = '#e89c5a';
+  ctx.strokeStyle = '#7d4f1f';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(pt.x, pt.y, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  // White donut hole then a small filled centre so the exact connection
+  // point is unmistakable
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#7d4f1f';
+  ctx.beginPath(); ctx.arc(pt.x, pt.y, 1.5, 0, Math.PI * 2); ctx.fill();
+  // Direction arrow above the marker so it's clear which side connects out
+  ctx.fillStyle = '#7d4f1f';
+  ctx.font = 'bold 14px system-ui';
+  ctx.textAlign = 'center';
+  ctx.fillText(arrow, pt.x, pt.y - 16);
+  ctx.restore();
+}
+
+function isOverConnector(x, y) {
+  if (drawMode !== 'cursive' || drawState.currentForm === 'iso') return null;
+  const HIT = 14;  // generous hit radius for easy grabbing
+  const p = connectorPositions();
+  const f = drawState.currentForm;
+  if ((f === 'medi' || f === 'fina') &&
+      Math.hypot(x - p.entry.x, y - p.entry.y) <= HIT) return 'entry';
+  if ((f === 'init' || f === 'medi') &&
+      Math.hypot(x - p.exit.x, y - p.exit.y) <= HIT) return 'exit';
+  return null;
 }
 
 function drawGuidelines(ctx) {
@@ -1534,6 +1602,8 @@ function startDrawMode(mode) {
     slotCounts: {}, strokes: {}, redoStacks: {},
     currentStroke: [], isDrawing: false,
     tool: 'pen', toolSize: 14, eraserMode: false, lastPoint: null, smoothedPoint: null,
+    cursiveConnY: (GUIDELINES.baseline + GUIDELINES.xheight) / 2,
+    draggingConnector: null,
   });
   buildCharGrid();
   goTo('page-draw');
