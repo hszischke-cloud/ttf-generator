@@ -1026,13 +1026,21 @@ const DRAW_CHARS = [
   ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
   ...'abcdefghijklmnopqrstuvwxyz',
   ...'0123456789',
-  ...'.', ',', ';', ':', '!', '?', '"', "'", '(', ')', '-', '/', '@', '&', '#', '%',
+  '.', ',', ';', ':', '!', '?', '"', "'", '(', ')', '-', '/', '@', '&', '#', '%',
+  '$', '*', '+', '=', '_', '^', '~', '`',
+  '[', ']', '{', '}', '|', '\\', '<', '>',
+  '–', '—',
 ];
 const SPECIAL_IDS = {
   '.':'period', ',':'comma', ';':'semicolon', ':':'colon',
   '!':'exclam', '?':'question', '"':'quotedbl', "'":"quotesingle",
   '(':'parenleft', ')':'parenright', '-':'hyphen', '/':'slash',
   '@':'at', '&':'ampersand', '#':'numbersign', '%':'percent',
+  '$':'dollar', '*':'asterisk', '+':'plus', '=':'equal',
+  '_':'underscore', '^':'asciicircum', '~':'asciitilde', '`':'grave',
+  '[':'bracketleft', ']':'bracketright', '{':'braceleft', '}':'braceright',
+  '|':'bar', '\\':'backslash', '<':'less', '>':'greater',
+  '–':'endash', '—':'emdash',
 };
 
 function drawCharKey(char, slot, form) {
