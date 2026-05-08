@@ -215,6 +215,15 @@ def _draw_svg_paths_to_pen(
 
     pen.beginPath = getattr(pen, 'beginPath', None)
 
+    # Round to integers once in font space so the forward and reverse passes of
+    # each retrace share exactly the same integer lattice — prevents sub-pixel
+    # slivers between the two passes when CFF quantises coordinates.
+    def tx(sx: float) -> int:
+        return round(sx * coord_scale + x_offset)
+
+    def ty(sy: float) -> int:
+        return round(-(sy * coord_scale) + y_offset)
+
     for path_d in svg_paths:
         commands = _parse_svg_path_commands(path_d)
         if not commands:
@@ -228,17 +237,13 @@ def _draw_svg_paths_to_pen(
                 if started:
                     pen.endPath()
                 sx, sy = args[0], args[1]
-                fx = sx * coord_scale + x_offset
-                fy = -(sy * coord_scale) + y_offset
-                pen.moveTo((fx, fy))
+                pen.moveTo((tx(sx), ty(sy)))
                 current_x, current_y = sx, sy
                 started = True
 
             elif cmd == 'L':
                 sx, sy = args[0], args[1]
-                fx = sx * coord_scale + x_offset
-                fy = -(sy * coord_scale) + y_offset
-                pen.lineTo((fx, fy))
+                pen.lineTo((tx(sx), ty(sy)))
                 current_x, current_y = sx, sy
 
             elif cmd == 'C':
@@ -249,9 +254,9 @@ def _draw_svg_paths_to_pen(
                     x2, y2 = args[j + 2], args[j + 3]
                     x, y = args[j + 4], args[j + 5]
                     pen.curveTo(
-                        (x1 * coord_scale + x_offset, -(y1 * coord_scale) + y_offset),
-                        (x2 * coord_scale + x_offset, -(y2 * coord_scale) + y_offset),
-                        (x * coord_scale + x_offset, -(y * coord_scale) + y_offset),
+                        (tx(x1), ty(y1)),
+                        (tx(x2), ty(y2)),
+                        (tx(x),  ty(y)),
                     )
                     current_x, current_y = x, y
 

@@ -221,6 +221,20 @@ def _segments_to_svg_parts(segs: List[Segment]) -> List[str]:
     return parts
 
 
+def _stroke_end_tangent(start: Point, segs: List[Segment]) -> Point:
+    """Unit vector in the direction the stroke was travelling at its end point."""
+    last = segs[-1]
+    if last[0] == 'cubic':
+        _, c1, c2, p = last
+        tx, ty = p[0] - c2[0], p[1] - c2[1]
+    else:  # 'line'
+        prev = _seg_target(segs[-2]) if len(segs) >= 2 else start
+        end = _seg_target(last)
+        tx, ty = end[0] - prev[0], end[1] - prev[1]
+    n = math.hypot(tx, ty)
+    return (tx / n, ty / n) if n > 1e-6 else (1.0, 0.0)
+
+
 def _stroke_to_svg(pts: Sequence[Sequence[float]]) -> str:
     """One pen stroke → one SVG path string (forward + tip jog + reversed retrace)."""
     start, segs = _smooth_polyline_to_segments(pts)
@@ -230,9 +244,12 @@ def _stroke_to_svg(pts: Sequence[Sequence[float]]) -> str:
     parts: List[str] = [f"M {start[0]:.2f} {start[1]:.2f}"]
     parts.extend(_segments_to_svg_parts(segs))
 
-    # Tip jog (1px diagonal) — defeats T2CharStringPen axis-merging
+    # Tip jog 1px along the stroke's own end tangent — defeats T2CharStringPen
+    # axis-merging while keeping the jog collinear with the stroke so it doesn't
+    # appear as a kink when OTF outlines are extracted to SVG.
     end = _seg_target(segs[-1])
-    parts.append(f"L {end[0] + 1:.2f} {end[1] + 1:.2f}")
+    tx, ty = _stroke_end_tangent(start, segs)
+    parts.append(f"L {end[0] + tx:.2f} {end[1] + ty:.2f}")
 
     # Reverse retrace through the same control points
     parts.extend(_segments_to_svg_parts(_reverse_segments(start, segs)))
