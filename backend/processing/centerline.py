@@ -318,8 +318,11 @@ def _stroke_to_svg(pts: Sequence[Sequence[float]]) -> str:
     tx, ty = _stroke_end_tangent(start, segs)
     parts.append(f"L {end[0] + tx:.2f} {end[1] + ty:.2f}")
 
-    # Reverse retrace through the same control points
+    # Reverse retrace through the same control points, ending back at start.
+    # Z closes the contour explicitly so any SVG parser sees an unambiguous
+    # closed path rather than relying on implicit CFF closure.
     parts.extend(_segments_to_svg_parts(_reverse_segments(start, segs)))
+    parts.append("Z")
 
     return " ".join(parts)
 

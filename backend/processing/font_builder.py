@@ -528,9 +528,7 @@ def build_otf(
         "space": (space_width, 0),
     }
 
-    # .notdef
-    notdef_pen = T2CharStringPen(500, glyphSet=None)
-    charstrings[".notdef"] = notdef_pen.getCharString()
+    charstrings[".notdef"] = _build_notdef_charstring()
 
     # space — encode the width explicitly as the first element of the CFF program.
     # CFF rule: if the charstring begins with a number before any drawing op, that number
@@ -556,14 +554,15 @@ def build_otf(
         charstrings[g.glyph_name] = cs
         metrics[g.glyph_name] = (advance + letter_spacing, 0)
 
-    # PostScript name must be unique per family+style combination.
-    # fontTools' setupNameTable auto-computes nameID 6 as "family-style" for
-    # non-Regular styles (e.g. "kjg-Line"); the CFF table's psName must match
-    # exactly or strict validators (Windows Font Viewer) reject the font.
-    if font_style == "Regular":
-        ps_name = font_name
-    else:
-        ps_name = f"{font_name}-{font_style.replace(' ', '')}"
+    # PostScript name (nameID 6): ASCII printable only, no spaces, max 63 chars.
+    # The spec bans anything outside [A-Za-z0-9._-]; we collapse spaces to
+    # hyphens and strip the rest so user-typed names never break opentype.js
+    # or strict validators.
+    import re as _re
+    _ps_raw = font_name if font_style == "Regular" else f"{font_name}-{font_style}"
+    ps_name = _re.sub(r'[^A-Za-z0-9._-]', '', _ps_raw.replace(' ', '-'))[:63]
+    if not _re.search(r'[A-Za-z0-9]', ps_name):
+        ps_name = "Untitled"
 
     fb.setupCFF(
         psName=ps_name,
@@ -723,30 +722,15 @@ def _build_charstring_from_svg(
 
 
 def _build_notdef_charstring() -> "T2CharString":
-    """Build a simple box glyph for .notdef."""
+    """Simple box glyph for .notdef — visible placeholder for missing characters."""
     from fontTools.misc.psCharStrings import T2CharString
-
     cs = T2CharString()
-    w = 500
-    # Draw a simple rectangle outline
     cs.program = [
-        w,          # width
-        50, 0,      # rmoveto: move to (50, 0)
-        0, 700,     # rlineto: up
-        400, 0,     # rlineto: right
-        0, -700,    # rlineto: down
-        -400, 0,    # rlineto: left (close)
-        # Inner box
-        50, 50, "rmoveto",
-        300, 0, "rlineto",
-        0, 600, "rlineto",
-        -300, 0, "rlineto",
-        0, -600, "rlineto",
-        "endchar",
-    ]
-    # Simpler version:
-    cs.program = [
-        w,
+        500,            # advance width
+        50, 0,          # rmoveto to bottom-left of box
+        0, 700,         # rlineto up
+        400, 0,         # rlineto right
+        0, -700,        # rlineto down
         "endchar",
     ]
     return cs
