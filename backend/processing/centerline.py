@@ -155,6 +155,73 @@ def _fit_run(run: List[Point]) -> List[Segment]:
     return segs
 
 
+# Tolerance for converting a near-straight cubic to a line, in canvas px.
+# A cubic whose both control points lie within this distance of the chord is
+# replaced by a line.  The Bezier's max deviation from the chord is ≤ ¾ × this
+# value, so the visual change is sub-pixel at drawing-canvas resolution.
+LINEARIZE_EPSILON = 0.8
+
+
+def _simplify_segments(start: Point, segs: List[Segment]) -> Tuple[Point, List[Segment]]:
+    """
+    Post-fitting simplification in two passes.
+
+    Pass 1 — near-straight cubics → lines.
+        Replaces any cubic whose both control points fall within
+        LINEARIZE_EPSILON of its start→end chord.
+
+    Pass 2 — merge consecutive collinear lines → one line.
+        Adjacent line segments are merged when the shared intermediate point
+        lies within LINEARIZE_EPSILON of the line between the outer endpoints.
+        Corners stop merging naturally: corner points are off the merged line
+        so the collinearity check fails there without special casing.
+    """
+    if not segs:
+        return start, segs
+
+    # Pass 1: near-straight cubics → lines
+    p1: List[Segment] = []
+    prev = start
+    for seg in segs:
+        if seg[0] == 'cubic':
+            _, c1, c2, p = seg
+            if (_perp_distance(c1, prev, p) <= LINEARIZE_EPSILON and
+                    _perp_distance(c2, prev, p) <= LINEARIZE_EPSILON):
+                p1.append(('line', p))
+            else:
+                p1.append(seg)
+        else:
+            p1.append(seg)
+        prev = seg[-1]
+
+    # Pass 2: merge consecutive collinear lines
+    out: List[Segment] = []
+    prev = start
+    i = 0
+    while i < len(p1):
+        seg = p1[i]
+        if seg[0] != 'line':
+            out.append(seg)
+            prev = seg[-1]
+            i += 1
+            continue
+        run_start = prev
+        run_end = seg[-1]
+        j = i + 1
+        while j < len(p1) and p1[j][0] == 'line':
+            candidate = p1[j][-1]
+            if _perp_distance(run_end, run_start, candidate) <= LINEARIZE_EPSILON:
+                run_end = candidate
+                j += 1
+            else:
+                break
+        out.append(('line', run_end))
+        prev = run_end
+        i = j
+
+    return start, out
+
+
 def _smooth_polyline_to_segments(pts: Sequence[Sequence[float]]) -> Tuple[Point, List[Segment]]:
     """
     Convert a raw pen path to (start_point, [segments]).
@@ -170,7 +237,7 @@ def _smooth_polyline_to_segments(pts: Sequence[Sequence[float]]) -> Tuple[Point,
     segs: List[Segment] = []
     for run in runs:
         segs.extend(_fit_run(run))
-    return (cleaned[0], segs)
+    return _simplify_segments(cleaned[0], segs)
 
 
 # ---------------------------------------------------------------------------
