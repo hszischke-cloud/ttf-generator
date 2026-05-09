@@ -1022,6 +1022,8 @@ const TOOL_PROFILES = {
 function easeInOut(t) {
   return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
 }
+function easeOut(t) { return 1 - (1 - t) * (1 - t); } // pen landing: expands quickly to full width
+function easeIn(t)  { return t * t; }                  // pen lifting: gradual thin then sudden leave
 const DRAW_CHARS = [
   ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
   ...'abcdefghijklmnopqrstuvwxyz',
@@ -1562,44 +1564,67 @@ function strokeToPolygon(points, maxSize, tool) {
   const prof = TOOL_PROFILES[tool] || TOOL_PROFILES.pen;
   const n = points.length;
   const NIB_ANGLE = Math.PI / 4;
-  const left = [], right = [];
 
+  // Average pressure across the stroke — passed to renderStrokePolygon for opacity
+  const avgP = points.reduce((s, pt) => s + pt.p, 0) / n;
+
+  // Pass 1: tangents + raw half-widths
+  const tangents = [], hws = [];
   for (let i = 0; i < n; i++) {
     const pt = points[i];
     const prev = points[Math.max(0, i - 1)];
     const next = points[Math.min(n - 1, i + 1)];
     const dx = next.x - prev.x, dy = next.y - prev.y;
     const len = Math.hypot(dx, dy) || 1;
-    const tx = dx / len, ty = dy / len;   // unit tangent
-    const nx = -ty,     ny = tx;          // unit normal
+    const tx = dx / len, ty = dy / len;
+    tangents.push({nx: -ty, ny: tx});
 
-    // Taper: eases from 0 at stroke start/end up to 1 in the middle
-    const st = easeInOut(Math.min(i / Math.max(n * prof.startTaper, 1), 1));
-    const et = easeInOut(Math.min((n - 1 - i) / Math.max(n * prof.endTaper, 1), 1));
+    // Asymmetric taper: easeOut at start (pen lands, expands fast),
+    // easeIn at end (pen lifts gradually then suddenly leaves paper)
+    const st = easeOut(Math.min(i / Math.max(n * prof.startTaper, 1), 1));
+    const et = easeIn(Math.min((n - 1 - i) / Math.max(n * prof.endTaper, 1), 1));
     const taper = st * et;
 
-    // Width based on tool
     let hw;
     if (tool === 'calligraphy') {
-      const strokeAngle = Math.atan2(ty, tx);
-      const angFactor = Math.abs(Math.cos(strokeAngle - NIB_ANGLE));
+      const angFactor = Math.abs(Math.cos(Math.atan2(ty, tx) - NIB_ANGLE));
       const pMod = (1 - prof.thinning) + prof.thinning * pt.p;
       hw = maxSize * prof.widthMult * pMod * (0.15 + 0.85 * angFactor) * taper / 2;
     } else {
       const pMod = (1 - prof.thinning) + prof.thinning * pt.p;
       hw = maxSize * prof.widthMult * pMod * taper / 2;
     }
-    hw = Math.max(0.05, hw);
+    hws.push(Math.max(0.05, hw));
+  }
 
+  // Pass 2: smooth width along the stroke — removes frame-burst jitter from
+  // pointer events without touching the centerline position
+  const smoothed = hws.map((hw, i) =>
+    i === 0 || i === n - 1 ? hw : (hws[i - 1] + hw * 2 + hws[i + 1]) / 4
+  );
+
+  // Pass 3: expand centerline into polygon using smoothed widths
+  const left = [], right = [];
+  for (let i = 0; i < n; i++) {
+    const {nx, ny} = tangents[i];
+    const pt = points[i];
+    const hw = smoothed[i];
     left.push({x: pt.x + nx * hw, y: pt.y + ny * hw});
     right.push({x: pt.x - nx * hw, y: pt.y - ny * hw});
   }
 
-  return [...left, ...right.reverse()];
+  const poly = [...left, ...right.reverse()];
+  poly.avgP = avgP;
+  return poly;
 }
 
 function renderStrokePolygon(ctx, polygon, tool) {
   if (polygon.length < 3) return;
+
+  // Slower strokes deposit more ink — opacity tracks average pressure
+  const avgP = polygon.avgP ?? 0.7;
+  const opacity = 0.78 + avgP * 0.17;  // 0.78 (fast) → 0.95 (slow)
+
   ctx.save();
   ctx.beginPath();
   ctx.moveTo(polygon[0].x, polygon[0].y);
@@ -1611,17 +1636,21 @@ function renderStrokePolygon(ctx, polygon, tool) {
   ctx.closePath();
 
   if (tool === 'pen') {
-    ctx.fillStyle = 'rgba(12, 12, 18, 0.93)';
+    ctx.shadowBlur = 1.2;
+    ctx.shadowColor = 'rgba(12, 12, 18, 0.25)';
+    ctx.fillStyle = `rgba(12, 12, 18, ${opacity.toFixed(2)})`;
     ctx.fill();
   } else if (tool === 'pencil') {
-    ctx.fillStyle = 'rgba(38, 32, 28, 0.52)';
+    ctx.fillStyle = `rgba(38, 32, 28, ${(opacity * 0.56).toFixed(2)})`;
     ctx.fill();
     addPencilTexture(ctx, polygon);
   } else if (tool === 'calligraphy') {
-    ctx.fillStyle = 'rgba(8, 8, 14, 0.90)';
+    ctx.shadowBlur = 1.0;
+    ctx.shadowColor = 'rgba(8, 8, 14, 0.20)';
+    ctx.fillStyle = `rgba(8, 8, 14, ${opacity.toFixed(2)})`;
     ctx.fill();
   } else if (tool === 'felt') {
-    ctx.fillStyle = 'rgba(18, 18, 24, 0.82)';
+    ctx.fillStyle = `rgba(18, 18, 24, ${(0.80 + avgP * 0.05).toFixed(2)})`;
     ctx.fill();
   }
   ctx.restore();
