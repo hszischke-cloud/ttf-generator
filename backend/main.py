@@ -17,25 +17,30 @@ Endpoints:
 import asyncio
 import base64
 import io
-import json
 import os
 import traceback
 import uuid
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Dict, List, Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import RedirectResponse, Response
 
+from font_registry import (
+    save_font as registry_save_font,
+    list_fonts as registry_list_fonts,
+    delete_font as registry_delete_font,
+    saved_job_ids,
+)
 from job_store import job_store
 from models import (
     DrawGlyphRequest,
     FinalizeRequest, FinalizeResponse,
     GlyphInfo, GlyphsResponse,
     JobStatus, JobStatusResponse,
+    SavedFontInfo,
 )
 from processing.font_builder import (
     GlyphData, build_otf, otf_to_woff2,
@@ -49,17 +54,7 @@ from processing.font_builder import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Sweep stale jobs from previous runs (older than 10 min)
-    import shutil, time
-    from job_store import JOBS_DIR
-    try:
-        now = time.time()
-        for job_dir in JOBS_DIR.iterdir():
-            if job_dir.is_dir() and (now - job_dir.stat().st_mtime) > 600:
-                shutil.rmtree(job_dir, ignore_errors=True)
-    except Exception:
-        pass
-
+    # Kick off hourly cleanup; no local filesystem to sweep (Supabase-backed).
     task = asyncio.create_task(_periodic_cleanup())
     yield
     task.cancel()
@@ -83,7 +78,8 @@ async def _periodic_cleanup():
     while True:
         await asyncio.sleep(3600)
         try:
-            deleted = job_store.cleanup_old_jobs()
+            skip = saved_job_ids()
+            deleted = job_store.cleanup_old_jobs(skip_ids=skip)
             if deleted:
                 print(f"[cleanup] Deleted {deleted} old job(s)")
         except Exception as e:
@@ -126,10 +122,7 @@ async def draw_submit_glyph(job_id: str, req: DrawGlyphRequest):
     if state.get("status") != "awaiting_review":
         raise HTTPException(409, "Job is not in awaiting_review state")
 
-    glyphs_dir = job_store.glyphs_dir(job_id)
-    png_path = glyphs_dir / f"{req.glyph_id}.png"
-    with open(png_path, "wb") as f:
-        f.write(base64.b64decode(req.thumbnail_png_b64))
+    job_store.upload_glyph_png(job_id, req.glyph_id, base64.b64decode(req.thumbnail_png_b64))
 
     manifest = state.get("glyph_manifest", [])
     entry = {
@@ -179,20 +172,17 @@ async def get_glyphs(job_id: str):
         raise HTTPException(409, "Glyphs not ready yet")
 
     manifest = state.get("glyph_manifest", [])
-    glyphs_dir = job_store.glyphs_dir(job_id)
     glyph_infos = []
 
     for entry in manifest:
-        img_path = glyphs_dir / f"{entry['glyph_id']}.png"
-        if not img_path.exists():
+        png = job_store.download_glyph_png(job_id, entry["glyph_id"])
+        if png is None:
             continue
-        with open(img_path, "rb") as f:
-            img_b64 = base64.b64encode(f.read()).decode()
         glyph_infos.append(GlyphInfo(
             glyph_id=entry["glyph_id"],
             char=entry["char"],
             slot=entry["slot"],
-            image_b64=img_b64,
+            image_b64=base64.b64encode(png).decode(),
             accepted=True,
         ))
 
@@ -240,20 +230,137 @@ async def serve_font(job_id: str, filename: str):
     if state.get("status") != "complete":
         raise HTTPException(202, "Font not ready yet")
 
-    font_path = job_store.output_dir(job_id) / filename
-    if not font_path.exists():
-        raise HTTPException(404, "Font file not found")
+    # Strip cache-buster query param from filename (e.g. "MyFont.otf?v=123")
+    clean_name = filename.split("?")[0]
+    url = job_store.get_font_public_url(job_id, clean_name)
 
-    media_type = "font/otf" if filename.endswith(".otf") else "font/woff2"
-    return FileResponse(
-        str(font_path),
-        media_type=media_type,
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Content-Disposition": "inline",
-            "Cache-Control": "no-store",
-        },
+    # 302 redirect → browser/fetch downloads directly from Supabase CDN.
+    # Cache-Control: no-store on the redirect itself; Supabase serves the file.
+    return RedirectResponse(url, status_code=302, headers={"Cache-Control": "no-store"})
+
+
+# ---------------------------------------------------------------------------
+# Saved-fonts registry endpoints
+# ---------------------------------------------------------------------------
+
+@app.post("/fonts/save/{job_id}")
+async def save_font(job_id: str):
+    """Add a completed font to the persistent saved-fonts registry."""
+    _require_job(job_id)
+    state = job_store.get_state(job_id)
+    if state.get("status") != "complete":
+        raise HTTPException(409, "Font must be complete before saving")
+    manifest = state.get("glyph_manifest", [])
+    approved_ids = set(state.get("approved_glyph_ids", []))
+    glyph_count = sum(
+        1 for e in manifest
+        if e["glyph_id"] in approved_ids and e.get("has_glyph")
     )
+    mode = (
+        "cursive"
+        if any((e.get("form") or "iso") != "iso" for e in manifest)
+        else "print"
+    )
+    registry_save_font(job_id, state.get("font_name", "Untitled"), mode, glyph_count)
+    return {"ok": True}
+
+
+@app.get("/fonts/saved")
+async def list_saved_fonts():
+    """Return all fonts the user has explicitly saved."""
+    fonts = registry_list_fonts()
+    # Annotate with whether the job directory still exists on disk.
+    return {
+        "fonts": [
+            {**f, "job_exists": job_store.job_exists(f["job_id"])}
+            for f in fonts
+        ]
+    }
+
+
+@app.delete("/fonts/saved/{job_id}")
+async def remove_saved_font(job_id: str):
+    """Remove a font from the saved registry (job data is kept on disk)."""
+    deleted = registry_delete_font(job_id)
+    if not deleted:
+        raise HTTPException(404, "Font not found in saved registry")
+    return {"ok": True}
+
+
+@app.post("/process/{job_id}/reopen")
+async def reopen_job(job_id: str):
+    """Re-open a completed job for editing (sets status back to awaiting_review)."""
+    _require_job(job_id)
+    state = job_store.get_state(job_id)
+    status = state.get("status")
+    if status not in ("complete", "error", "awaiting_review"):
+        raise HTTPException(409, f"Cannot reopen job in state '{status}'")
+    if status != "awaiting_review":
+        job_store.update_state(job_id, status="awaiting_review")
+    return {"ok": True}
+
+
+@app.get("/process/{job_id}/pen-paths")
+async def get_pen_paths(job_id: str):
+    """
+    Return the full glyph data needed to re-open a job for editing.
+
+    Includes svg_paths (original outlines), pen_paths (raw strokes), all
+    geometric metadata, and the base64 thumbnail PNG — so the frontend can
+    re-submit unmodified glyphs exactly as they were built originally.
+    """
+    _require_job(job_id)
+    state = job_store.get_state(job_id)
+    manifest = state.get("glyph_manifest", [])
+    mode = (
+        "cursive"
+        if any((e.get("form") or "iso") != "iso" for e in manifest)
+        else "print"
+    )
+    glyphs = []
+    for entry in manifest:
+        if not entry.get("has_glyph"):
+            continue
+        png = job_store.download_glyph_png(job_id, entry["glyph_id"])
+        img_b64 = base64.b64encode(png).decode() if png else None
+        glyphs.append({
+            "glyph_id":      entry["glyph_id"],
+            "char":          entry["char"],
+            "slot":          entry["slot"],
+            "form":          entry.get("form") or "iso",
+            "svg_paths":     entry.get("svg_paths") or [],
+            "pen_paths":     entry.get("pen_paths") or [],
+            "svg_width":     entry.get("svg_width", 300),
+            "svg_height":    entry.get("svg_height", 400),
+            "baseline_y":    entry.get("baseline_y", 288),
+            "upscale_factor": entry.get("upscale_factor", 1.0),
+            "entry_x":       entry.get("entry_x"),
+            "exit_x":        entry.get("exit_x"),
+            "entry_y":       entry.get("entry_y"),
+            "exit_y":        entry.get("exit_y"),
+            "image_b64":     img_b64,
+        })
+    return {
+        "job_id":    job_id,
+        "mode":      mode,
+        "font_name": state.get("font_name", ""),
+        "glyphs":    glyphs,
+    }
+
+
+@app.get("/process/{job_id}/settings")
+async def get_job_settings(job_id: str):
+    """Return font-build settings needed to re-finalize an existing job."""
+    _require_job(job_id)
+    state = job_store.get_state(job_id)
+    return {
+        "font_name":          state.get("font_name", ""),
+        "font_style":         state.get("font_style", "Regular"),
+        "approved_glyph_ids": state.get("approved_glyph_ids", []),
+        "letter_spacing":     state.get("letter_spacing", 0),
+        "space_width":        state.get("space_width", 600),
+        "has_line_font":      state.get("has_line_font", False),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -423,25 +530,19 @@ def _build_font_job(job_id: str):
         job_store.update_state(job_id, progress_pct=92)
 
         safe_name = font_name.replace(" ", "_")
-        out_dir = job_store.output_dir(job_id)
-        otf_path = out_dir / f"{safe_name}.otf"
-        woff2_path = out_dir / f"{safe_name}.woff2"
-        with open(otf_path, "wb") as f:
-            f.write(otf_bytes)
-        with open(woff2_path, "wb") as f:
-            f.write(woff2_bytes)
 
-        font_files = {"otf": str(otf_path), "woff2": str(woff2_path)}
+        # Upload font binaries to Supabase Storage.
+        # font_files stores storage paths (not local paths) so serve_font can
+        # construct a public URL from them.
+        otf_path   = job_store.upload_font_file(job_id, f"{safe_name}.otf",   otf_bytes,   "font/otf")
+        woff2_path = job_store.upload_font_file(job_id, f"{safe_name}.woff2", woff2_bytes, "font/woff2")
+        font_files = {"otf": otf_path, "woff2": woff2_path}
 
         if line_otf_bytes:
-            otf_line_path = out_dir / f"{safe_name}-Line.otf"
-            woff2_line_path = out_dir / f"{safe_name}-Line.woff2"
-            with open(otf_line_path, "wb") as f:
-                f.write(line_otf_bytes)
-            with open(woff2_line_path, "wb") as f:
-                f.write(line_woff2_bytes)
-            font_files["otf_line"] = str(otf_line_path)
-            font_files["woff2_line"] = str(woff2_line_path)
+            otf_line_path   = job_store.upload_font_file(job_id, f"{safe_name}-Line.otf",   line_otf_bytes,   "font/otf")
+            woff2_line_path = job_store.upload_font_file(job_id, f"{safe_name}-Line.woff2", line_woff2_bytes, "font/woff2")
+            font_files["otf_line"]   = otf_line_path
+            font_files["woff2_line"] = woff2_line_path
 
         extra = {}
         if fea_warning:

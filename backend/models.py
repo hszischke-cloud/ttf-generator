@@ -57,6 +57,14 @@ class FinalizeResponse(BaseModel):
     woff2_line_url: str
 
 
+class SavedFontInfo(BaseModel):
+    job_id: str
+    font_name: str
+    mode: str        # "print" or "cursive"
+    glyph_count: int
+    saved_at: float  # Unix timestamp
+
+
 class DrawGlyphRequest(BaseModel):
     """One drawn glyph from the canvas."""
     glyph_id: str           # e.g. "a_0", "a_init", "a_medi"
