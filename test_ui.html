@@ -2168,10 +2168,22 @@ async function openSavedFont(savedJobId) {
     if (g.pen_paths && g.pen_paths.length > 0) {
       if (!drawState.strokes[g.char]) drawState.strokes[g.char] = {};
       if (!drawState.strokes[g.char][g.slot]) drawState.strokes[g.char][g.slot] = {};
-      // pen_paths is [[x,y],...] per stroke; convert to {x,y,p,t} objects that strokeToPolygon expects.
+      // pen_paths stores [x - xShift, y] where xShift = minX - PAD (PAD=12).
+      // Reconstruct a reasonable canvas x by centering the glyph horizontally.
+      const glyphW = (g.svg_width || DRAW_W) - 24;  // svg_width includes 2*PAD
+      const xOffset = Math.max(0, Math.round((DRAW_W - glyphW) / 2)) - 12;
       drawState.strokes[g.char][g.slot][g.form] = g.pen_paths.map(
-        stroke => stroke.map(pt => ({ x: pt[0], y: pt[1], p: 0.5, t: 0 }))
+        stroke => stroke.map(pt => ({ x: pt[0] + xOffset, y: pt[1], p: 0.5, t: 0 }))
       );
+      // Restore cursive connector x positions with the same offset so handles
+      // stay aligned with stroke entry/exit points.
+      if (drawMode === 'cursive') {
+        const connKey = `${g.char}_${g.form}`;
+        drawState.cursiveX[connKey] = {
+          entry: g.entry_x != null ? g.entry_x + xOffset : 30,
+          exit:  g.exit_x  != null ? g.exit_x  + xOffset : DRAW_W - 30,
+        };
+      }
     }
     if (g.slot > 0) {
       drawState.slotCounts[g.char] = Math.max(drawState.slotCounts[g.char] || 1, g.slot + 1);
