@@ -20,6 +20,8 @@ from fontTools.feaLib.builder import addOpenTypeFeatures
 from fontTools.pens.t2CharStringPen import T2CharStringPen
 from fontTools.ttLib import TTFont
 
+from processing.perturb import perturb_glyph
+
 # Canvas geometry (formerly TEMPLATE_SPEC). The drawing canvas uses these
 # same guideline ratios so glyphs come in with consistent baselines.
 CELL_HEIGHT_MM = 24.0
@@ -482,6 +484,9 @@ def build_otf(
     letter_spacing: int = 0,
     space_width: int = DEFAULT_ADVANCE_WIDTH,
     positional: Optional[Dict[str, Dict[str, str]]] = None,
+    perturb: bool = True,
+    perturb_amplitude: float = 10.0,
+    perturb_frequency: float = 0.012,
 ) -> bytes:
     """
     Assemble an OTF font from a list of vectorized glyphs.
@@ -547,6 +552,10 @@ def build_otf(
             upscale_factor=g.upscale_factor,
             form=g.form,
             entry_x=g.entry_x, exit_x=g.exit_x,
+            perturb=perturb,
+            perturb_amplitude=perturb_amplitude,
+            perturb_frequency=perturb_frequency,
+            glyph_name=g.glyph_name,
         )
         # Keep CFF charstring width consistent with hmtx (both include letter_spacing)
         if letter_spacing != 0 and cs.program and isinstance(cs.program[0], (int, float)):
@@ -674,6 +683,89 @@ def otf_to_woff2(otf_bytes: bytes) -> bytes:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+class _CollectingPen:
+    """
+    Deferred pen that records all draw operations as plain tuples.
+
+    After drawing, call `perturb_and_replay(real_pen, glyph_name, ...)` to
+    apply organic micro-serrations and then replay the perturbed ops to a
+    real fonttools pen.
+
+    The `beginPath` attribute is a no-op slot required by
+    `_draw_svg_paths_to_pen`, which sets it on the pen instance directly.
+    """
+
+    def __init__(self):
+        self.beginPath = None        # compatibility shim
+        self._contours: List[list] = []
+        self._current: list = []
+
+    def moveTo(self, pt):
+        if self._current:
+            self._contours.append(self._current)
+        self._current = [('moveTo', pt)]
+
+    def lineTo(self, pt):
+        self._current.append(('lineTo', pt))
+
+    def curveTo(self, *pts):
+        # pts = ((cx1,cy1), (cx2,cy2), (x,y)) for cubic Bezier
+        self._current.append(('curveTo', *pts))
+
+    def closePath(self):
+        self._current.append(('closePath',))
+        self._contours.append(self._current)
+        self._current = []
+
+    def endPath(self):
+        self._current.append(('endPath',))
+        if self._current:
+            self._contours.append(self._current)
+        self._current = []
+
+    def _flush(self):
+        if self._current:
+            self._contours.append(self._current)
+            self._current = []
+
+    @staticmethod
+    def _replay_contour(contour: list, pen) -> None:
+        for op in contour:
+            name = op[0]
+            if name == 'moveTo':
+                pen.moveTo(op[1])
+            elif name == 'lineTo':
+                pen.lineTo(op[1])
+            elif name == 'curveTo':
+                pen.curveTo(*op[1:])
+            elif name == 'closePath':
+                pen.closePath()
+            elif name == 'endPath':
+                pen.endPath()
+
+    def perturb_and_replay(
+        self,
+        pen,
+        glyph_name: str,
+        amplitude: float,
+        frequency: float,
+    ) -> None:
+        """Perturb collected contours then replay them to *pen*."""
+        self._flush()
+        contours = perturb_glyph(
+            self._contours, glyph_name,
+            amplitude=amplitude, frequency=frequency,
+        )
+        for contour in contours:
+            self._replay_contour(contour, pen)
+
+    def replay(self, pen) -> None:
+        """Replay without perturbation (passthrough mode)."""
+        self._flush()
+        for contour in self._contours:
+            self._replay_contour(contour, pen)
+
+
 class _DeferredPen:
     """Collects pen operations for later replay (not actually used — see charstring builder)."""
     def __init__(self, name, store):
@@ -699,8 +791,22 @@ def _build_charstring_from_svg(
     form: str = "iso",
     entry_x: Optional[float] = None,
     exit_x:  Optional[float] = None,
+    perturb: bool = False,
+    perturb_amplitude: float = 10.0,
+    perturb_frequency: float = 0.012,
+    glyph_name: str = "",
 ) -> Tuple["T2CharString", int]:
-    """Build a CFF T2CharString by drawing SVG paths. Returns (charstring, advance_width)."""
+    """
+    Build a CFF T2CharString by drawing SVG paths.
+
+    When *perturb* is True the contour points are passed through
+    `_CollectingPen` → `perturb_glyph` before being committed to the
+    charstring, adding organic edge micro-serrations.  The perturbation
+    is applied in font UPM space (after the SVG→font coordinate transform)
+    so the amplitude is consistent across all glyph sizes.
+
+    Returns (charstring, advance_width).
+    """
     from fontTools.pens.t2CharStringPen import T2CharStringPen
 
     coord_scale = CELL_SCALE / upscale_factor if upscale_factor > 0 else CELL_SCALE
@@ -710,15 +816,29 @@ def _build_charstring_from_svg(
     else:
         advance = DEFAULT_ADVANCE_WIDTH
 
-    pen = T2CharStringPen(advance, glyphSet=None)
+    real_pen = T2CharStringPen(advance, glyphSet=None)
 
-    _draw_svg_paths_to_pen(
-        pen, svg_paths, svg_width, svg_height,
-        baseline_y_in_svg, upscale_factor=upscale_factor, form=form,
-        entry_x=entry_x, exit_x=exit_x,
-    )
+    if perturb and svg_paths:
+        # Collect → perturb → replay
+        collector = _CollectingPen()
+        _draw_svg_paths_to_pen(
+            collector, svg_paths, svg_width, svg_height,
+            baseline_y_in_svg, upscale_factor=upscale_factor, form=form,
+            entry_x=entry_x, exit_x=exit_x,
+        )
+        collector.perturb_and_replay(
+            real_pen, glyph_name or "unknown",
+            amplitude=perturb_amplitude,
+            frequency=perturb_frequency,
+        )
+    else:
+        _draw_svg_paths_to_pen(
+            real_pen, svg_paths, svg_width, svg_height,
+            baseline_y_in_svg, upscale_factor=upscale_factor, form=form,
+            entry_x=entry_x, exit_x=exit_x,
+        )
 
-    return pen.getCharString(), advance
+    return real_pen.getCharString(), advance
 
 
 def _build_notdef_charstring() -> "T2CharString":
