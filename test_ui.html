@@ -1974,6 +1974,7 @@ async function sendToReview() {
           baseline_y: Math.round(GUIDELINES.baseline),
           upscale_factor: 1.0,
           thumbnail_png_b64: glyphThumbnailB64(t.char, t.slot, t.form),
+          x_shift: xShift,
           entry_x: entryX,
           exit_x: exitX,
           entry_y: Math.round(drawState.cursiveConnY),
@@ -2168,10 +2169,24 @@ async function openSavedFont(savedJobId) {
     if (g.pen_paths && g.pen_paths.length > 0) {
       if (!drawState.strokes[g.char]) drawState.strokes[g.char] = {};
       if (!drawState.strokes[g.char][g.slot]) drawState.strokes[g.char][g.slot] = {};
-      // pen_paths is [[x,y],...] per stroke; convert to {x,y,p,t} objects that strokeToPolygon expects.
+      // pen_paths stores [x - x_shift, y]; add x_shift back to recover exact
+      // original canvas coordinates. Older saves without x_shift fall back to
+      // centering via svg_width.
+      const xOffset = (g.x_shift != null && g.x_shift !== 0)
+        ? g.x_shift
+        : Math.max(0, Math.round((DRAW_W - ((g.svg_width || DRAW_W) - 24)) / 2)) - 12;
       drawState.strokes[g.char][g.slot][g.form] = g.pen_paths.map(
-        stroke => stroke.map(pt => ({ x: pt[0], y: pt[1], p: 0.5, t: 0 }))
+        stroke => stroke.map(pt => ({ x: pt[0] + xOffset, y: pt[1], p: 0.5, t: 0 }))
       );
+      // Restore cursive connector x positions with the same offset so handles
+      // stay aligned with stroke entry/exit points.
+      if (drawMode === 'cursive') {
+        const connKey = `${g.char}_${g.form}`;
+        drawState.cursiveX[connKey] = {
+          entry: g.entry_x != null ? g.entry_x + xOffset : 30,
+          exit:  g.exit_x  != null ? g.exit_x  + xOffset : DRAW_W - 30,
+        };
+      }
     }
     if (g.slot > 0) {
       drawState.slotCounts[g.char] = Math.max(drawState.slotCounts[g.char] || 1, g.slot + 1);
@@ -2284,6 +2299,7 @@ sendToReview = async function () {
           baseline_y: Math.round(GUIDELINES.baseline),
           upscale_factor: 1.0,
           thumbnail_png_b64: glyphThumbnailB64(t.char, t.slot, t.form),
+          x_shift: xShift,
           entry_x: entryX,
           exit_x: exitX,
           entry_y: Math.round(drawState.cursiveConnY),

@@ -142,6 +142,7 @@ async def draw_submit_glyph(job_id: str, req: DrawGlyphRequest):
         "exit_x":  req.exit_x,
         "entry_y": req.entry_y,
         "exit_y":  req.exit_y,
+        "x_shift": req.x_shift,
     }
     manifest = [e for e in manifest if e["glyph_id"] != req.glyph_id]
     manifest.append(entry)
@@ -339,6 +340,7 @@ async def get_pen_paths(job_id: str):
             "exit_x":        entry.get("exit_x"),
             "entry_y":       entry.get("entry_y"),
             "exit_y":        entry.get("exit_y"),
+            "x_shift":       entry.get("x_shift", 0.0),
             "image_b64":     img_b64,
         })
     return {

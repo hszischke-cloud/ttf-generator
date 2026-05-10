@@ -88,3 +88,4 @@ class DrawGlyphRequest(BaseModel):
     exit_x: Optional[float] = None
     entry_y: Optional[float] = None
     exit_y: Optional[float] = None
+    x_shift: float = 0.0    # minX - PAD applied when building pen_paths/svg_paths
