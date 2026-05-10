@@ -237,7 +237,7 @@ def perturb_glyph(
     contours: List[Contour],
     glyph_name: str,
     amplitude: float = 10.0,
-    frequency: float = 0.012,
+    frequency: float = 0.021,
 ) -> List[Contour]:
     """
     Apply organic micro-serrations to all contours of one glyph.
