@@ -30,12 +30,19 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 
+from font_registry import (
+    save_font as registry_save_font,
+    list_fonts as registry_list_fonts,
+    delete_font as registry_delete_font,
+    saved_job_ids,
+)
 from job_store import job_store
 from models import (
     DrawGlyphRequest,
     FinalizeRequest, FinalizeResponse,
     GlyphInfo, GlyphsResponse,
     JobStatus, JobStatusResponse,
+    SavedFontInfo,
 )
 from processing.font_builder import (
     GlyphData, build_otf, otf_to_woff2,
@@ -49,13 +56,18 @@ from processing.font_builder import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Sweep stale jobs from previous runs (older than 10 min)
+    # Sweep stale jobs from previous runs (older than 10 min), skipping saved fonts.
     import shutil, time
     from job_store import JOBS_DIR
     try:
+        skip = saved_job_ids()
         now = time.time()
         for job_dir in JOBS_DIR.iterdir():
-            if job_dir.is_dir() and (now - job_dir.stat().st_mtime) > 600:
+            if (
+                job_dir.is_dir()
+                and job_dir.name not in skip
+                and (now - job_dir.stat().st_mtime) > 600
+            ):
                 shutil.rmtree(job_dir, ignore_errors=True)
     except Exception:
         pass
@@ -83,7 +95,8 @@ async def _periodic_cleanup():
     while True:
         await asyncio.sleep(3600)
         try:
-            deleted = job_store.cleanup_old_jobs()
+            skip = saved_job_ids()
+            deleted = job_store.cleanup_old_jobs(skip_ids=skip)
             if deleted:
                 print(f"[cleanup] Deleted {deleted} old job(s)")
         except Exception as e:
@@ -254,6 +267,134 @@ async def serve_font(job_id: str, filename: str):
             "Cache-Control": "no-store",
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Saved-fonts registry endpoints
+# ---------------------------------------------------------------------------
+
+@app.post("/fonts/save/{job_id}")
+async def save_font(job_id: str):
+    """Add a completed font to the persistent saved-fonts registry."""
+    _require_job(job_id)
+    state = job_store.get_state(job_id)
+    if state.get("status") != "complete":
+        raise HTTPException(409, "Font must be complete before saving")
+    manifest = state.get("glyph_manifest", [])
+    approved_ids = set(state.get("approved_glyph_ids", []))
+    glyph_count = sum(
+        1 for e in manifest
+        if e["glyph_id"] in approved_ids and e.get("has_glyph")
+    )
+    mode = (
+        "cursive"
+        if any((e.get("form") or "iso") != "iso" for e in manifest)
+        else "print"
+    )
+    registry_save_font(job_id, state.get("font_name", "Untitled"), mode, glyph_count)
+    return {"ok": True}
+
+
+@app.get("/fonts/saved")
+async def list_saved_fonts():
+    """Return all fonts the user has explicitly saved."""
+    fonts = registry_list_fonts()
+    # Annotate with whether the job directory still exists on disk.
+    return {
+        "fonts": [
+            {**f, "job_exists": job_store.job_exists(f["job_id"])}
+            for f in fonts
+        ]
+    }
+
+
+@app.delete("/fonts/saved/{job_id}")
+async def remove_saved_font(job_id: str):
+    """Remove a font from the saved registry (job data is kept on disk)."""
+    deleted = registry_delete_font(job_id)
+    if not deleted:
+        raise HTTPException(404, "Font not found in saved registry")
+    return {"ok": True}
+
+
+@app.post("/process/{job_id}/reopen")
+async def reopen_job(job_id: str):
+    """Re-open a completed job for editing (sets status back to awaiting_review)."""
+    _require_job(job_id)
+    state = job_store.get_state(job_id)
+    status = state.get("status")
+    if status not in ("complete", "error", "awaiting_review"):
+        raise HTTPException(409, f"Cannot reopen job in state '{status}'")
+    if status != "awaiting_review":
+        job_store.update_state(job_id, status="awaiting_review")
+    return {"ok": True}
+
+
+@app.get("/process/{job_id}/pen-paths")
+async def get_pen_paths(job_id: str):
+    """
+    Return the full glyph data needed to re-open a job for editing.
+
+    Includes svg_paths (original outlines), pen_paths (raw strokes), all
+    geometric metadata, and the base64 thumbnail PNG — so the frontend can
+    re-submit unmodified glyphs exactly as they were built originally.
+    """
+    _require_job(job_id)
+    state = job_store.get_state(job_id)
+    manifest = state.get("glyph_manifest", [])
+    mode = (
+        "cursive"
+        if any((e.get("form") or "iso") != "iso" for e in manifest)
+        else "print"
+    )
+    glyphs_dir = job_store.glyphs_dir(job_id)
+    glyphs = []
+    for entry in manifest:
+        if not entry.get("has_glyph"):
+            continue
+        img_b64 = None
+        img_path = glyphs_dir / f"{entry['glyph_id']}.png"
+        if img_path.exists():
+            with open(img_path, "rb") as f:
+                img_b64 = base64.b64encode(f.read()).decode()
+        glyphs.append({
+            "glyph_id":      entry["glyph_id"],
+            "char":          entry["char"],
+            "slot":          entry["slot"],
+            "form":          entry.get("form") or "iso",
+            "svg_paths":     entry.get("svg_paths") or [],
+            "pen_paths":     entry.get("pen_paths") or [],
+            "svg_width":     entry.get("svg_width", 300),
+            "svg_height":    entry.get("svg_height", 400),
+            "baseline_y":    entry.get("baseline_y", 288),
+            "upscale_factor": entry.get("upscale_factor", 1.0),
+            "entry_x":       entry.get("entry_x"),
+            "exit_x":        entry.get("exit_x"),
+            "entry_y":       entry.get("entry_y"),
+            "exit_y":        entry.get("exit_y"),
+            "image_b64":     img_b64,
+        })
+    return {
+        "job_id":    job_id,
+        "mode":      mode,
+        "font_name": state.get("font_name", ""),
+        "glyphs":    glyphs,
+    }
+
+
+@app.get("/process/{job_id}/settings")
+async def get_job_settings(job_id: str):
+    """Return font-build settings needed to re-finalize an existing job."""
+    _require_job(job_id)
+    state = job_store.get_state(job_id)
+    return {
+        "font_name":          state.get("font_name", ""),
+        "font_style":         state.get("font_style", "Regular"),
+        "approved_glyph_ids": state.get("approved_glyph_ids", []),
+        "letter_spacing":     state.get("letter_spacing", 0),
+        "space_width":        state.get("space_width", 600),
+        "has_line_font":      state.get("has_line_font", False),
+    }
 
 
 # ---------------------------------------------------------------------------

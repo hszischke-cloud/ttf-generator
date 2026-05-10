@@ -362,6 +362,40 @@
     font-size: 11px; color: #a89688; font-variant-numeric: tabular-nums; font-style: italic;
   }
 
+  /* ── Saved fonts list ── */
+  .saved-fonts-section { margin-top: 48px; }
+  .saved-fonts-empty { font-size: 14px; color: #a89688; font-style: italic; margin-top: 8px; }
+  .saved-font-item {
+    display: flex; align-items: center; justify-content: space-between;
+    background: #faf7f2; border: 1px solid #e2d9cc; border-radius: 12px;
+    padding: 16px 20px; margin-bottom: 10px; gap: 16px; flex-wrap: wrap;
+  }
+  .saved-font-info { flex: 1; min-width: 0; }
+  .saved-font-name {
+    font-family: 'Playfair Display', serif; font-size: 17px; font-weight: 600;
+    color: #3d2b1f; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .saved-font-meta { font-size: 12px; color: #8c7b6b; margin-top: 3px; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 100px;
+    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em;
+    margin-right: 6px;
+  }
+  .badge-print   { background: #e8f0ee; color: #3a7265; }
+  .badge-cursive { background: #ede8f0; color: #5c3a72; }
+  .saved-font-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+  .btn-delete {
+    background: none; border: none; color: #c4b5a5; cursor: pointer;
+    font-size: 18px; line-height: 1; padding: 4px; border-radius: 4px;
+    transition: color 0.15s;
+  }
+  .btn-delete:hover { color: #c0604a; }
+  .saved-font-item.expired { opacity: 0.55; }
+  .saved-font-item.expired .saved-font-name::after {
+    content: ' (expired)'; font-size: 12px; color: #c0604a;
+    font-family: 'Inter', sans-serif; font-weight: 400;
+  }
+
   /* ── Mobile ──────────────────────────────────────────────── */
   @media (max-width: 640px) {
     .site-nav { padding: 12px 16px; }
@@ -448,11 +482,19 @@
       <p style="margin-top:10px;font-size:13px;color:#8c7b6b;">~150 cells (init / medi / fina forms)</p>
     </div>
   </div>
+
+  <!-- Saved fonts list -->
+  <div class="saved-fonts-section">
+    <span class="section-label">My Saved Fonts</span>
+    <div id="saved-fonts-list">
+      <p class="saved-fonts-empty">Loading…</p>
+    </div>
+  </div>
 </div>
 
 <!-- ===================== PAGE DRAW ===================== -->
 <div class="page" id="page-draw">
-  <span class="back-link" onclick="goTo('page-home')">← Back to home</span>
+  <span class="back-link" onclick="goHome()">← Back to home</span>
   <div class="draw-layout">
 
     <!-- Left: canvas area -->
@@ -537,7 +579,7 @@
 
 <!-- ===================== PAGE 3: REVIEW ===================== -->
 <div class="page" id="page-review">
-  <span class="back-link" onclick="goTo('page-home')">← Start over</span>
+  <span class="back-link" onclick="goHome()">← Start over</span>
   <div class="step-header">
     <div class="step-num">3</div>
     <div>
@@ -566,7 +608,7 @@
 
 <!-- ===================== PAGE 4: DOWNLOAD ===================== -->
 <div class="page" id="page-download">
-  <span class="back-link" onclick="goTo('page-home')">← Make another font</span>
+  <span class="back-link" onclick="goHome()">← Make another font</span>
   <div class="step-header">
     <div class="step-num">4</div>
     <div>
@@ -608,6 +650,7 @@
   <div class="download-btns" style="margin-top:20px;">
     <button id="otf-btn" class="btn btn-primary" onclick="downloadFont('otf')">Download OTF</button>
     <button id="woff2-btn" class="btn btn-outline" onclick="downloadFont('woff2')">Download WOFF2</button>
+    <button id="save-font-btn" class="btn btn-teal" onclick="saveFont()" style="margin-left:4px;">Save to My Fonts</button>
     <span id="download-status" style="font-size:13px;color:#888;"></span>
   </div>
 
@@ -1294,6 +1337,10 @@ function onPointerUp(e) {
       drawState.cursiveLocked = true;
       positionConnectorHandles();
     }
+    // In edit mode: mark this cell as touched so it gets fresh SVG on submit.
+    if (editingJobId) {
+      touchedInEdit.add(drawCharKey(char, slot, form));
+    }
   }
   drawState.currentStroke = [];
   renderCanvas();
@@ -1697,11 +1744,12 @@ function redoStroke() {
   updateCharCellStatus(c); renderCanvas();
 }
 function clearCurrent() {
-  const {currentChar: c, currentSlot: s} = drawState;
+  const {currentChar: c, currentSlot: s, currentForm: f} = drawState;
   const strokes = getStrokes(c, s);
   if (!strokes.length) return;
   getRedoStack(c, s).push(...strokes.splice(0));
   updateCharCellStatus(c); renderCanvas();
+  if (editingJobId) touchedInEdit.add(drawCharKey(c, s, f));
 }
 function toggleEraser() {
   drawState.eraserMode = !drawState.eraserMode;
@@ -1956,6 +2004,297 @@ function showError(id, msg) {
 function hideError(id) {
   document.getElementById(id).classList.remove('show');
 }
+
+// ═══════════════════════════════════════════════════════════════
+// SAVED FONTS + EDIT MODE
+// ═══════════════════════════════════════════════════════════════
+
+// Edit-mode globals.
+// editingJobId: the job we're editing (null = new font).
+// loadedGlyphData: original glyph payloads from /pen-paths, keyed by glyph_id.
+//   Unmodified glyphs are re-submitted verbatim so their outlines stay identical.
+// touchedInEdit: glyph keys (drawCharKey result) the user drew on this session.
+let editingJobId = null;
+let loadedGlyphData = {};
+let touchedInEdit = new Set();
+
+function goHome() {
+  editingJobId = null;
+  loadedGlyphData = {};
+  touchedInEdit = new Set();
+  goTo('page-home');
+  loadSavedFonts();
+}
+
+// ── Saved-fonts list ──────────────────────────────────────
+
+async function loadSavedFonts() {
+  try {
+    const res = await fetch(`${API}/fonts/saved`);
+    if (!res.ok) throw new Error('fetch failed');
+    const data = await res.json();
+    renderSavedFonts(data.fonts || []);
+  } catch {
+    document.getElementById('saved-fonts-list').innerHTML =
+      '<p class="saved-fonts-empty">Could not load saved fonts.</p>';
+  }
+}
+
+function renderSavedFonts(fonts) {
+  const container = document.getElementById('saved-fonts-list');
+  if (!fonts.length) {
+    container.innerHTML = '<p class="saved-fonts-empty">No saved fonts yet — build a font and click “Save to My Fonts.”</p>';
+    return;
+  }
+  container.innerHTML = '';
+  for (const f of fonts) {
+    const date = new Date(f.saved_at * 1000).toLocaleDateString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric',
+    });
+    const item = document.createElement('div');
+    item.className = 'saved-font-item' + (f.job_exists ? '' : ' expired');
+    item.innerHTML = `
+      <div class="saved-font-info">
+        <div class="saved-font-name">${escHtml(f.font_name)}</div>
+        <div class="saved-font-meta">
+          <span class="badge badge-${f.mode}">${f.mode}</span>
+          ${f.glyph_count} glyph${f.glyph_count !== 1 ? 's' : ''} &middot; saved ${date}
+        </div>
+      </div>
+      <div class="saved-font-actions">
+        ${f.job_exists ? `
+          <button class="btn btn-outline btn-sm" onclick="openSavedFontDownload('${f.job_id}','${escHtml(f.font_name)}','${f.mode}')">Download</button>
+          <button class="btn btn-primary btn-sm" onclick="openSavedFont('${f.job_id}')">Edit</button>
+        ` : '<span style="font-size:12px;color:#c0604a;">Expired</span>'}
+        <button class="btn-delete" title="Remove from list" onclick="deleteSavedFont('${f.job_id}', this)">&#x2715;</button>
+      </div>
+    `;
+    container.appendChild(item);
+  }
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function deleteSavedFont(jobId, btn) {
+  if (!confirm('Remove this font from your saved list?')) return;
+  btn.disabled = true;
+  try {
+    await fetch(`${API}/fonts/saved/${jobId}`, { method: 'DELETE' });
+    await loadSavedFonts();
+  } catch {
+    btn.disabled = false;
+  }
+}
+
+// ── Save current font ─────────────────────────────────────
+
+async function saveFont() {
+  const btn = document.getElementById('save-font-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  try {
+    const res = await fetch(`${API}/fonts/save/${jobId}`, { method: 'POST' });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Save failed');
+    btn.textContent = 'Saved!';
+    setTimeout(() => { btn.disabled = false; btn.textContent = 'Save to My Fonts'; }, 2500);
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Save to My Fonts';
+    showError('download-error', e.message);
+  }
+}
+
+// ── Open saved font for download ──────────────────────────
+
+async function openSavedFontDownload(savedJobId, fontName, mode) {
+  try {
+    const settings = await fetch(`${API}/process/${savedJobId}/settings`).then(r => {
+      if (!r.ok) throw new Error('Font data not found — it may have expired.');
+      return r.json();
+    });
+    jobId = savedJobId;
+    currentFontName = fontName;
+    fontSafeName = fontName.replace(/\s+/g, '_');
+    approvedGlyphIds = settings.approved_glyph_ids;
+    drawMode = mode;
+
+    document.getElementById('letter-spacing').value = settings.letter_spacing || 0;
+    document.getElementById('space-width').value = settings.space_width || 600;
+    onSpacingChange();
+
+    await showDownloadPage(null, Date.now(), { hasLineFont: settings.has_line_font, skipped: [] });
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+// ── Open saved font for editing ───────────────────────────
+
+async function openSavedFont(savedJobId) {
+  let data;
+  try {
+    const res = await fetch(`${API}/process/${savedJobId}/pen-paths`);
+    if (!res.ok) throw new Error('Font data not found — it may have expired.');
+    data = await res.json();
+  } catch (e) {
+    alert(e.message);
+    return;
+  }
+
+  // Reset draw state completely (no strokes pre-loaded; original outlines
+  // are preserved in loadedGlyphData and re-submitted verbatim on save).
+  editingJobId = savedJobId;
+  loadedGlyphData = {};
+  touchedInEdit = new Set();
+  drawMode = data.mode || 'print';
+
+  Object.assign(drawState, {
+    currentChar: 'A', currentSlot: 0, currentForm: 'iso',
+    slotCounts: {}, strokes: {}, redoStacks: {},
+    currentStroke: [], isDrawing: false,
+    tool: 'pen', toolSize: 14, eraserMode: false, lastPoint: null, smoothedPoint: null,
+    cursiveConnY: (GUIDELINES.baseline + GUIDELINES.xheight) / 2,
+    cursiveLocked: false, cursiveX: {},
+  });
+
+  // Index original glyph data and restore slot counts / cursive Y.
+  for (const g of data.glyphs) {
+    const key = drawCharKey(g.char, g.slot, g.form);
+    loadedGlyphData[key] = g;
+    if (g.slot > 0) {
+      drawState.slotCounts[g.char] = Math.max(drawState.slotCounts[g.char] || 1, g.slot + 1);
+    }
+    if (drawMode === 'cursive' && g.entry_y != null && !drawState.cursiveLocked) {
+      drawState.cursiveConnY = g.entry_y;
+      drawState.cursiveLocked = true;
+    }
+  }
+
+  // Pre-fill font name for the review page.
+  document.getElementById('font-name').value = data.font_name || '';
+
+  // Reopen the job so it accepts new glyph submissions.
+  try {
+    await fetch(`${API}/process/${savedJobId}/reopen`, { method: 'POST' });
+  } catch { /* non-fatal */ }
+
+  buildCharGrid();
+  goTo('page-draw');
+  setTimeout(() => {
+    initDrawCanvas();
+    // Mark chars that have saved data with the green dot.
+    for (const cell of document.querySelectorAll('.draw-char-cell')) {
+      const char = cell.dataset.char;
+      const base = SPECIAL_IDS[char] ?? char;
+      const hasLoaded = Object.keys(loadedGlyphData).some(k => k.startsWith(base + '_'));
+      if (hasLoaded) cell.classList.add('drawn');
+    }
+    updateDrawUI();
+  }, 50);
+}
+
+// ── Edit-mode send-to-review ──────────────────────────────
+// Replaces sendToReview when editingJobId is set.  Only submits the glyphs
+// the user actually drew in this session; everything else stays in the
+// manifest as-is so original outlines are preserved exactly.
+
+const _origSendToReview = sendToReview;
+sendToReview = async function () {
+  if (!editingJobId) { await _origSendToReview(); return; }
+
+  const sendBtn = document.getElementById('send-review-btn');
+  sendBtn.disabled = true;
+  sendBtn.textContent = 'Submitting…';
+  document.getElementById('draw-submit-status').textContent = '';
+  hideError('draw-error');
+
+  try {
+    // Ensure the job is in awaiting_review (reopen if it got finalised again).
+    const statusRes = await fetch(`${API}/process/${editingJobId}/status`);
+    const statusData = await statusRes.json();
+    if (statusData.status !== 'awaiting_review') {
+      const ro = await fetch(`${API}/process/${editingJobId}/reopen`, { method: 'POST' });
+      if (!ro.ok) throw new Error('Failed to reopen job for editing');
+    }
+    jobId = editingJobId;
+
+    // Only submit glyphs the user actually drew this session.
+    const tasks = [];
+    for (const char of DRAW_CHARS) {
+      const slotCount = getSlotCount(char);
+      for (let slot = 0; slot < slotCount; slot++) {
+        for (const form of formsFor(char)) {
+          const key = drawCharKey(char, slot, form);
+          if (touchedInEdit.has(key) && getStrokes(char, slot, form).length > 0) {
+            tasks.push({ char, slot, form, glyphId: key });
+          }
+        }
+      }
+    }
+
+    // If nothing was drawn, go straight to review (existing glyphs unchanged).
+    if (tasks.length === 0) {
+      document.getElementById('draw-submit-status').textContent = '';
+      await loadGlyphs();
+      sendBtn.disabled = false;
+      sendBtn.textContent = 'Send to Review →';
+      return;
+    }
+
+    for (let i = 0; i < tasks.length; i++) {
+      const t = tasks[i];
+      document.getElementById('draw-submit-status').textContent =
+        `Submitting ${i + 1} / ${tasks.length}…`;
+      const PAD = 12;
+      const { minX, maxX } = getGlyphXBounds(t.char, t.slot, t.form);
+      const xShift = minX - PAD;
+      const svgWidth = Math.round(maxX - minX + PAD * 2);
+
+      let entryX = null, exitX = null;
+      if (drawMode === 'cursive' && t.form !== 'iso') {
+        const conn = getConnX(t.char, t.form);
+        if (t.form === 'medi' || t.form === 'fina') entryX = Math.round(conn.entry - xShift);
+        if (t.form === 'init' || t.form === 'medi') exitX = Math.round(conn.exit - xShift);
+      }
+
+      const res = await fetch(`${API}/draw/${jobId}/glyph`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          glyph_id: t.glyphId,
+          char: t.char,
+          slot: t.slot,
+          form: t.form,
+          svg_paths: glyphToSVGPaths(t.char, t.slot, xShift, t.form),
+          pen_paths: glyphToPenPaths(t.char, t.slot, xShift, t.form),
+          svg_width: svgWidth,
+          svg_height: DRAW_H,
+          baseline_y: Math.round(GUIDELINES.baseline),
+          upscale_factor: 1.0,
+          thumbnail_png_b64: glyphThumbnailB64(t.char, t.slot, t.form),
+          entry_x: entryX,
+          exit_x: exitX,
+          entry_y: Math.round(drawState.cursiveConnY),
+          exit_y: Math.round(drawState.cursiveConnY),
+        }),
+      });
+      if (!res.ok) throw new Error(`Failed to submit glyph "${t.char}" (${t.form})`);
+    }
+
+    document.getElementById('draw-submit-status').textContent = '';
+    await loadGlyphs();
+
+  } catch (e) {
+    showError('draw-error', e.message);
+    sendBtn.disabled = false;
+    sendBtn.textContent = 'Send to Review →';
+  }
+};
+
+// ── Load saved fonts on page load ─────────────────────────
+loadSavedFonts();
 </script>
 </body>
 </html>

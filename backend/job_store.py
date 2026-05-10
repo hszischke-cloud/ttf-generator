@@ -109,12 +109,22 @@ class JobStore:
     # Cleanup
     # ------------------------------------------------------------------
 
-    def cleanup_old_jobs(self, max_age_hours: int = MAX_JOB_AGE_HOURS) -> int:
-        """Delete job directories older than max_age_hours. Returns count deleted."""
+    def cleanup_old_jobs(
+        self,
+        max_age_hours: int = MAX_JOB_AGE_HOURS,
+        skip_ids: set = None,
+    ) -> int:
+        """Delete job directories older than max_age_hours. Returns count deleted.
+
+        skip_ids: job_ids that must not be deleted (e.g. user-saved fonts).
+        """
         cutoff = time.time() - max_age_hours * 3600
+        skip_ids = skip_ids or set()
         deleted = 0
         for job_dir in self.jobs_dir.iterdir():
             if not job_dir.is_dir():
+                continue
+            if job_dir.name in skip_ids:
                 continue
             try:
                 state = self.get_state(job_dir.name)
