@@ -556,6 +556,12 @@
             oninput="drawState.toolSize=parseInt(this.value);document.getElementById('size-val').textContent=this.value;">
           <span class="size-val" id="size-val">14</span>
         </div>
+        <div class="size-row">
+          <span>Color</span>
+          <input type="color" id="tool-color" value="#26201c"
+            oninput="setDrawColor(this.value)"
+            style="width:44px;height:22px;padding:1px 2px;border:1px solid #ccc;border-radius:4px;cursor:pointer;vertical-align:middle;">
+        </div>
       </div>
 
       <!-- Edit controls -->
@@ -1057,7 +1063,7 @@ const SMOOTH_ALPHA = 0.62;   // input low-pass: 0=very smooth, 1=raw
 
 const TOOL_PROFILES = {
   pen:         {thinning: 0.65, startTaper: 0.14, endTaper: 0.22, widthMult: 1.0},
-  pencil:      {thinning: 0.45, startTaper: 0.10, endTaper: 0.15, widthMult: 0.72},
+  pencil:      {thinning: 0.22, startTaper: 0.16, endTaper: 0.22, widthMult: 0.72},
   calligraphy: {thinning: 0.80, startTaper: 0.12, endTaper: 0.18, widthMult: 1.0},
   felt:        {thinning: 0.12, startTaper: 0.04, endTaper: 0.06, widthMult: 1.15},
 };
@@ -1112,6 +1118,7 @@ const drawState = {
   isDrawing: false,
   tool: 'pen',
   toolSize: 14,
+  color: [38, 32, 28],  // [r, g, b] — default dark graphite
   eraserMode: false,
   lastPoint: null,
   smoothedPoint: null,
@@ -1291,8 +1298,9 @@ function toCanvasPoint(e) {
 function computePressure(rawPressure, x, y, t, pointerType) {
   const last = drawState.lastPoint;
   const vel = last ? Math.hypot(x - last.x, y - last.y) / Math.max(t - last.t, 1) : 0;
-  // Slower = thicker (velFactor → 1.0), faster = thinner (velFactor → 0.3)
-  const velFactor = Math.max(0.3, 1.0 - vel * 0.06);
+  // Slower = thicker (velFactor → 1.0), faster = thinner (velFactor → 0.45)
+  // Narrowed range (was 0.3–1.0) and gentler slope so fast strokes stay readable
+  const velFactor = Math.max(0.45, 1.0 - vel * 0.035);
 
   if (pointerType === 'pen' && rawPressure > 0) {
     // Real stylus: 70% hardware pressure + 30% velocity
@@ -1328,7 +1336,10 @@ function onPointerUp(e) {
   drawState.isDrawing = false;
   if (drawState.currentStroke.length > 1) {
     const {currentChar: char, currentSlot: slot, currentForm: form} = drawState;
-    getStrokes(char, slot).push([...drawState.currentStroke]);
+    const strk = [...drawState.currentStroke];
+    strk.color = [...drawState.color];
+    strk.tool = drawState.tool;
+    getStrokes(char, slot).push(strk);
     getRedoStack(char, slot).length = 0;
     updateCharCellStatus(char);
     // First cursive stroke ever locks the global connection y so subsequent
@@ -1378,14 +1389,16 @@ function renderCanvas() {
   ctx.fillRect(0, 0, DRAW_W, DRAW_H);
   drawGuidelines(ctx);
   drawCursiveGuides(ctx);
-  const {currentChar: char, currentSlot: slot, currentForm: form, tool, toolSize} = drawState;
+  const {currentChar: char, currentSlot: slot, currentForm: form, tool, toolSize, color} = drawState;
   for (const stroke of getStrokes(char, slot, form)) {
-    const poly = strokeToPolygon(stroke, toolSize, tool);
-    renderStrokePolygon(ctx, poly, tool);
+    const strokeTool = stroke.tool || tool;
+    const strokeColor = stroke.color || color;
+    const poly = strokeToPolygon(stroke, toolSize, strokeTool);
+    renderStrokePolygon(ctx, poly, strokeTool, strokeColor);
   }
   if (drawState.currentStroke.length > 1) {
     const poly = strokeToPolygon(drawState.currentStroke, toolSize, tool);
-    renderStrokePolygon(ctx, poly, tool);
+    renderStrokePolygon(ctx, poly, tool, color);
   }
 }
 
@@ -1630,7 +1643,10 @@ function strokeToPolygon(points, maxSize, tool) {
     // easeIn at end (pen lifts gradually then suddenly leaves paper)
     const st = easeOut(Math.min(i / Math.max(n * prof.startTaper, 1), 1));
     const et = easeIn(Math.min((n - 1 - i) / Math.max(n * prof.endTaper, 1), 1));
-    const taper = st * et;
+    // Pencil has a minimum width floor so strokes end with a rounded blunt tip
+    // rather than converging to a spike — matches how a pencil lifts off paper.
+    const taperFloor = tool === 'pencil' ? 0.28 : 0.0;
+    const taper = Math.max(taperFloor, st * et);
 
     let hw;
     if (tool === 'calligraphy') {
@@ -1665,9 +1681,10 @@ function strokeToPolygon(points, maxSize, tool) {
   return poly;
 }
 
-function renderStrokePolygon(ctx, polygon, tool) {
+function renderStrokePolygon(ctx, polygon, tool, color = [38, 32, 28]) {
   if (polygon.length < 3) return;
 
+  const [r, g, b] = color;
   // Slower strokes deposit more ink — opacity tracks average pressure
   const avgP = polygon.avgP ?? 0.7;
   const opacity = 0.78 + avgP * 0.17;  // 0.78 (fast) → 0.95 (slow)
@@ -1684,48 +1701,95 @@ function renderStrokePolygon(ctx, polygon, tool) {
 
   if (tool === 'pen') {
     ctx.shadowBlur = 1.2;
-    ctx.shadowColor = 'rgba(12, 12, 18, 0.25)';
-    ctx.fillStyle = `rgba(12, 12, 18, ${opacity.toFixed(2)})`;
+    ctx.shadowColor = `rgba(${r},${g},${b},0.25)`;
+    ctx.fillStyle = `rgba(${r},${g},${b},${opacity.toFixed(2)})`;
     ctx.fill();
   } else if (tool === 'pencil') {
-    ctx.fillStyle = `rgba(38, 32, 28, ${(opacity * 0.56).toFixed(2)})`;
+    // Layer A: blur-softened base fill — removes the crisp polygon edge
+    // that makes canvas strokes look digital rather than hand-drawn
+    ctx.filter = 'blur(0.5px)';
+    ctx.fillStyle = `rgba(${r},${g},${b},${(opacity * 0.50).toFixed(2)})`;
     ctx.fill();
-    addPencilTexture(ctx, polygon);
+    ctx.filter = 'none';
+    // Stroke direction from first half of the left-side outline
+    const half = Math.floor(polygon.length / 2);
+    const strokeAngle = Math.atan2(
+      polygon[half].y - polygon[0].y,
+      polygon[half].x - polygon[0].x
+    );
+    addPencilTexture(ctx, polygon, strokeAngle, color);
   } else if (tool === 'calligraphy') {
     ctx.shadowBlur = 1.0;
-    ctx.shadowColor = 'rgba(8, 8, 14, 0.20)';
-    ctx.fillStyle = `rgba(8, 8, 14, ${opacity.toFixed(2)})`;
+    ctx.shadowColor = `rgba(${r},${g},${b},0.20)`;
+    ctx.fillStyle = `rgba(${r},${g},${b},${opacity.toFixed(2)})`;
     ctx.fill();
   } else if (tool === 'felt') {
-    ctx.fillStyle = `rgba(18, 18, 24, ${(0.80 + avgP * 0.05).toFixed(2)})`;
+    ctx.fillStyle = `rgba(${r},${g},${b},${(0.80 + avgP * 0.05).toFixed(2)})`;
     ctx.fill();
   }
   ctx.restore();
 }
 
-function addPencilTexture(ctx, polygon) {
-  // Compute bounding box of polygon
+function addPencilTexture(ctx, polygon, strokeAngle, color) {
+  const [r, g, b] = color;
+
+  // Bounding box
   let bx1 = Infinity, by1 = Infinity, bx2 = -Infinity, by2 = -Infinity;
   for (const p of polygon) {
     if (p.x < bx1) bx1 = p.x; if (p.x > bx2) bx2 = p.x;
     if (p.y < by1) by1 = p.y; if (p.y > by2) by2 = p.y;
   }
-  const area = (bx2 - bx1) * (by2 - by1);
-  const count = Math.min(Math.floor(area * 0.004), 120);
+  const bw = bx2 - bx1, bh = by2 - by1;
+  const area = bw * bh;
+
   ctx.save();
-  // Re-clip to polygon so dots stay inside stroke
+
+  // Clip all layers to the stroke polygon
   ctx.beginPath();
   ctx.moveTo(polygon[0].x, polygon[0].y);
   for (let i = 1; i < polygon.length; i++) ctx.lineTo(polygon[i].x, polygon[i].y);
   ctx.closePath();
   ctx.clip();
-  for (let i = 0; i < count; i++) {
-    const tx = bx1 + Math.random() * (bx2 - bx1);
-    const ty = by1 + Math.random() * (by2 - by1);
-    ctx.fillStyle = `rgba(0,0,0,${0.08 + Math.random() * 0.14})`;
-    ctx.fillRect(tx, ty, 0.9, 0.9);
+
+  // Layer B: directional grain lines — short strokes aligned to the stroke
+  // direction with slight angular scatter, simulating graphite fibres
+  const grainCount = Math.min(Math.floor(area * 0.0028), 75);
+  ctx.lineCap = 'round';
+  for (let i = 0; i < grainCount; i++) {
+    const tx = bx1 + Math.random() * bw;
+    const ty = by1 + Math.random() * bh;
+    const len = 3 + Math.random() * 10;
+    // Scatter ±20° around stroke direction; occasional cross-grain fibres
+    const angle = strokeAngle + (Math.random() - 0.5) * 0.7;
+    const op = (0.04 + Math.random() * 0.12).toFixed(2);
+    ctx.strokeStyle = `rgba(${r},${g},${b},${op})`;
+    ctx.lineWidth = 0.25 + Math.random() * 0.55;
+    ctx.beginPath();
+    ctx.moveTo(tx - Math.cos(angle) * len * 0.5, ty - Math.sin(angle) * len * 0.5);
+    ctx.lineTo(tx + Math.cos(angle) * len * 0.5, ty + Math.sin(angle) * len * 0.5);
+    ctx.stroke();
   }
+
+  // Layer C: paper tooth — small bright gaps where paper fibre sits below
+  // the graphite surface, concentrated slightly away from stroke centre
+  const gapCount = Math.min(Math.floor(area * 0.0007), 22);
+  for (let i = 0; i < gapCount; i++) {
+    const tx = bx1 + Math.random() * bw;
+    const ty = by1 + Math.random() * bh;
+    const op = (0.07 + Math.random() * 0.14).toFixed(2);
+    ctx.fillStyle = `rgba(255,255,255,${op})`;
+    ctx.fillRect(tx, ty, 1.1, 1.1);
+  }
+
   ctx.restore();
+}
+
+function setDrawColor(hex) {
+  drawState.color = [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16),
+  ];
 }
 
 // ── Edit controls ─────────────────────────────────────────────
