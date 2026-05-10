@@ -486,7 +486,7 @@ def build_otf(
     positional: Optional[Dict[str, Dict[str, str]]] = None,
     perturb: bool = True,
     perturb_amplitude: float = 5.0,
-    perturb_frequency: float = 0.012,
+    perturb_frequency: float = 0.021,
 ) -> bytes:
     """
     Assemble an OTF font from a list of vectorized glyphs.
@@ -793,7 +793,7 @@ def _build_charstring_from_svg(
     exit_x:  Optional[float] = None,
     perturb: bool = False,
     perturb_amplitude: float = 5.0,
-    perturb_frequency: float = 0.012,
+    perturb_frequency: float = 0.021,
     glyph_name: str = "",
 ) -> Tuple["T2CharString", int]:
     """
