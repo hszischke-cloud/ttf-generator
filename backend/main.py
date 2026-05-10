@@ -526,6 +526,7 @@ def _build_font_job(job_id: str):
             line_otf_bytes, line_fea_warning = build_otf(
                 line_glyphs, font_name, "Line", letter_spacing, space_width,
                 positional=positional or None,
+                perturb=False,   # single-line OTF must stay geometrically clean
             )
             job_store.update_state(job_id, progress_pct=85)
             line_woff2_bytes = otf_to_woff2(line_otf_bytes)
