@@ -251,8 +251,8 @@ def perturb_glyph(
         glyph_name: used to seed the noise so each letter has its own
                     unique but reproducible irregularity pattern
         amplitude:  max perpendicular edge displacement in UPM units.
-                    Default 10 UPM ≈ 1.4 % of cap-height; visible at
-                    display sizes (36 pt+) without looking broken.
+                    Default 5 UPM ≈ 0.7 % of cap-height; subtle at
+                    display sizes (36 pt+) without overwhelming the letterform.
         frequency:  Perlin noise frequency in bumps per UPM arc length.
                     Default 0.012 → ~7 bumps per 600 UPM stroke perimeter.
     """
