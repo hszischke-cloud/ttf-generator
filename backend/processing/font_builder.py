@@ -266,7 +266,7 @@ def _draw_svg_paths_to_pen(
                     started = False
 
         if started:
-            pen.endPath()
+            pen.closePath()
 
     return advance_width
 
@@ -723,17 +723,14 @@ def _build_charstring_from_svg(
 
 def _build_notdef_charstring() -> "T2CharString":
     """Simple box glyph for .notdef — visible placeholder for missing characters."""
-    from fontTools.misc.psCharStrings import T2CharString
-    cs = T2CharString()
-    cs.program = [
-        500,            # advance width
-        50, 0,          # rmoveto to bottom-left of box
-        0, 700,         # rlineto up
-        400, 0,         # rlineto right
-        0, -700,        # rlineto down
-        "endchar",
-    ]
-    return cs
+    from fontTools.pens.t2CharStringPen import T2CharStringPen
+    pen = T2CharStringPen(500, glyphSet=None)
+    pen.moveTo((50, 0))
+    pen.lineTo((50, 700))
+    pen.lineTo((450, 700))
+    pen.lineTo((450, 0))
+    pen.closePath()
+    return pen.getCharString()
 
 
 def _collect_alternates(glyphs: List[GlyphData]) -> Dict[str, List[str]]:
