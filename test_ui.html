@@ -2168,7 +2168,10 @@ async function openSavedFont(savedJobId) {
     if (g.pen_paths && g.pen_paths.length > 0) {
       if (!drawState.strokes[g.char]) drawState.strokes[g.char] = {};
       if (!drawState.strokes[g.char][g.slot]) drawState.strokes[g.char][g.slot] = {};
-      drawState.strokes[g.char][g.slot][g.form] = g.pen_paths;
+      // pen_paths is [[x,y],...] per stroke; convert to {x,y,p,t} objects that strokeToPolygon expects.
+      drawState.strokes[g.char][g.slot][g.form] = g.pen_paths.map(
+        stroke => stroke.map(pt => ({ x: pt[0], y: pt[1], p: 0.5, t: 0 }))
+      );
     }
     if (g.slot > 0) {
       drawState.slotCounts[g.char] = Math.max(drawState.slotCounts[g.char] || 1, g.slot + 1);
