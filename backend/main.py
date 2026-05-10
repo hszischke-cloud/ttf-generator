@@ -21,6 +21,7 @@ import os
 import traceback
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
