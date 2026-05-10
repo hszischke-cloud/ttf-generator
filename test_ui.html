@@ -1974,6 +1974,7 @@ async function sendToReview() {
           baseline_y: Math.round(GUIDELINES.baseline),
           upscale_factor: 1.0,
           thumbnail_png_b64: glyphThumbnailB64(t.char, t.slot, t.form),
+          x_shift: xShift,
           entry_x: entryX,
           exit_x: exitX,
           entry_y: Math.round(drawState.cursiveConnY),
@@ -2168,10 +2169,12 @@ async function openSavedFont(savedJobId) {
     if (g.pen_paths && g.pen_paths.length > 0) {
       if (!drawState.strokes[g.char]) drawState.strokes[g.char] = {};
       if (!drawState.strokes[g.char][g.slot]) drawState.strokes[g.char][g.slot] = {};
-      // pen_paths stores [x - xShift, y] where xShift = minX - PAD (PAD=12).
-      // Reconstruct a reasonable canvas x by centering the glyph horizontally.
-      const glyphW = (g.svg_width || DRAW_W) - 24;  // svg_width includes 2*PAD
-      const xOffset = Math.max(0, Math.round((DRAW_W - glyphW) / 2)) - 12;
+      // pen_paths stores [x - x_shift, y]; add x_shift back to recover exact
+      // original canvas coordinates. Older saves without x_shift fall back to
+      // centering via svg_width.
+      const xOffset = (g.x_shift != null && g.x_shift !== 0)
+        ? g.x_shift
+        : Math.max(0, Math.round((DRAW_W - ((g.svg_width || DRAW_W) - 24)) / 2)) - 12;
       drawState.strokes[g.char][g.slot][g.form] = g.pen_paths.map(
         stroke => stroke.map(pt => ({ x: pt[0] + xOffset, y: pt[1], p: 0.5, t: 0 }))
       );
@@ -2296,6 +2299,7 @@ sendToReview = async function () {
           baseline_y: Math.round(GUIDELINES.baseline),
           upscale_factor: 1.0,
           thumbnail_png_b64: glyphThumbnailB64(t.char, t.slot, t.form),
+          x_shift: xShift,
           entry_x: entryX,
           exit_x: exitX,
           entry_y: Math.round(drawState.cursiveConnY),
