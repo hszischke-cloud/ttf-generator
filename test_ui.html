@@ -2143,8 +2143,9 @@ async function openSavedFont(savedJobId) {
     return;
   }
 
-  // Reset draw state completely (no strokes pre-loaded; original outlines
-  // are preserved in loadedGlyphData and re-submitted verbatim on save).
+  // Reset draw state, then restore saved strokes so the canvas renders them.
+  // touchedInEdit tracks only glyphs drawn this session; unchanged glyphs
+  // are re-submitted verbatim from loadedGlyphData on save.
   editingJobId = savedJobId;
   loadedGlyphData = {};
   touchedInEdit = new Set();
@@ -2159,10 +2160,16 @@ async function openSavedFont(savedJobId) {
     cursiveLocked: false, cursiveX: {},
   });
 
-  // Index original glyph data and restore slot counts / cursive Y.
+  // Index original glyph data, restore slot counts / cursive Y, and
+  // pre-populate strokes so the canvas shows saved drawings immediately.
   for (const g of data.glyphs) {
     const key = drawCharKey(g.char, g.slot, g.form);
     loadedGlyphData[key] = g;
+    if (g.pen_paths && g.pen_paths.length > 0) {
+      if (!drawState.strokes[g.char]) drawState.strokes[g.char] = {};
+      if (!drawState.strokes[g.char][g.slot]) drawState.strokes[g.char][g.slot] = {};
+      drawState.strokes[g.char][g.slot][g.form] = g.pen_paths;
+    }
     if (g.slot > 0) {
       drawState.slotCounts[g.char] = Math.max(drawState.slotCounts[g.char] || 1, g.slot + 1);
     }
