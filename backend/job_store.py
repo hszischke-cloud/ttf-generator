@@ -1,52 +1,36 @@
 """
-job_store.py — Filesystem-based job state management.
+job_store.py — Supabase-backed job state + file storage.
 
-Each job lives in JOBS_DIR/{job_id}/ with:
-  raw/          — original uploaded file(s)
-  pages/        — extracted page images at 300 dpi (page_0.png, page_1.png)
-  cells/        — cell crops (grayscale PNGs)
-  glyphs/       — tight-cropped binary glyph images + SVG data
-  output/       — generated font files (MyFont.otf, MyFont.woff2)
-  state.json    — job metadata and status
+State lives in the `jobs` PostgreSQL table (JSONB blob mirrors old state.json).
+Files (glyph thumbnails, font binaries) live in Supabase Storage bucket
+"ttf-generator" under {job_id}/glyphs/ and {job_id}/output/ prefixes.
 
-Designed so that Redis can replace state.json reads/writes later by
-swapping out the get_state / update_state methods.
+Public bucket means font files are downloadable via a stable URL without
+going through the FastAPI server.  Thumbnails are in the same bucket; they
+contain no sensitive data.
 """
 
-import json
-import os
-import shutil
 import time
-from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
-from filelock import FileLock
+from supabase_client import STORAGE_BUCKET, SUPABASE_URL, supabase
 
-_default_jobs_dir = (
-    Path(os.environ.get("TEMP", "C:/Temp")) / "ttf-jobs"
-    if os.name == "nt"
-    else Path("/tmp/jobs")
-)
-JOBS_DIR = Path(os.environ.get("JOBS_DIR", str(_default_jobs_dir)))
 MAX_JOB_AGE_HOURS = 24
 
 
+def _public_url(path: str) -> str:
+    """Return the public Storage URL for a given storage path."""
+    return f"{SUPABASE_URL}/storage/v1/object/public/{STORAGE_BUCKET}/{path}"
+
+
 class JobStore:
-    def __init__(self, jobs_dir: Path = JOBS_DIR):
-        self.jobs_dir = jobs_dir
-        self.jobs_dir.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
     # Job lifecycle
     # ------------------------------------------------------------------
 
-    def create_job(self, job_id: str) -> Path:
-        """Create a new job directory and initial state. Returns job path."""
-        job_path = self.jobs_dir / job_id
-        for subdir in ["raw", "pages", "cells", "glyphs", "output"]:
-            (job_path / subdir).mkdir(parents=True, exist_ok=True)
-
-        self._write_state(job_id, {
+    def create_job(self, job_id: str) -> None:
+        initial_state: Dict[str, Any] = {
             "status": "pending",
             "progress_pct": 0,
             "error_message": None,
@@ -54,88 +38,103 @@ class JobStore:
             "glyph_manifest": [],
             "alignment_warnings": [],
             "font_files": {},
-        })
-        return job_path
-
-    def job_path(self, job_id: str) -> Path:
-        return self.jobs_dir / job_id
+        }
+        supabase.table("jobs").insert({
+            "job_id": job_id,
+            "state": initial_state,
+        }).execute()
 
     def job_exists(self, job_id: str) -> bool:
-        return (self.jobs_dir / job_id).is_dir()
+        res = supabase.table("jobs").select("job_id").eq("job_id", job_id).execute()
+        return len(res.data) > 0
 
     # ------------------------------------------------------------------
     # State access
     # ------------------------------------------------------------------
 
     def get_state(self, job_id: str) -> Dict[str, Any]:
-        state_file = self.jobs_dir / job_id / "state.json"
-        if not state_file.exists():
+        res = supabase.table("jobs").select("state").eq("job_id", job_id).execute()
+        if not res.data:
             return {}
-        with open(state_file, "r") as f:
-            return json.load(f)
+        return res.data[0]["state"] or {}
 
     def update_state(self, job_id: str, **kwargs) -> None:
-        """Atomically update specific fields in state.json."""
-        lock_path = self.jobs_dir / job_id / "state.lock"
-        with FileLock(str(lock_path)):
-            state = self.get_state(job_id)
-            state.update(kwargs)
-            self._write_state(job_id, state)
-
-    def _write_state(self, job_id: str, state: Dict[str, Any]) -> None:
-        state_file = self.jobs_dir / job_id / "state.json"
-        tmp = state_file.with_suffix(".json.tmp")
-        with open(tmp, "w") as f:
-            json.dump(state, f)
-        tmp.replace(state_file)
+        """Merge kwargs into the job's JSONB state (top-level keys only)."""
+        current = self.get_state(job_id)
+        current.update(kwargs)
+        supabase.table("jobs").update({"state": current}).eq("job_id", job_id).execute()
 
     # ------------------------------------------------------------------
-    # Convenience path helpers
+    # Storage — glyph thumbnails
     # ------------------------------------------------------------------
 
-    def raw_dir(self, job_id: str) -> Path:
-        return self.jobs_dir / job_id / "raw"
+    def upload_glyph_png(self, job_id: str, glyph_id: str, png_bytes: bytes) -> None:
+        path = f"{job_id}/glyphs/{glyph_id}.png"
+        supabase.storage.from_(STORAGE_BUCKET).upload(
+            path, png_bytes,
+            file_options={"content-type": "image/png", "upsert": "true"},
+        )
 
-    def pages_dir(self, job_id: str) -> Path:
-        return self.jobs_dir / job_id / "pages"
+    def download_glyph_png(self, job_id: str, glyph_id: str) -> Optional[bytes]:
+        path = f"{job_id}/glyphs/{glyph_id}.png"
+        try:
+            return supabase.storage.from_(STORAGE_BUCKET).download(path)
+        except Exception:
+            return None
 
-    def glyphs_dir(self, job_id: str) -> Path:
-        return self.jobs_dir / job_id / "glyphs"
+    # ------------------------------------------------------------------
+    # Storage — font output files
+    # ------------------------------------------------------------------
 
-    def output_dir(self, job_id: str) -> Path:
-        return self.jobs_dir / job_id / "output"
+    def upload_font_file(self, job_id: str, filename: str, data: bytes, content_type: str) -> str:
+        """Upload a font binary. Returns the storage path (not the full URL)."""
+        path = f"{job_id}/output/{filename}"
+        supabase.storage.from_(STORAGE_BUCKET).upload(
+            path, data,
+            file_options={"content-type": content_type, "upsert": "true"},
+        )
+        return path
+
+    def get_font_public_url(self, job_id: str, filename: str) -> str:
+        """Return the stable public URL for a font file."""
+        return _public_url(f"{job_id}/output/{filename}")
 
     # ------------------------------------------------------------------
     # Cleanup
     # ------------------------------------------------------------------
 
+    def _delete_storage_files(self, job_id: str) -> None:
+        """Remove all Storage objects for a job (best-effort)."""
+        for prefix in [f"{job_id}/glyphs", f"{job_id}/output"]:
+            try:
+                files = supabase.storage.from_(STORAGE_BUCKET).list(prefix)
+                if files:
+                    paths = [f"{prefix}/{f['name']}" for f in files]
+                    supabase.storage.from_(STORAGE_BUCKET).remove(paths)
+            except Exception:
+                pass
+
     def cleanup_old_jobs(
         self,
         max_age_hours: int = MAX_JOB_AGE_HOURS,
-        skip_ids: set = None,
+        skip_ids: Set[str] = None,
     ) -> int:
-        """Delete job directories older than max_age_hours. Returns count deleted.
-
-        skip_ids: job_ids that must not be deleted (e.g. user-saved fonts).
-        """
+        """Delete jobs older than max_age_hours from DB and Storage."""
         cutoff = time.time() - max_age_hours * 3600
         skip_ids = skip_ids or set()
+
+        res = supabase.table("jobs").select("job_id, state").execute()
         deleted = 0
-        for job_dir in self.jobs_dir.iterdir():
-            if not job_dir.is_dir():
+        for row in res.data or []:
+            job_id = row["job_id"]
+            if job_id in skip_ids:
                 continue
-            if job_dir.name in skip_ids:
-                continue
-            try:
-                state = self.get_state(job_dir.name)
-                created_at = state.get("created_at", 0)
-                if created_at < cutoff:
-                    shutil.rmtree(job_dir, ignore_errors=True)
-                    deleted += 1
-            except Exception:
-                pass
+            state = row.get("state") or {}
+            if state.get("created_at", 0) < cutoff:
+                self._delete_storage_files(job_id)
+                supabase.table("jobs").delete().eq("job_id", job_id).execute()
+                deleted += 1
         return deleted
 
 
-# Singleton instance
 job_store = JobStore()
