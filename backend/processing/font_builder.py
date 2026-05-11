@@ -477,6 +477,18 @@ class GlyphData:
 CANVAS_PAD = 12
 
 
+def compute_glyph_advance(g: "GlyphData", letter_spacing: int = 0) -> int:
+    """
+    Return the final advance width (in UPM) for a single glyph, matching the
+    formula used inside build_otf.  letter_spacing is added on top.
+    """
+    coord_scale = CELL_SCALE / g.upscale_factor if g.upscale_factor > 0 else CELL_SCALE
+    if g.svg_width > 0:
+        _, adv_extra = _bearing_offsets(g.form, coord_scale, g.svg_width, g.entry_x, g.exit_x)
+        return int(g.svg_width * coord_scale) + adv_extra + letter_spacing
+    return DEFAULT_ADVANCE_WIDTH + letter_spacing
+
+
 def build_otf(
     glyphs: List[GlyphData],
     font_name: str,
@@ -487,6 +499,7 @@ def build_otf(
     perturb: bool = True,
     perturb_amplitude: float = 5.0,
     perturb_frequency: float = 0.021,
+    forced_advances: Optional[Dict[str, int]] = None,
 ) -> bytes:
     """
     Assemble an OTF font from a list of vectorized glyphs.
@@ -497,6 +510,10 @@ def build_otf(
         font_style: style name (default "Regular")
         letter_spacing: extra UPM units added to every glyph's advance width (tracking)
         space_width: advance width for the space glyph in UPM units
+        forced_advances: when provided, overrides the per-glyph advance width
+            computation.  Keys are glyph names; "space" overrides the space
+            advance.  Use this to guarantee that two fonts (e.g. regular and
+            single-line) share exactly the same spacing.
 
     Returns:
         Raw OTF bytes.
@@ -528,9 +545,13 @@ def build_otf(
 
     private_dict = {"defaultWidthX": DEFAULT_ADVANCE_WIDTH, "nominalWidthX": 0}
     charstrings: Dict[str, any] = {}
+
+    # Resolve space width: forced_advances["space"] wins if present.
+    _space_width = (forced_advances.get("space", space_width)
+                    if forced_advances else space_width)
     metrics: Dict[str, Tuple[int, int]] = {
         ".notdef": (500, 0),
-        "space": (space_width, 0),
+        "space": (_space_width, 0),
     }
 
     charstrings[".notdef"] = _build_notdef_charstring()
@@ -541,9 +562,9 @@ def build_otf(
     # gives the correct advance. Using just ['endchar'] would fall back to defaultWidthX=600.
     from fontTools.misc.psCharStrings import T2CharString as _T2CS
     _space_cs = _T2CS()
-    _space_cs.program = [space_width, "endchar"]
+    _space_cs.program = [_space_width, "endchar"]
     charstrings["space"] = _space_cs
-    print(f"[font_builder] space_width={space_width}  letter_spacing={letter_spacing}  program={_space_cs.program}")
+    print(f"[font_builder] space_width={_space_width}  letter_spacing={letter_spacing}  program={_space_cs.program}")
 
     for g in glyphs:
         cs, advance = _build_charstring_from_svg(
@@ -557,11 +578,16 @@ def build_otf(
             perturb_frequency=perturb_frequency,
             glyph_name=g.glyph_name,
         )
-        # Keep CFF charstring width consistent with hmtx (both include letter_spacing)
-        if letter_spacing != 0 and cs.program and isinstance(cs.program[0], (int, float)):
-            cs.program[0] = advance + letter_spacing
+        # Determine final advance: forced_advances wins, otherwise add letter_spacing.
+        if forced_advances is not None and g.glyph_name in forced_advances:
+            final_advance = forced_advances[g.glyph_name]
+        else:
+            final_advance = advance + letter_spacing
+        # Keep CFF charstring width consistent with hmtx.
+        if cs.program and isinstance(cs.program[0], (int, float)):
+            cs.program[0] = final_advance
         charstrings[g.glyph_name] = cs
-        metrics[g.glyph_name] = (advance + letter_spacing, 0)
+        metrics[g.glyph_name] = (final_advance, 0)
 
     # PostScript name (nameID 6): ASCII printable only, no spaces, max 63 chars.
     # The spec bans anything outside [A-Za-z0-9._-]; we collapse spaces to
