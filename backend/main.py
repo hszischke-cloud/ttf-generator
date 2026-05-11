@@ -44,7 +44,7 @@ from models import (
     SavedFontInfo,
 )
 from processing.font_builder import (
-    GlyphData, build_otf, otf_to_woff2,
+    GlyphData, build_otf, compute_glyph_advance, otf_to_woff2,
     char_to_glyph_name,
 )
 
@@ -517,6 +517,16 @@ def _build_font_job(job_id: str):
         if not dimensional_glyphs:
             raise ValueError("No valid glyphs were approved")
 
+        # Compute advance widths from dimensional glyphs (the spacing source of
+        # truth).  The line font reuses these exact values so both fonts render
+        # with identical inter-letter and space-bar spacing regardless of any
+        # floating-point differences in independent computation paths.
+        dim_advances: Dict[str, int] = {
+            g.glyph_name: compute_glyph_advance(g, letter_spacing)
+            for g in dimensional_glyphs
+        }
+        dim_advances["space"] = space_width
+
         otf_bytes, fea_warning = build_otf(
             dimensional_glyphs, font_name, font_style, letter_spacing, space_width,
             positional=positional or None,
@@ -533,6 +543,7 @@ def _build_font_job(job_id: str):
                 line_glyphs, font_name, "Line", letter_spacing, space_width,
                 positional=positional or None,
                 perturb=False,   # single-line OTF must stay geometrically clean
+                forced_advances=dim_advances,
             )
             job_store.update_state(job_id, progress_pct=85)
             line_woff2_bytes = otf_to_woff2(line_otf_bytes)
