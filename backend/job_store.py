@@ -11,7 +11,7 @@ contain no sensitive data.
 """
 
 import time
-from typing import Any, Dict, Optional, Set
+from typing import Any, Callable, Dict, Optional, Set
 
 from supabase_client import STORAGE_BUCKET, SUPABASE_URL, supabase
 
@@ -21,6 +21,29 @@ MAX_JOB_AGE_HOURS = 24
 def _public_url(path: str) -> str:
     """Return the public Storage URL for a given storage path."""
     return f"{SUPABASE_URL}/storage/v1/object/public/{STORAGE_BUCKET}/{path}"
+
+
+def _retry(fn: Callable, max_attempts: int = 4, initial_delay: float = 1.0):
+    """
+    Call fn() and retry on any exception with exponential backoff.
+
+    HTTP/2 flow-control errors from httpcore (_read_incoming_data) are
+    transient — a fresh connection on the next attempt usually succeeds.
+    Delays: 1 s, 2 s, 4 s (three retries after the first attempt).
+    """
+    delay = initial_delay
+    for attempt in range(max_attempts):
+        try:
+            return fn()
+        except Exception as exc:
+            if attempt == max_attempts - 1:
+                raise
+            print(
+                f"[job_store] attempt {attempt + 1}/{max_attempts} failed: "
+                f"{type(exc).__name__}: {exc} — retrying in {delay:.0f}s"
+            )
+            time.sleep(delay)
+            delay *= 2
 
 
 class JobStore:
@@ -70,10 +93,10 @@ class JobStore:
 
     def upload_glyph_png(self, job_id: str, glyph_id: str, png_bytes: bytes) -> None:
         path = f"{job_id}/glyphs/{glyph_id}.png"
-        supabase.storage.from_(STORAGE_BUCKET).upload(
+        _retry(lambda: supabase.storage.from_(STORAGE_BUCKET).upload(
             path, png_bytes,
             file_options={"content-type": "image/png", "upsert": "true"},
-        )
+        ))
 
     def download_glyph_png(self, job_id: str, glyph_id: str) -> Optional[bytes]:
         path = f"{job_id}/glyphs/{glyph_id}.png"
@@ -89,10 +112,10 @@ class JobStore:
     def upload_font_file(self, job_id: str, filename: str, data: bytes, content_type: str) -> str:
         """Upload a font binary. Returns the storage path (not the full URL)."""
         path = f"{job_id}/output/{filename}"
-        supabase.storage.from_(STORAGE_BUCKET).upload(
+        _retry(lambda: supabase.storage.from_(STORAGE_BUCKET).upload(
             path, data,
             file_options={"content-type": content_type, "upsert": "true"},
-        )
+        ))
         return path
 
     def get_font_public_url(self, job_id: str, filename: str) -> str:
