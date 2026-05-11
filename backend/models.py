@@ -5,7 +5,7 @@ models.py — Pydantic request/response models for the FastAPI API.
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class JobStatus(str, Enum):
@@ -89,3 +89,8 @@ class DrawGlyphRequest(BaseModel):
     entry_y: Optional[float] = None
     exit_y: Optional[float] = None
     x_shift: float = 0.0    # minX - PAD applied when building pen_paths/svg_paths
+
+    # Font-level style settings — same for every glyph in a font
+    pen_tool: str = "pen"
+    pen_size: int = 14
+    pen_color: List[int] = Field(default_factory=lambda: [38, 32, 28])
