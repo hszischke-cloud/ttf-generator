@@ -553,15 +553,16 @@
         <div class="size-row">
           <span>Size</span>
           <input type="range" id="tool-size" min="4" max="40" value="14"
-            oninput="drawState.toolSize=parseInt(this.value);document.getElementById('size-val').textContent=this.value;">
+            oninput="onToolSizeChange(this)">
           <span class="size-val" id="size-val">14</span>
         </div>
         <div class="size-row">
           <span>Color</span>
           <input type="color" id="tool-color" value="#26201c"
-            oninput="setDrawColor(this.value)"
+            oninput="onToolColorChange(this.value)"
             style="width:44px;height:22px;padding:1px 2px;border:1px solid #ccc;border-radius:4px;cursor:pointer;vertical-align:middle;">
         </div>
+        <div id="font-style-lock" style="display:none;font-size:11px;color:#999;margin-top:3px;">Style locked for this font</div>
       </div>
 
       <!-- Edit controls -->
@@ -1135,6 +1136,38 @@ const drawState = {
   cursiveX: {},
 };
 
+// Font-level style settings — chosen once and locked after the first stroke
+// so every glyph in the font has a consistent style. Reset when starting a
+// new font; restored from saved data when opening an existing font.
+let fontSettings = { tool: 'pen', toolSize: 14, color: [38, 32, 28], locked: false };
+
+function syncToolUI() {
+  document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active-tool'));
+  const btn = document.getElementById(`tool-${fontSettings.tool}`);
+  if (btn) btn.classList.add('active-tool');
+  const sizeSlider = document.getElementById('tool-size');
+  const sizeVal    = document.getElementById('size-val');
+  if (sizeSlider) sizeSlider.value = fontSettings.toolSize;
+  if (sizeVal)    sizeVal.textContent = fontSettings.toolSize;
+  const colorPicker = document.getElementById('tool-color');
+  if (colorPicker) {
+    const [r, g, b] = fontSettings.color;
+    colorPicker.value = '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+  }
+  updateFontSettingsLockUI();
+}
+
+function updateFontSettingsLockUI() {
+  const locked = fontSettings.locked;
+  document.querySelectorAll('.tool-btn').forEach(b => { b.disabled = locked; });
+  const sizeSlider  = document.getElementById('tool-size');
+  const colorPicker = document.getElementById('tool-color');
+  if (sizeSlider)  sizeSlider.disabled  = locked;
+  if (colorPicker) colorPicker.disabled = locked;
+  const lockNote = document.getElementById('font-style-lock');
+  if (lockNote) lockNote.style.display = locked ? '' : 'none';
+}
+
 function _ensure(d, ...keys) {
   let cur = d;
   for (const k of keys) {
@@ -1342,6 +1375,13 @@ function onPointerUp(e) {
     getStrokes(char, slot).push(strk);
     getRedoStack(char, slot).length = 0;
     updateCharCellStatus(char);
+    if (!fontSettings.locked) {
+      fontSettings.tool = drawState.tool;
+      fontSettings.toolSize = drawState.toolSize;
+      fontSettings.color = [...drawState.color];
+      fontSettings.locked = true;
+      updateFontSettingsLockUI();
+    }
     // First cursive stroke ever locks the global connection y so subsequent
     // letters can't drift to a different connection height.
     if (drawMode === 'cursive') {
@@ -1831,12 +1871,29 @@ function updateCharCellStatus(char) {
 
 // ── Tool selection ────────────────────────────────────────────
 function selectTool(tool) {
+  if (fontSettings.locked) return;
   drawState.tool = tool;
   drawState.eraserMode = false;
   document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active-tool'));
   const btn = document.getElementById(`tool-${tool}`);
   if (btn) btn.classList.add('active-tool');
   document.getElementById('eraser-btn').classList.remove('active-tool');
+}
+
+function onToolSizeChange(el) {
+  if (fontSettings.locked) {
+    el.value = fontSettings.toolSize;
+    document.getElementById('size-val').textContent = fontSettings.toolSize;
+    return;
+  }
+  const val = parseInt(el.value);
+  drawState.toolSize = val;
+  document.getElementById('size-val').textContent = val;
+}
+
+function onToolColorChange(hex) {
+  if (fontSettings.locked) return;
+  setDrawColor(hex);
 }
 
 // ── Character navigation ──────────────────────────────────────
@@ -1894,15 +1951,18 @@ function startDrawMode(mode) {
   // Cursive starts on lowercase 'a' in the medial form (most common case).
   const startChar = drawMode === 'cursive' ? 'a' : 'A';
   const startForm = drawMode === 'cursive' ? 'medi' : 'iso';
+  // Reset font-level style settings so the user can choose fresh for this font.
+  fontSettings = { tool: 'pen', toolSize: 14, color: [38, 32, 28], locked: false };
   Object.assign(drawState, {
     currentChar: startChar, currentSlot: 0, currentForm: startForm,
     slotCounts: {}, strokes: {}, redoStacks: {},
     currentStroke: [], isDrawing: false,
-    tool: 'pen', toolSize: 14, eraserMode: false, lastPoint: null, smoothedPoint: null,
+    tool: 'pen', toolSize: 14, color: [38, 32, 28], eraserMode: false, lastPoint: null, smoothedPoint: null,
     cursiveConnY: (GUIDELINES.baseline + GUIDELINES.xheight) / 2,
     cursiveLocked: false,
     cursiveX: {},
   });
+  syncToolUI();
   buildCharGrid();
   goTo('page-draw');
   setTimeout(() => { initDrawCanvas(); updateDrawUI(); }, 50);
@@ -2043,6 +2103,9 @@ async function sendToReview() {
           exit_x: exitX,
           entry_y: Math.round(drawState.cursiveConnY),
           exit_y: Math.round(drawState.cursiveConnY),
+          pen_tool: fontSettings.tool,
+          pen_size: fontSettings.toolSize,
+          pen_color: fontSettings.color,
         }),
       });
       if (!res.ok) {
@@ -2220,7 +2283,7 @@ async function openSavedFont(savedJobId) {
     currentChar: 'A', currentSlot: 0, currentForm: 'iso',
     slotCounts: {}, strokes: {}, redoStacks: {},
     currentStroke: [], isDrawing: false,
-    tool: 'pen', toolSize: 14, eraserMode: false, lastPoint: null, smoothedPoint: null,
+    eraserMode: false, lastPoint: null, smoothedPoint: null,
     cursiveConnY: (GUIDELINES.baseline + GUIDELINES.xheight) / 2,
     cursiveLocked: false, cursiveX: {},
   });
@@ -2261,6 +2324,21 @@ async function openSavedFont(savedJobId) {
     }
   }
 
+  // Restore font-level style settings from the first saved glyph that has them.
+  // Older saves without these fields fall back to the default pen/14/dark-graphite.
+  const firstWithStyle = data.glyphs.find(g => g.pen_tool);
+  fontSettings = {
+    tool:     firstWithStyle?.pen_tool  || 'pen',
+    toolSize: firstWithStyle?.pen_size  || 14,
+    color:    firstWithStyle?.pen_color || [38, 32, 28],
+    locked:   true,
+  };
+  Object.assign(drawState, {
+    tool:     fontSettings.tool,
+    toolSize: fontSettings.toolSize,
+    color:    [...fontSettings.color],
+  });
+
   // Pre-fill font name for the review page.
   document.getElementById('font-name').value = data.font_name || '';
 
@@ -2273,6 +2351,7 @@ async function openSavedFont(savedJobId) {
   goTo('page-draw');
   setTimeout(() => {
     initDrawCanvas();
+    syncToolUI();
     // Mark chars that have saved data with the green dot.
     for (const cell of document.querySelectorAll('.draw-char-cell')) {
       const char = cell.dataset.char;
@@ -2368,6 +2447,9 @@ sendToReview = async function () {
           exit_x: exitX,
           entry_y: Math.round(drawState.cursiveConnY),
           exit_y: Math.round(drawState.cursiveConnY),
+          pen_tool: fontSettings.tool,
+          pen_size: fontSettings.toolSize,
+          pen_color: fontSettings.color,
         }),
       });
       if (!res.ok) throw new Error(`Failed to submit glyph "${t.char}" (${t.form})`);
