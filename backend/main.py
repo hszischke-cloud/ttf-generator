@@ -409,6 +409,23 @@ def _build_font_job(job_id: str):
             if e.get("has_glyph") and e["glyph_id"] in approved_ids
         )
 
+        # Pick a font-wide base color for COLR layers: most common pen_color
+        # across the approved glyphs. Falls back to the default ink color.
+        _color_counts: Dict[Tuple[int, int, int], int] = {}
+        for _e in manifest:
+            if _e["glyph_id"] not in approved_ids or not _e.get("has_glyph"):
+                continue
+            _c = _e.get("pen_color") or [38, 32, 28]
+            try:
+                _key = (int(_c[0]), int(_c[1]), int(_c[2]))
+            except (TypeError, ValueError, IndexError):
+                continue
+            _color_counts[_key] = _color_counts.get(_key, 0) + 1
+        if _color_counts:
+            font_base_color = max(_color_counts.items(), key=lambda kv: kv[1])[0]
+        else:
+            font_base_color = (38, 32, 28)
+
         from processing.centerline import polyline_paths_to_svg
 
         # positional[char] -> {"init": "a.init", "medi": "a.medi", "fina": "a.fina"}
@@ -534,6 +551,7 @@ def _build_font_job(job_id: str):
             return build_otf(
                 dimensional_glyphs, font_name, font_style, letter_spacing, space_width,
                 positional=positional or None,
+                base_color=font_base_color,
             )
 
         def _build_line():

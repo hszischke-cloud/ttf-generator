@@ -10,7 +10,10 @@ Transform for each point:
   font_y = -(svg_y * scale_y) + y_offset   # negation = Y-axis flip
 """
 
+import hashlib
 import io
+import math
+import random
 import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
@@ -18,6 +21,7 @@ from typing import Dict, List, Optional, Tuple
 from fontTools.fontBuilder import FontBuilder
 from fontTools.feaLib.builder import addOpenTypeFeatures
 from fontTools.pens.t2CharStringPen import T2CharStringPen
+from fontTools.colorLib.builder import buildCOLR, buildCPAL
 
 from processing.perturb import perturb_glyph
 
@@ -498,9 +502,13 @@ def build_otf(
     space_width: int = DEFAULT_ADVANCE_WIDTH,
     positional: Optional[Dict[str, Dict[str, str]]] = None,
     perturb: bool = True,
-    perturb_amplitude: float = 5.0,
-    perturb_frequency: float = 0.021,
+    perturb_amplitude: float = 3.0,
+    perturb_frequency: float = 0.13,
     forced_advances: Optional[Dict[str, int]] = None,
+    color_layers: bool = True,
+    base_color: Tuple[int, int, int] = (38, 32, 28),
+    pool_color: Optional[Tuple[int, int, int]] = None,
+    speck_color: Optional[Tuple[int, int, int]] = None,
 ) -> bytes:
     """
     Assemble an OTF font from a list of vectorized glyphs.
@@ -521,7 +529,9 @@ def build_otf(
     """
     fb = FontBuilder(UPM, isTTF=False)
 
-    # Build glyph order
+    # Build glyph order — base glyphs first; COLR layer glyphs (".pool",
+    # ".speck") get appended inside the main loop and the order is committed
+    # to FontBuilder once everything is collected.
     glyph_order = [".notdef", "space"]
     seen = set(glyph_order)
     for g in glyphs:
@@ -529,17 +539,14 @@ def build_otf(
             glyph_order.append(g.glyph_name)
             seen.add(g.glyph_name)
 
-    fb.setupGlyphOrder(glyph_order)
-
-    # Character map (only primary glyphs / slot==0 map to Unicode)
+    # Character map (only primary glyphs / slot==0 map to Unicode). Layer
+    # glyphs deliberately have no cmap entry — they're only reachable via COLR.
     cmap: Dict[int, str] = {0x0020: "space"}
     for g in glyphs:
         if g.slot == 0:
             cp = char_to_unicode(g.char)
             if cp is not None:
                 cmap[cp] = g.glyph_name
-
-    fb.setupCharacterMap(cmap)
 
     from fontTools.pens.t2CharStringPen import T2CharStringPen
     from fontTools.misc.psCharStrings import T2CharString
@@ -567,8 +574,16 @@ def build_otf(
     charstrings["space"] = _space_cs
     print(f"[font_builder] space_width={_space_width}  letter_spacing={letter_spacing}  program={_space_cs.program}")
 
+    # Color layer info collected during the main loop, applied after setupCFF.
+    # Maps each base glyph name to its (layer_glyph_name, palette_index) stack.
+    color_glyph_layers: Dict[str, List[Tuple[str, int]]] = {}
+
+    # COLR is only meaningful when perturb is on — the pool/speck patches are
+    # what give the textured look, and they're keyed off the perturbed contours.
+    do_color = color_layers and perturb
+
     for g in glyphs:
-        cs, advance = _build_charstring_from_svg(
+        cs, advance, perturbed_contours = _build_charstring_from_svg(
             g.svg_paths, g.svg_width, g.svg_height,
             g.baseline_y_in_svg, g.is_lowercase,
             upscale_factor=g.upscale_factor,
@@ -590,6 +605,40 @@ def build_otf(
         charstrings[g.glyph_name] = cs
         metrics[g.glyph_name] = (final_advance, 0)
 
+        if do_color and perturbed_contours:
+            layers: List[Tuple[str, int]] = [(g.glyph_name, 0)]
+            pool_cs = _build_color_layer_charstring(
+                perturbed_contours, g.glyph_name, final_advance, 'pool')
+            if pool_cs is not None:
+                pool_name = f"{g.glyph_name}.pool"
+                if pool_cs.program and isinstance(pool_cs.program[0], (int, float)):
+                    pool_cs.program[0] = final_advance
+                charstrings[pool_name] = pool_cs
+                metrics[pool_name] = (final_advance, 0)
+                glyph_order.append(pool_name)
+                layers.append((pool_name, 1))
+            speck_cs = _build_color_layer_charstring(
+                perturbed_contours, g.glyph_name, final_advance, 'speck')
+            if speck_cs is not None:
+                speck_name = f"{g.glyph_name}.speck"
+                if speck_cs.program and isinstance(speck_cs.program[0], (int, float)):
+                    speck_cs.program[0] = final_advance
+                charstrings[speck_name] = speck_cs
+                metrics[speck_name] = (final_advance, 0)
+                glyph_order.append(speck_name)
+                layers.append((speck_name, 2))
+            # Only register a COLR entry when there's at least one real layer
+            # beyond the base — otherwise an unaltered glyph just maps to itself
+            # and we save a tiny bit of table space.
+            if len(layers) > 1:
+                color_glyph_layers[g.glyph_name] = layers
+
+    # Now that all glyphs (base + COLR layers) are known, commit them to the
+    # FontBuilder. setupGlyphOrder/setupCharacterMap have to come before
+    # setupCFF so the CFF table can index by glyph order.
+    fb.setupGlyphOrder(glyph_order)
+    fb.setupCharacterMap(cmap)
+
     # PostScript name (nameID 6): ASCII printable only, no spaces, max 63 chars.
     # The spec bans anything outside [A-Za-z0-9._-]; we collapse spaces to
     # hyphens and strip the rest so user-typed names never break opentype.js
@@ -607,6 +656,35 @@ def build_otf(
         charStringsDict=charstrings,
         privateDict=private_dict,
     )
+
+    # COLR/CPAL — one palette with [base, pool, speck] colors. Renderers that
+    # don't support COLR (older Windows GDI, some PDF viewers) silently fall
+    # back to the cmap-mapped base glyph, which is correct.
+    if color_glyph_layers:
+        # Derive pool/speck from base_color so non-default ink colors keep a
+        # consistent tonal relationship (pool ≈ much darker base; speck ≈ near
+        # paper white but slightly tinted).
+        br, bg, bb = base_color
+        _pool = pool_color if pool_color is not None else (
+            int(br * 0.30), int(bg * 0.30), int(bb * 0.30))
+        _speck = speck_color if speck_color is not None else (
+            int(br + (255 - br) * 0.92),
+            int(bg + (255 - bg) * 0.92),
+            int(bb + (255 - bb) * 0.92))
+        glyph_index_map = {name: i for i, name in enumerate(glyph_order)}
+        try:
+            colr_table = buildCOLR(
+                color_glyph_layers, version=0, glyphMap=glyph_index_map,
+            )
+            cpal_table = buildCPAL([[
+                (br / 255, bg / 255, bb / 255, 1.0),
+                (_pool[0] / 255, _pool[1] / 255, _pool[2] / 255, 1.0),
+                (_speck[0] / 255, _speck[1] / 255, _speck[2] / 255, 1.0),
+            ]])
+            fb.font['COLR'] = colr_table
+            fb.font['CPAL'] = cpal_table
+        except Exception as e:
+            print(f"Warning: COLR/CPAL build failed (color layers skipped): {e}")
 
     fb.setupHorizontalMetrics(metrics)
 
@@ -760,13 +838,17 @@ class _CollectingPen:
         amplitude: float,
         frequency: float,
     ) -> None:
-        """Perturb collected contours then replay them to *pen*."""
+        """Perturb collected contours then replay them to *pen*.
+
+        Stores the perturbed contours back on self so callers can reuse them
+        (e.g. for COLR layer scatter generation) without re-perturbing.
+        """
         self._flush()
-        contours = perturb_glyph(
+        self._contours = perturb_glyph(
             self._contours, glyph_name,
             amplitude=amplitude, frequency=frequency,
         )
-        for contour in contours:
+        for contour in self._contours:
             self._replay_contour(contour, pen)
 
     def replay(self, pen) -> None:
@@ -802,10 +884,10 @@ def _build_charstring_from_svg(
     entry_x: Optional[float] = None,
     exit_x:  Optional[float] = None,
     perturb: bool = False,
-    perturb_amplitude: float = 5.0,
-    perturb_frequency: float = 0.021,
+    perturb_amplitude: float = 3.0,
+    perturb_frequency: float = 0.13,
     glyph_name: str = "",
-) -> Tuple["T2CharString", int]:
+) -> Tuple["T2CharString", int, List[list]]:
     """
     Build a CFF T2CharString by drawing SVG paths.
 
@@ -815,7 +897,10 @@ def _build_charstring_from_svg(
     is applied in font UPM space (after the SVG→font coordinate transform)
     so the amplitude is consistent across all glyph sizes.
 
-    Returns (charstring, advance_width).
+    Returns (charstring, advance_width, perturbed_contours). The third
+    element is the list of pen-op contours (post-perturbation if applied),
+    or an empty list when perturb=False — used by the COLR layer builder
+    to scatter ink-variation patches inside the glyph.
     """
     from fontTools.pens.t2CharStringPen import T2CharStringPen
 
@@ -827,6 +912,7 @@ def _build_charstring_from_svg(
         advance = DEFAULT_ADVANCE_WIDTH
 
     real_pen = T2CharStringPen(advance, glyphSet=None)
+    contours: List[list] = []
 
     if perturb and svg_paths:
         # Collect → perturb → replay
@@ -841,6 +927,7 @@ def _build_charstring_from_svg(
             amplitude=perturb_amplitude,
             frequency=perturb_frequency,
         )
+        contours = collector._contours
     else:
         _draw_svg_paths_to_pen(
             real_pen, svg_paths, svg_width, svg_height,
@@ -848,7 +935,121 @@ def _build_charstring_from_svg(
             entry_x=entry_x, exit_x=exit_x,
         )
 
-    return real_pen.getCharString(), advance
+    return real_pen.getCharString(), advance, contours
+
+
+# ---------------------------------------------------------------------------
+# COLR/CPAL — ink-variation color layers
+# ---------------------------------------------------------------------------
+
+def _on_curve_xy(op: tuple) -> Tuple[float, float]:
+    """Return the on-curve endpoint of a pen op (moveTo, lineTo, curveTo)."""
+    return op[-1]  # last tuple element is always the on-curve point
+
+
+def _contours_bbox(contours: List[list]) -> Tuple[float, float, float, float]:
+    """Bounding box of all on-curve endpoints across all contours."""
+    xs: List[float] = []
+    ys: List[float] = []
+    for contour in contours:
+        for op in contour:
+            if op[0] in ('moveTo', 'lineTo', 'curveTo'):
+                x, y = _on_curve_xy(op)
+                xs.append(x); ys.append(y)
+    if not xs:
+        return (0.0, 0.0, 0.0, 0.0)
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def _pip_single(x: float, y: float, poly: List[Tuple[float, float]]) -> bool:
+    """Ray-casting point-in-polygon. Returns True if (x,y) is strictly inside."""
+    n = len(poly)
+    if n < 3:
+        return False
+    inside = False
+    j = n - 1
+    for i in range(n):
+        yi, yj = poly[i][1], poly[j][1]
+        if (yi > y) != (yj > y):
+            xi, xj = poly[i][0], poly[j][0]
+            x_int = (xj - xi) * (y - yi) / (yj - yi + 1e-12) + xi
+            if x < x_int:
+                inside = not inside
+        j = i
+    return inside
+
+
+def _point_inside_contours(x: float, y: float, contours: List[list]) -> bool:
+    """Even-odd containment across multiple contours — handles holes (e.g. 'o', 'a')."""
+    inside = False
+    for contour in contours:
+        pts = [_on_curve_xy(op) for op in contour
+               if op[0] in ('moveTo', 'lineTo', 'curveTo')]
+        if _pip_single(x, y, pts):
+            inside = not inside
+    return inside
+
+
+def _build_color_layer_charstring(
+    contours: List[list],
+    glyph_name: str,
+    advance: int,
+    kind: str,                              # 'pool' or 'speck'
+) -> Optional["T2CharString"]:
+    """
+    Generate a CFF charstring of scattered small ellipses inside *contours*.
+
+    Pools are larger and seeded denser; specks are smaller and sparser. Both
+    use a deterministic per-(glyph,kind) seed so the same font compiles
+    identically every time. Returns None when the glyph is too small or no
+    patch can be placed inside the outline.
+    """
+    if not contours:
+        return None
+
+    xmin, ymin, xmax, ymax = _contours_bbox(contours)
+    w = xmax - xmin
+    h = ymax - ymin
+    if w < 40 or h < 40:
+        return None
+
+    seed = int(hashlib.md5((glyph_name + kind).encode()).hexdigest()[:6], 16)
+    rng = random.Random(seed)
+
+    if kind == 'pool':
+        target = max(4, int(w * h / 22000))
+        radius_min, radius_max = 6.0, 11.0
+    else:  # speck
+        target = max(3, int(w * h / 32000))
+        radius_min, radius_max = 2.5, 4.5
+
+    pen = T2CharStringPen(advance, glyphSet=None)
+    placed = 0
+    attempts = 0
+    max_attempts = target * 30
+    steps = 8                                 # octagonal ellipse approximation
+
+    while placed < target and attempts < max_attempts:
+        attempts += 1
+        x = rng.uniform(xmin, xmax)
+        y = rng.uniform(ymin, ymax)
+        if not _point_inside_contours(x, y, contours):
+            continue
+        r = rng.uniform(radius_min, radius_max)
+        for k in range(steps):
+            ang = (k / steps) * 2 * math.pi
+            xx = x + math.cos(ang) * r
+            yy = y + math.sin(ang) * r
+            if k == 0:
+                pen.moveTo((round(xx), round(yy)))
+            else:
+                pen.lineTo((round(xx), round(yy)))
+        pen.closePath()
+        placed += 1
+
+    if placed == 0:
+        return None
+    return pen.getCharString()
 
 
 def _build_notdef_charstring() -> "T2CharString":
