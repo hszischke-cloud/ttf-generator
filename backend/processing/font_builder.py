@@ -498,8 +498,8 @@ def build_otf(
     space_width: int = DEFAULT_ADVANCE_WIDTH,
     positional: Optional[Dict[str, Dict[str, str]]] = None,
     perturb: bool = True,
-    perturb_amplitude: float = 5.0 / 3.0,
-    perturb_frequency: float = 0.021,
+    perturb_amplitude: float = 3.0,
+    perturb_frequency: float = 0.13,
     forced_advances: Optional[Dict[str, int]] = None,
 ) -> bytes:
     """
@@ -802,8 +802,8 @@ def _build_charstring_from_svg(
     entry_x: Optional[float] = None,
     exit_x:  Optional[float] = None,
     perturb: bool = False,
-    perturb_amplitude: float = 5.0 / 3.0,
-    perturb_frequency: float = 0.021,
+    perturb_amplitude: float = 3.0,
+    perturb_frequency: float = 0.13,
     glyph_name: str = "",
 ) -> Tuple["T2CharString", int]:
     """
