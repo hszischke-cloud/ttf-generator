@@ -44,7 +44,7 @@ from models import (
     SavedFontInfo,
 )
 from processing.font_builder import (
-    GlyphData, build_otf, compute_glyph_advance, otf_to_woff2,
+    GlyphData, build_otf, compute_glyph_advance,
     char_to_glyph_name,
 )
 
@@ -221,9 +221,7 @@ async def finalize(job_id: str, req: FinalizeRequest, background_tasks: Backgrou
     return FinalizeResponse(
         job_id=job_id,
         otf_url=f"{base}/{safe_name}.otf",
-        woff2_url=f"{base}/{safe_name}.woff2",
         otf_line_url=f"{base}/{safe_name}-Line.otf",
-        woff2_line_url=f"{base}/{safe_name}-Line.woff2",
     )
 
 
@@ -531,39 +529,38 @@ def _build_font_job(job_id: str):
             dimensional_glyphs, font_name, font_style, letter_spacing, space_width,
             positional=positional or None,
         )
-        job_store.update_state(job_id, progress_pct=50)
-        woff2_bytes = otf_to_woff2(otf_bytes)
-        job_store.update_state(job_id, progress_pct=65)
+        job_store.update_state(job_id, progress_pct=55)
 
         line_otf_bytes = b""
-        line_woff2_bytes = b""
         line_fea_warning: Optional[str] = None
         if line_glyphs:
             line_otf_bytes, line_fea_warning = build_otf(
                 line_glyphs, font_name, "Line", letter_spacing, space_width,
                 positional=positional or None,
-                perturb=False,   # single-line OTF must stay geometrically clean
+                perturb=False,
                 forced_advances=dim_advances,
             )
-            job_store.update_state(job_id, progress_pct=85)
-            line_woff2_bytes = otf_to_woff2(line_otf_bytes)
 
-        job_store.update_state(job_id, progress_pct=92)
+        job_store.update_state(job_id, progress_pct=85)
 
         safe_name = font_name.replace(" ", "_")
 
-        # Upload font binaries to Supabase Storage.
-        # font_files stores storage paths (not local paths) so serve_font can
-        # construct a public URL from them.
-        otf_path   = job_store.upload_font_file(job_id, f"{safe_name}.otf",   otf_bytes,   "font/otf")
-        woff2_path = job_store.upload_font_file(job_id, f"{safe_name}.woff2", woff2_bytes, "font/woff2")
-        font_files = {"otf": otf_path, "woff2": woff2_path}
+        # Upload OTF files to Supabase in parallel (2 threads max).
+        from concurrent.futures import ThreadPoolExecutor
 
+        def _upload(filename, data):
+            return job_store.upload_font_file(job_id, filename, data, "font/otf")
+
+        uploads = [(f"{safe_name}.otf", otf_bytes)]
         if line_otf_bytes:
-            otf_line_path   = job_store.upload_font_file(job_id, f"{safe_name}-Line.otf",   line_otf_bytes,   "font/otf")
-            woff2_line_path = job_store.upload_font_file(job_id, f"{safe_name}-Line.woff2", line_woff2_bytes, "font/woff2")
-            font_files["otf_line"]   = otf_line_path
-            font_files["woff2_line"] = woff2_line_path
+            uploads.append((f"{safe_name}-Line.otf", line_otf_bytes))
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            paths = list(pool.map(lambda t: _upload(*t), uploads))
+
+        font_files = {"otf": paths[0]}
+        if line_otf_bytes:
+            font_files["otf_line"] = paths[1]
 
         extra = {}
         if fea_warning:
