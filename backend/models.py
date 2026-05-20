@@ -52,9 +52,7 @@ class FinalizeRequest(BaseModel):
 class FinalizeResponse(BaseModel):
     job_id: str
     otf_url: str
-    woff2_url: str
     otf_line_url: str
-    woff2_line_url: str
 
 
 class SavedFontInfo(BaseModel):

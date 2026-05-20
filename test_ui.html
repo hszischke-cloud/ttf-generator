@@ -656,7 +656,6 @@
 
   <div class="download-btns" style="margin-top:20px;">
     <button id="otf-btn" class="btn btn-primary" onclick="downloadFont('otf')">Download OTF</button>
-    <button id="woff2-btn" class="btn btn-outline" onclick="downloadFont('woff2')">Download WOFF2</button>
     <button id="save-font-btn" class="btn btn-teal" onclick="saveFont()" style="margin-left:4px;">Save to My Fonts</button>
     <span id="download-status" style="font-size:13px;color:#888;"></span>
   </div>
@@ -670,7 +669,6 @@
     </p>
     <div class="download-btns" style="margin:0;">
       <button id="otf-line-btn" class="btn btn-primary" onclick="downloadFont('otf', true)">Download Line OTF</button>
-      <button id="woff2-line-btn" class="btn btn-outline" onclick="downloadFont('woff2', true)">Download Line WOFF2</button>
       <span id="line-skipped-note" style="font-size:13px;color:#a06a00;"></span>
     </div>
     <div id="line-unavailable" style="display:none;margin-top:10px;font-size:13px;color:#a06a00;">
@@ -880,7 +878,6 @@ async function finalize() {
 async function showDownloadPage(feaWarning, cacheBust, lineInfo) {
   const v = cacheBust || Date.now();
   const otfUrl = `${API}/fonts/${jobId}/${fontSafeName}.otf?v=${v}`;
-  const woff2Url = `${API}/fonts/${jobId}/${fontSafeName}.woff2?v=${v}`;
 
   // Cursive: hide the letter-spacing slider (adjusting it breaks connections)
   // and seed a multi-word phrase that exercises init/medi/fina rules so the
@@ -899,13 +896,11 @@ async function showDownloadPage(feaWarning, cacheBust, lineInfo) {
 
   document.getElementById('download-status').textContent = '';
   document.getElementById('otf-btn').disabled = false;
-  document.getElementById('woff2-btn').disabled = false;
 
   // Default the line buttons to enabled; override below if we have lineInfo
   // showing the line font wasn't actually built.
   const hasLine = lineInfo ? !!lineInfo.hasLineFont : true;
   document.getElementById('otf-line-btn').disabled = !hasLine;
-  document.getElementById('woff2-line-btn').disabled = !hasLine;
   document.getElementById('line-unavailable').style.display = hasLine ? 'none' : 'block';
   const skipNote = document.getElementById('line-skipped-note');
   if (lineInfo && lineInfo.skipped && lineInfo.skipped.length) {
@@ -941,7 +936,7 @@ async function showDownloadPage(feaWarning, cacheBust, lineInfo) {
     style.id = 'preview-style';
     document.head.appendChild(style);
   }
-  style.textContent = `@font-face { font-family: '${family}'; src: url('${woff2Url}') format('woff2'); }`;
+  style.textContent = `@font-face { font-family: '${family}'; src: url('${otfUrl}') format('opentype'); }`;
 
   try {
     // Trigger load and wait — this resolves only when the font is fully decoded
@@ -974,7 +969,7 @@ async function downloadFont(fmt, line) {
   const ls = parseInt(document.getElementById('letter-spacing').value);
   const sw = parseInt(document.getElementById('space-width').value);
   const status = document.getElementById('download-status');
-  const allBtns = ['otf-btn', 'woff2-btn', 'otf-line-btn', 'woff2-line-btn']
+  const allBtns = ['otf-btn', 'otf-line-btn']
     .map(id => document.getElementById(id));
 
   allBtns.forEach(b => b.disabled = true);
@@ -1031,10 +1026,9 @@ async function downloadFont(fmt, line) {
       skipNote.textContent = '';
     }
 
-    // Gate the line-font buttons on whether the line OTF was actually produced
+    // Gate the line-font button on whether the line OTF was actually produced
     const hasLine = !!finalStatus.has_line_font;
     document.getElementById('otf-line-btn').disabled = !hasLine;
-    document.getElementById('woff2-line-btn').disabled = !hasLine;
     document.getElementById('line-unavailable').style.display = hasLine ? 'none' : 'block';
 
     // Refresh preview with the same cache-bust so we load the newly built font

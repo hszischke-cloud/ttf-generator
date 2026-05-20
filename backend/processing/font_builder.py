@@ -18,7 +18,6 @@ from typing import Dict, List, Optional, Tuple
 from fontTools.fontBuilder import FontBuilder
 from fontTools.feaLib.builder import addOpenTypeFeatures
 from fontTools.pens.t2CharStringPen import T2CharStringPen
-from fontTools.ttLib import TTFont
 
 from processing.perturb import perturb_glyph
 
@@ -685,24 +684,7 @@ def build_otf(
 
     buf = io.BytesIO()
     fb.font.save(buf)
-
-    # Verify actual advance widths in the saved font
-    buf.seek(0)
-    _verify = TTFont(buf)
-    _hmtx = _verify["hmtx"].metrics
-    print(f"[font_builder] saved hmtx space={_hmtx.get('space')}  .notdef={_hmtx.get('.notdef')}")
-    buf.seek(0)
-
     return buf.getvalue(), fea_warning
-
-
-def otf_to_woff2(otf_bytes: bytes) -> bytes:
-    """Convert raw OTF bytes to WOFF2."""
-    font = TTFont(io.BytesIO(otf_bytes))
-    buf = io.BytesIO()
-    font.flavor = "woff2"
-    font.save(buf)
-    return buf.getvalue()
 
 
 # ---------------------------------------------------------------------------
