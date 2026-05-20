@@ -1065,6 +1065,38 @@ const TOOL_PROFILES = {
   felt:        {thinning: 0.10, startTaper: 0.03, endTaper: 0.04, widthMult: 1.15, taperFloor: 0.70},
 };
 
+// Pen-mode ink variation — simulates the natural along-stroke darkness drift
+// of a real pen on paper. Driven by 1D value noise sampled along arc length.
+const INK_VARIATION = {
+  poolFreq:          0.040,   // dark patches per canvas px (~1 cycle / 25 px)
+  poolThreshold:     0.20,    // noise must exceed this to spawn a pool
+  poolAlpha:         0.22,    // overlay opacity of dark patches
+  poolDarken:        0.62,    // 0..1 multiplier applied to base color
+  poolPressureBias:  0.5,     // pressure deviation added to noise (>0 ⇒ more pools at high pressure)
+  speckFreq:         0.085,   // light specks per canvas px (denser than pools)
+  speckThreshold:    0.45,    // anti-peak threshold for specks
+  speckAlpha:        0.18,    // brightness of light specks
+};
+
+// Tiny 1D value noise — smoothstep-interpolated hash. Outputs in [-1, +1].
+function _inkHash(i) {
+  let h = (i | 0) >>> 0;
+  h = ((h ^ 61) ^ (h >>> 16)) >>> 0;
+  h = (h + (h << 3)) >>> 0;
+  h = (h ^ (h >>> 4)) >>> 0;
+  h = Math.imul(h, 0x27d4eb2d) >>> 0;
+  h = (h ^ (h >>> 15)) >>> 0;
+  return (h & 0xffff) / 32767.5 - 1.0;
+}
+function _inkNoise1d(x) {
+  const i = Math.floor(x);
+  const f = x - i;
+  const a = _inkHash(i);
+  const b = _inkHash(i + 1);
+  const t = f * f * (3 - 2 * f);   // smoothstep
+  return a + t * (b - a);
+}
+
 function easeInOut(t) {
   return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
 }
@@ -1411,11 +1443,11 @@ function renderCanvas() {
     const strokeTool = stroke.tool || tool;
     const strokeColor = stroke.color || color;
     const poly = strokeToPolygon(stroke, toolSize, strokeTool);
-    renderStrokePolygon(ctx, poly, strokeTool, strokeColor);
+    renderStrokePolygon(ctx, poly, strokeTool, strokeColor, stroke);
   }
   if (drawState.currentStroke.length > 1) {
     const poly = strokeToPolygon(drawState.currentStroke, toolSize, tool);
-    renderStrokePolygon(ctx, poly, tool, color);
+    renderStrokePolygon(ctx, poly, tool, color, drawState.currentStroke);
   }
 }
 
@@ -1697,7 +1729,7 @@ function strokeToPolygon(points, maxSize, tool) {
   return poly;
 }
 
-function renderStrokePolygon(ctx, polygon, tool, color = [38, 32, 28]) {
+function renderStrokePolygon(ctx, polygon, tool, color = [38, 32, 28], points = null) {
   if (polygon.length < 3) return;
 
   const [r, g, b] = color;
@@ -1720,6 +1752,10 @@ function renderStrokePolygon(ctx, polygon, tool, color = [38, 32, 28]) {
     ctx.shadowColor = `rgba(${r},${g},${b},0.25)`;
     ctx.fillStyle = `rgba(${r},${g},${b},${opacity.toFixed(2)})`;
     ctx.fill();
+    ctx.shadowBlur = 0;
+    if (points && points.length >= 3) {
+      addPenInkVariation(ctx, polygon, points, color, opacity);
+    }
   } else if (tool === 'pencil') {
     // Layer A: blur-softened base fill — removes the crisp polygon edge
     // that makes canvas strokes look digital rather than hand-drawn
@@ -1795,6 +1831,75 @@ function addPencilTexture(ctx, polygon, strokeAngle, color) {
     const op = (0.07 + Math.random() * 0.14).toFixed(2);
     ctx.fillStyle = `rgba(255,255,255,${op})`;
     ctx.fillRect(tx, ty, 1.1, 1.1);
+  }
+
+  ctx.restore();
+}
+
+// Pen-mode along-stroke ink variation: dark "pools" at noise peaks (correlated
+// with high pressure) and lighter "skips" at noise troughs. Both clipped to
+// the stroke polygon so nothing bleeds onto paper.
+function addPenInkVariation(ctx, polygon, points, color, baseOpacity) {
+  const [r, g, b] = color;
+  const ink = INK_VARIATION;
+  const n = points.length;
+  if (n < 3) return;
+
+  // Cumulative arc length along the centerline
+  const arc = new Array(n);
+  arc[0] = 0;
+  for (let i = 1; i < n; i++) {
+    arc[i] = arc[i - 1] + Math.hypot(points[i].x - points[i - 1].x,
+                                     points[i].y - points[i - 1].y);
+  }
+  if (arc[n - 1] < 6) return;  // too short to vary
+
+  // Per-stroke phase derived from the first point — keeps successive strokes
+  // from sharing the same dark/light pattern
+  const phase = Math.abs(points[0].x * 0.137 + points[0].y * 0.213) % 1024;
+
+  ctx.save();
+  // Clip every overlay to the stroke polygon
+  ctx.beginPath();
+  ctx.moveTo(polygon[0].x, polygon[0].y);
+  for (let i = 1; i < polygon.length; i++) ctx.lineTo(polygon[i].x, polygon[i].y);
+  ctx.closePath();
+  ctx.clip();
+
+  // Dark pools: walk centerline, place a soft blob at each noise peak
+  const dr = Math.max(0, Math.floor(r * ink.poolDarken));
+  const dg = Math.max(0, Math.floor(g * ink.poolDarken));
+  const db = Math.max(0, Math.floor(b * ink.poolDarken));
+  for (let i = 1; i < n - 1; i++) {
+    const noise = _inkNoise1d(arc[i] * ink.poolFreq + phase);
+    const driven = noise + (points[i].p - 0.5) * ink.poolPressureBias;
+    if (driven > ink.poolThreshold) {
+      const intensity = Math.min(1, (driven - ink.poolThreshold) / (1 - ink.poolThreshold));
+      const radius = 1.6 + intensity * 2.8;
+      const a = (ink.poolAlpha * (0.6 + 0.4 * intensity)).toFixed(2);
+      ctx.fillStyle = `rgba(${dr},${dg},${db},${a})`;
+      ctx.beginPath();
+      ctx.arc(points[i].x, points[i].y, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Light specks: scatter tiny brights at noise troughs, offset perpendicular
+  // to stroke direction so they sit near the edge like paper-tooth voids
+  for (let i = 1; i < n - 1; i++) {
+    const noise = _inkNoise1d(arc[i] * ink.speckFreq + phase + 99.7);
+    if (noise < -ink.speckThreshold) {
+      const dx = points[i + 1].x - points[i - 1].x;
+      const dy = points[i + 1].y - points[i - 1].y;
+      const tl = Math.hypot(dx, dy) || 1;
+      const nx = -dy / tl, ny = dx / tl;
+      const off = (_inkHash(Math.floor(arc[i] * 2.7) + 17) ) * 3.0;
+      const sz = 0.9 + Math.abs(noise) * 0.6;
+      const a = (ink.speckAlpha * (0.5 + 0.5 * Math.abs(noise))).toFixed(2);
+      ctx.fillStyle = `rgba(255,255,255,${a})`;
+      ctx.fillRect(points[i].x + nx * off - sz / 2,
+                   points[i].y + ny * off - sz / 2, sz, sz);
+    }
   }
 
   ctx.restore();
@@ -2002,7 +2107,7 @@ function glyphThumbnailB64(char, slot, form) {
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, DRAW_W, DRAW_H);
   for (const stroke of getStrokes(char, slot, form)) {
     const poly = strokeToPolygon(stroke, drawState.toolSize, drawState.tool);
-    renderStrokePolygon(ctx, poly, drawState.tool);
+    renderStrokePolygon(ctx, poly, drawState.tool, drawState.color, stroke);
   }
   return off.toDataURL('image/png').split(',')[1];
 }
