@@ -562,7 +562,6 @@
             oninput="onToolColorChange(this.value)"
             style="width:44px;height:22px;padding:1px 2px;border:1px solid #ccc;border-radius:4px;cursor:pointer;vertical-align:middle;">
         </div>
-        <div id="font-style-lock" style="display:none;font-size:11px;color:#999;margin-top:3px;">Style locked for this font</div>
       </div>
 
       <!-- Edit controls -->
@@ -1056,11 +1055,14 @@ const GUIDELINES = {
 // ── Drawing engine constants ──────────────────────────────────
 const SMOOTH_ALPHA = 0.62;   // input low-pass: 0=very smooth, 1=raw
 
+// taperFloor caps how thin the start/end of a stroke can go — without it,
+// stroke ends converge to a point that disappears at small render sizes
+// (visible gaps when the font is zoomed out).
 const TOOL_PROFILES = {
-  pen:         {thinning: 0.65, startTaper: 0.14, endTaper: 0.22, widthMult: 1.0},
-  pencil:      {thinning: 0.22, startTaper: 0.16, endTaper: 0.22, widthMult: 0.72},
-  calligraphy: {thinning: 0.80, startTaper: 0.12, endTaper: 0.18, widthMult: 1.0},
-  felt:        {thinning: 0.12, startTaper: 0.04, endTaper: 0.06, widthMult: 1.15},
+  pen:         {thinning: 0.35, startTaper: 0.06, endTaper: 0.08, widthMult: 1.0,  taperFloor: 0.62},
+  pencil:      {thinning: 0.18, startTaper: 0.08, endTaper: 0.10, widthMult: 0.72, taperFloor: 0.45},
+  calligraphy: {thinning: 0.55, startTaper: 0.06, endTaper: 0.08, widthMult: 1.0,  taperFloor: 0.50},
+  felt:        {thinning: 0.10, startTaper: 0.03, endTaper: 0.04, widthMult: 1.15, taperFloor: 0.70},
 };
 
 function easeInOut(t) {
@@ -1130,10 +1132,9 @@ const drawState = {
   cursiveX: {},
 };
 
-// Font-level style settings — chosen once and locked after the first stroke
-// so every glyph in the font has a consistent style. Reset when starting a
-// new font; restored from saved data when opening an existing font.
-let fontSettings = { tool: 'pen', toolSize: 14, color: [38, 32, 28], locked: false };
+// Font-level style settings — last-used tool/size/color, sent with every
+// glyph so it can be restored when re-opening a saved font.
+let fontSettings = { tool: 'pen', toolSize: 14, color: [38, 32, 28] };
 
 function syncToolUI() {
   document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active-tool'));
@@ -1148,18 +1149,6 @@ function syncToolUI() {
     const [r, g, b] = fontSettings.color;
     colorPicker.value = '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
   }
-  updateFontSettingsLockUI();
-}
-
-function updateFontSettingsLockUI() {
-  const locked = fontSettings.locked;
-  document.querySelectorAll('.tool-btn').forEach(b => { b.disabled = locked; });
-  const sizeSlider  = document.getElementById('tool-size');
-  const colorPicker = document.getElementById('tool-color');
-  if (sizeSlider)  sizeSlider.disabled  = locked;
-  if (colorPicker) colorPicker.disabled = locked;
-  const lockNote = document.getElementById('font-style-lock');
-  if (lockNote) lockNote.style.display = locked ? '' : 'none';
 }
 
 function _ensure(d, ...keys) {
@@ -1325,16 +1314,17 @@ function toCanvasPoint(e) {
 function computePressure(rawPressure, x, y, t, pointerType) {
   const last = drawState.lastPoint;
   const vel = last ? Math.hypot(x - last.x, y - last.y) / Math.max(t - last.t, 1) : 0;
-  // Slower = thicker (velFactor → 1.0), faster = thinner (velFactor → 0.45)
-  // Narrowed range (was 0.3–1.0) and gentler slope so fast strokes stay readable
-  const velFactor = Math.max(0.45, 1.0 - vel * 0.035);
+  // Slower = thicker (velFactor → 1.0), faster = thinner. Floor raised to 0.72
+  // and slope softened so fast strokes keep enough width to stay visible when
+  // the font is rendered at small sizes.
+  const velFactor = Math.max(0.72, 1.0 - vel * 0.018);
 
   if (pointerType === 'pen' && rawPressure > 0) {
     // Real stylus: 70% hardware pressure + 30% velocity
-    return Math.max(0.1, rawPressure * 0.7 + velFactor * 0.3);
+    return Math.max(0.35, rawPressure * 0.7 + velFactor * 0.3);
   } else {
     // Mouse: velocity-driven with temporal smoothing to avoid snapping
-    const prev = drawState.lastPoint?.p ?? 0.55;
+    const prev = drawState.lastPoint?.p ?? 0.72;
     return prev * 0.55 + velFactor * 0.45;
   }
 }
@@ -1369,13 +1359,6 @@ function onPointerUp(e) {
     getStrokes(char, slot).push(strk);
     getRedoStack(char, slot).length = 0;
     updateCharCellStatus(char);
-    if (!fontSettings.locked) {
-      fontSettings.tool = drawState.tool;
-      fontSettings.toolSize = drawState.toolSize;
-      fontSettings.color = [...drawState.color];
-      fontSettings.locked = true;
-      updateFontSettingsLockUI();
-    }
     // First cursive stroke ever locks the global connection y so subsequent
     // letters can't drift to a different connection height.
     if (drawMode === 'cursive') {
@@ -1674,13 +1657,12 @@ function strokeToPolygon(points, maxSize, tool) {
     tangents.push({nx: -ty, ny: tx});
 
     // Asymmetric taper: easeOut at start (pen lands, expands fast),
-    // easeIn at end (pen lifts gradually then suddenly leaves paper)
+    // easeIn at end (pen lifts gradually then suddenly leaves paper).
+    // Floor stops the taper from converging to a point so tails stay visible
+    // at small render sizes.
     const st = easeOut(Math.min(i / Math.max(n * prof.startTaper, 1), 1));
     const et = easeIn(Math.min((n - 1 - i) / Math.max(n * prof.endTaper, 1), 1));
-    // Pencil has a minimum width floor so strokes end with a rounded blunt tip
-    // rather than converging to a spike — matches how a pencil lifts off paper.
-    const taperFloor = tool === 'pencil' ? 0.28 : 0.0;
-    const taper = Math.max(taperFloor, st * et);
+    const taper = Math.max(prof.taperFloor ?? 0.0, st * et);
 
     let hw;
     if (tool === 'calligraphy') {
@@ -1865,8 +1847,8 @@ function updateCharCellStatus(char) {
 
 // ── Tool selection ────────────────────────────────────────────
 function selectTool(tool) {
-  if (fontSettings.locked) return;
   drawState.tool = tool;
+  fontSettings.tool = tool;
   drawState.eraserMode = false;
   document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active-tool'));
   const btn = document.getElementById(`tool-${tool}`);
@@ -1875,19 +1857,15 @@ function selectTool(tool) {
 }
 
 function onToolSizeChange(el) {
-  if (fontSettings.locked) {
-    el.value = fontSettings.toolSize;
-    document.getElementById('size-val').textContent = fontSettings.toolSize;
-    return;
-  }
   const val = parseInt(el.value);
   drawState.toolSize = val;
+  fontSettings.toolSize = val;
   document.getElementById('size-val').textContent = val;
 }
 
 function onToolColorChange(hex) {
-  if (fontSettings.locked) return;
   setDrawColor(hex);
+  fontSettings.color = [...drawState.color];
 }
 
 // ── Character navigation ──────────────────────────────────────
@@ -1946,7 +1924,7 @@ function startDrawMode(mode) {
   const startChar = drawMode === 'cursive' ? 'a' : 'A';
   const startForm = drawMode === 'cursive' ? 'medi' : 'iso';
   // Reset font-level style settings so the user can choose fresh for this font.
-  fontSettings = { tool: 'pen', toolSize: 14, color: [38, 32, 28], locked: false };
+  fontSettings = { tool: 'pen', toolSize: 14, color: [38, 32, 28] };
   Object.assign(drawState, {
     currentChar: startChar, currentSlot: 0, currentForm: startForm,
     slotCounts: {}, strokes: {}, redoStacks: {},
@@ -2325,7 +2303,6 @@ async function openSavedFont(savedJobId) {
     tool:     firstWithStyle?.pen_tool  || 'pen',
     toolSize: firstWithStyle?.pen_size  || 14,
     color:    firstWithStyle?.pen_color || [38, 32, 28],
-    locked:   true,
   };
   Object.assign(drawState, {
     tool:     fontSettings.tool,

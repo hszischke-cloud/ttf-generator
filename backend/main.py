@@ -525,29 +525,38 @@ def _build_font_job(job_id: str):
         }
         dim_advances["space"] = space_width
 
-        otf_bytes, fea_warning = build_otf(
-            dimensional_glyphs, font_name, font_style, letter_spacing, space_width,
-            positional=positional or None,
-        )
-        job_store.update_state(job_id, progress_pct=55)
+        # Build both OTFs in parallel — they share no state and each holds the
+        # GIL only intermittently (fontTools spends most of its time in C
+        # ext modules and I/O), so threading actually overlaps.
+        from concurrent.futures import ThreadPoolExecutor
 
-        line_otf_bytes = b""
-        line_fea_warning: Optional[str] = None
-        if line_glyphs:
-            line_otf_bytes, line_fea_warning = build_otf(
+        def _build_dim():
+            return build_otf(
+                dimensional_glyphs, font_name, font_style, letter_spacing, space_width,
+                positional=positional or None,
+            )
+
+        def _build_line():
+            if not line_glyphs:
+                return b"", None
+            return build_otf(
                 line_glyphs, font_name, "Line", letter_spacing, space_width,
                 positional=positional or None,
                 perturb=False,
                 forced_advances=dim_advances,
             )
 
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            dim_future = pool.submit(_build_dim)
+            line_future = pool.submit(_build_line)
+            otf_bytes, fea_warning = dim_future.result()
+            line_otf_bytes, line_fea_warning = line_future.result()
+
         job_store.update_state(job_id, progress_pct=85)
 
         safe_name = font_name.replace(" ", "_")
 
         # Upload OTF files to Supabase in parallel (2 threads max).
-        from concurrent.futures import ThreadPoolExecutor
-
         def _upload(filename, data):
             return job_store.upload_font_file(job_id, filename, data, "font/otf")
 

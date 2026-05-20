@@ -288,10 +288,12 @@ def _build_fea_code(alternates: Dict[str, List[str]], all_glyph_names: List[str]
         alternates: {base_glyph_name: [alt1_name, alt2_name, ...]}
         all_glyph_names: full glyph order (used to build @other classes)
     """
-    MAX_DIST = 12  # look back up to 12 glyphs for the previous occurrence
-                    # — covers most words plus typical inter-word spacing,
-                    # so even repeated letters in a long phrase keep cycling
-                    # through their variants.
+    MAX_DIST = 4   # look back up to 4 glyphs for the previous occurrence.
+                    # Each extra distance multiplies feaLib compile time by a
+                    # large constant; 4 still covers typical syllable-scale
+                    # repeats ("banana", "letter") while keeping the rule set
+                    # small enough that font generation isn't dominated by
+                    # feaLib compile time.
 
     if all_glyph_names is None:
         all_glyph_names = ["space"]
