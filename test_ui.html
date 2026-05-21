@@ -1070,15 +1070,13 @@ const TOOL_PROFILES = {
 // slightly inside the edge so they protrude a little; divots are paper-
 // white notches centred on the edge that get half-masked by the polygon
 // clip. Together they read as a high-frequency wavy edge instead of dots
-// floating inside the stroke. Radii here are intentionally fine — the
-// previous values (1.3–2.4 px) were 3× larger; the user wanted only ~30 %
-// as deep / outward so dots and divots barely break the silhouette.
+// floating inside the stroke.
 const INK_VARIATION = {
   outlineNoiseFreq:  0.20,    // cycles per arc-length px (~5 px per cycle)
   dotThreshold:      0.25,    // noise > +0.25 → dot (outward bump)
   divotThreshold:    0.25,    // noise < -0.25 → divot (inward notch)
-  dotRadius:         [0.40, 0.72],   // 30 % of previous [1.3, 2.4]
-  divotRadius:       [0.40, 0.72],   // 30 % of previous
+  dotRadius:         [1.3, 2.4],
+  divotRadius:       [1.3, 2.4],
   dotInsetFrac:      0.7,     // 0 = centred on edge, 1 = fully inside
   dotAlpha:          0.85,
   divotAlpha:        0.9,

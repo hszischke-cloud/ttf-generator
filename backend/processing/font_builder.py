@@ -1047,13 +1047,10 @@ def _build_color_layer_charstring(
 
     seed = int(hashlib.md5((glyph_name + kind).encode()).hexdigest()[:6], 16)
 
-    # Outline-walking parameters (font UPM space). Radii were 4.5–7.5 UPM
-    # in the prior tuning; scaled to ~30 % so dots / divots only break the
-    # silhouette by a tiny amount, matching the canvas-side update. Floor
-    # at 1.5 UPM so the octagon doesn't round to a degenerate shape.
+    # Outline-walking parameters (font UPM space)
     noise_freq = 0.06           # ~16 UPM per noise cycle
     threshold = 0.25
-    radius_min, radius_max = 1.5, 2.25
+    radius_min, radius_max = 4.5, 7.5
     inset_frac = 0.7 if kind == 'pool' else 0.0
     steps = 8                   # octagonal patches
 
