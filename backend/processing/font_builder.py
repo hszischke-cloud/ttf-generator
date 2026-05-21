@@ -606,9 +606,25 @@ def build_otf(
         metrics[g.glyph_name] = (final_advance, 0)
 
         if do_color and perturbed_contours:
+            # Determine outer winding for this glyph from the largest contour
+            # so holes inset the opposite direction of the outer (otherwise
+            # 'o', 'a', 'B', 'P' etc. would place patches outside the ink).
+            largest_area = 0.0
+            outer_sign = -1.0   # default: CW outer (our pipeline's convention)
+            for contour in perturbed_contours:
+                _on = [op[-1] for op in contour
+                       if op[0] in ('moveTo', 'lineTo', 'curveTo')]
+                if len(_on) < 3:
+                    continue
+                area = _signed_area(_on)
+                if abs(area) > largest_area:
+                    largest_area = abs(area)
+                    outer_sign = 1.0 if area > 0 else -1.0
+
             layers: List[Tuple[str, int]] = [(g.glyph_name, 0)]
             pool_cs = _build_color_layer_charstring(
-                perturbed_contours, g.glyph_name, final_advance, 'pool')
+                perturbed_contours, g.glyph_name, final_advance, 'pool',
+                outer_sign=outer_sign)
             if pool_cs is not None:
                 pool_name = f"{g.glyph_name}.pool"
                 if pool_cs.program and isinstance(pool_cs.program[0], (int, float)):
@@ -618,7 +634,8 @@ def build_otf(
                 glyph_order.append(pool_name)
                 layers.append((pool_name, 1))
             speck_cs = _build_color_layer_charstring(
-                perturbed_contours, g.glyph_name, final_advance, 'speck')
+                perturbed_contours, g.glyph_name, final_advance, 'speck',
+                outer_sign=outer_sign)
             if speck_cs is not None:
                 speck_name = f"{g.glyph_name}.speck"
                 if speck_cs.program and isinstance(speck_cs.program[0], (int, float)):
@@ -664,9 +681,12 @@ def build_otf(
     # silently fall back to the cmap base glyph, which is correct.
     if color_glyph_layers:
         br, bg, bb = base_color
-        # Pool override is still respected — caller can force a darker tone
-        # if they want explicit contrast — but the default just matches base.
-        _pool = pool_color if pool_color is not None else (br, bg, bb)
+        # Pool sits slightly darker than base — COLRv0 paints solid colours
+        # with no alpha so the pool layer needs *some* tonal difference to
+        # be visible at all. 0.75× base keeps it a subtle denser-ink patch,
+        # not a contrast-popping black dot. Override still respected.
+        _pool = pool_color if pool_color is not None else (
+            int(br * 0.75), int(bg * 0.75), int(bb * 0.75))
         _speck = speck_color if speck_color is not None else (
             int(br + (255 - br) * 0.92),
             int(bg + (255 - bg) * 0.92),
@@ -947,6 +967,19 @@ def _on_curve_xy(op: tuple) -> Tuple[float, float]:
     return op[-1]  # last tuple element is always the on-curve point
 
 
+def _signed_area(pts: List[Tuple[float, float]]) -> float:
+    """Twice the signed polygon area. Positive ⇒ CCW, negative ⇒ CW. Used
+    to pick the per-glyph outer winding so the outline-walk inset direction
+    is correct for both the outer contour and any holes."""
+    s = 0.0
+    n = len(pts)
+    for i in range(n):
+        x1, y1 = pts[i]
+        x2, y2 = pts[(i + 1) % n]
+        s += x1 * y2 - x2 * y1
+    return s
+
+
 def _contours_bbox(contours: List[list]) -> Tuple[float, float, float, float]:
     """Bounding box of all on-curve endpoints across all contours."""
     xs: List[float] = []
@@ -995,64 +1028,120 @@ def _build_color_layer_charstring(
     glyph_name: str,
     advance: int,
     kind: str,                              # 'pool' or 'speck'
+    outer_sign: float = -1.0,               # +1 for CCW-outer glyphs, -1 for CW
 ) -> Optional["T2CharString"]:
     """
-    Generate a CFF charstring of scattered small ellipses inside *contours*.
+    Walk every contour's on-curve points and drop small octagonal patches
+    at noise-sampled positions. Pools (dots) are pulled slightly inward
+    so they sit fully inside the ink; specks (divots) are placed *on*
+    the edge so they straddle it and the half outside the glyph silhouette
+    gets covered by the base layer rather than appearing as a free-floating
+    paper spot.
 
-    Pools are larger and seeded denser; specks are smaller and sparser. Both
-    use a deterministic per-(glyph,kind) seed so the same font compiles
-    identically every time. Returns None when the glyph is too small or no
-    patch can be placed inside the outline.
+    *outer_sign* picks the inward normal direction once per glyph based
+    on the largest contour's winding — without this, holes in 'o', 'a',
+    'B' etc. would inset the wrong way.
     """
     if not contours:
         return None
 
-    xmin, ymin, xmax, ymax = _contours_bbox(contours)
-    w = xmax - xmin
-    h = ymax - ymin
-    if w < 40 or h < 40:
-        return None
-
     seed = int(hashlib.md5((glyph_name + kind).encode()).hexdigest()[:6], 16)
-    rng = random.Random(seed)
 
-    # Pools and specks now share the same radius range so dots and divots
-    # match each other visually. Pools are slightly sparser than specks so
-    # the divot count tracks dot count overall once both are placed.
-    if kind == 'pool':
-        target = max(3, int(w * h / 50000))   # was /22000 — half the density
-        radius_min, radius_max = 3.0, 5.5     # was 6..11 — halved
-    else:  # speck
-        target = max(3, int(w * h / 22000))   # was /32000 — denser, divots
-        radius_min, radius_max = 3.0, 5.5     # was 2.5..4.5 — match pools
+    # Outline-walking parameters (font UPM space)
+    noise_freq = 0.06           # ~16 UPM per noise cycle
+    threshold = 0.25
+    radius_min, radius_max = 4.5, 7.5
+    inset_frac = 0.7 if kind == 'pool' else 0.0
+    steps = 8                   # octagonal patches
 
     pen = T2CharStringPen(advance, glyphSet=None)
-    placed = 0
-    attempts = 0
-    max_attempts = target * 30
-    steps = 8                                 # octagonal ellipse approximation
+    drew_any = False
 
-    while placed < target and attempts < max_attempts:
-        attempts += 1
-        x = rng.uniform(xmin, xmax)
-        y = rng.uniform(ymin, ymax)
-        if not _point_inside_contours(x, y, contours):
+    for c_idx, contour in enumerate(contours):
+        on_pts = [op[-1] for op in contour
+                  if op[0] in ('moveTo', 'lineTo', 'curveTo')]
+        n = len(on_pts)
+        if n < 4:
             continue
-        r = rng.uniform(radius_min, radius_max)
-        for k in range(steps):
-            ang = (k / steps) * 2 * math.pi
-            xx = x + math.cos(ang) * r
-            yy = y + math.sin(ang) * r
-            if k == 0:
-                pen.moveTo((round(xx), round(yy)))
-            else:
-                pen.lineTo((round(xx), round(yy)))
-        pen.closePath()
-        placed += 1
+        closed = any(op[0] == 'closePath' for op in contour)
 
-    if placed == 0:
-        return None
-    return pen.getCharString()
+        # Cumulative arc length along the contour's on-curve points
+        arc = [0.0]
+        for i in range(1, n):
+            dx = on_pts[i][0] - on_pts[i - 1][0]
+            dy = on_pts[i][1] - on_pts[i - 1][1]
+            arc.append(arc[-1] + math.hypot(dx, dy))
+        if arc[-1] < 30:
+            continue
+
+        # Per-contour phase keeps adjacent contours uncorrelated
+        phase_kind_offset = 0.0 if kind == 'pool' else 50.3
+        phase = (c_idx * 19.3 + seed * 0.137 + phase_kind_offset) % 1024
+
+        for i in range(n):
+            # Local tangent (centered difference, wraps on closed contours)
+            if closed:
+                prev_pt = on_pts[(i - 1) % n]
+                next_pt = on_pts[(i + 1) % n]
+            else:
+                prev_pt = on_pts[max(0, i - 1)]
+                next_pt = on_pts[min(n - 1, i + 1)]
+            dx = next_pt[0] - prev_pt[0]
+            dy = next_pt[1] - prev_pt[1]
+            length = math.hypot(dx, dy)
+            if length < 1e-6:
+                continue
+            tx, ty = dx / length, dy / length
+            inward_x = -ty * outer_sign
+            inward_y =  tx * outer_sign
+
+            nz = _py_noise1d(arc[i] * noise_freq + phase)
+            if kind == 'pool':
+                if nz <= threshold:
+                    continue
+                magnitude = nz - threshold
+            else:
+                if nz >= -threshold:
+                    continue
+                magnitude = -nz - threshold
+            intensity = min(1.0, magnitude / (1.0 - threshold))
+            radius = radius_min + intensity * (radius_max - radius_min)
+
+            cx = on_pts[i][0] + inward_x * radius * inset_frac
+            cy = on_pts[i][1] + inward_y * radius * inset_frac
+
+            for k in range(steps):
+                ang = (k / steps) * 2 * math.pi
+                xx = cx + math.cos(ang) * radius
+                yy = cy + math.sin(ang) * radius
+                if k == 0:
+                    pen.moveTo((round(xx), round(yy)))
+                else:
+                    pen.lineTo((round(xx), round(yy)))
+            pen.closePath()
+            drew_any = True
+
+    return pen.getCharString() if drew_any else None
+
+
+def _py_hash1d(i: int) -> float:
+    """1D integer hash returning a float in [-1, +1]. Matches the canvas-side
+    `_inkHash` closely enough that the two halves of the pipeline produce
+    visually consistent variation patterns."""
+    h = (i ^ 0x27d4eb2d) & 0xffffffff
+    h = (h * 0x27d4eb2d) & 0xffffffff
+    h ^= (h >> 15)
+    return ((h & 0xffff) / 32767.5) - 1.0
+
+
+def _py_noise1d(x: float) -> float:
+    """Smoothstep-interpolated 1D value noise in [-1, +1]."""
+    i = math.floor(x)
+    f = x - i
+    a = _py_hash1d(int(i))
+    b = _py_hash1d(int(i) + 1)
+    t = f * f * (3 - 2 * f)
+    return a + t * (b - a)
 
 
 def _build_notdef_charstring() -> "T2CharString":
