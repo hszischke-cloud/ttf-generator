@@ -1070,17 +1070,25 @@ const TOOL_PROFILES = {
 // slightly inside the edge so they protrude a little; divots are paper-
 // white notches centred on the edge that get half-masked by the polygon
 // clip. Together they read as a high-frequency wavy edge instead of dots
-// floating inside the stroke.
+// floating inside the stroke. Radii here are intentionally fine — the
+// previous values (1.3–2.4 px) were 3× larger; the user wanted only ~30 %
+// as deep / outward so dots and divots barely break the silhouette.
 const INK_VARIATION = {
   outlineNoiseFreq:  0.20,    // cycles per arc-length px (~5 px per cycle)
   dotThreshold:      0.25,    // noise > +0.25 → dot (outward bump)
   divotThreshold:    0.25,    // noise < -0.25 → divot (inward notch)
-  dotRadius:         [1.3, 2.4],
-  divotRadius:       [1.3, 2.4],
+  dotRadius:         [0.40, 0.72],   // 30 % of previous [1.3, 2.4]
+  divotRadius:       [0.40, 0.72],   // 30 % of previous
   dotInsetFrac:      0.7,     // 0 = centred on edge, 1 = fully inside
   dotAlpha:          0.85,
   divotAlpha:        0.9,
   pressureBias:      0.25,    // ±shift to the noise driver
+  // Faster strokes deposit less ink → the colour drifts slightly toward
+  // paper. Whitening is intentionally minimal even at the upper bound —
+  // the effect should read as natural ink density, not as a colour shift.
+  speedWhitenStart:  250,     // px/sec — below this, no whitening
+  speedWhitenFull:   1400,    // px/sec — at and above this, full whitening
+  speedWhitenMax:    0.15,    // max blend toward (255,255,255)
 };
 
 // Tiny 1D value noise — smoothstep-interpolated hash. Outputs in [-1, +1].
@@ -1739,8 +1747,42 @@ function strokeToPolygon(points, maxSize, tool) {
 // the polygon laid out as [...left, ...right.reverse()] (the strokeToPolygon
 // output). Used by pen mode so a stroke that crosses itself doesn't punch a
 // winding-rule hole at the crossing.
-function fillStrokeAsQuads(ctx, polygon, n) {
+// Compute the average speed (px/sec) for centerline segment i → i+1, using
+// the point timestamps. Returns 0 when timestamps are missing or identical
+// (loaded strokes, single-frame ticks) so the colour stays at base.
+function _segmentSpeedPxPerSec(points, i) {
+  const a = points[i], b = points[i + 1];
+  const dt = (b.t || 0) - (a.t || 0);
+  if (dt <= 0) return 0;
+  const dist = Math.hypot(b.x - a.x, b.y - a.y);
+  return dist / dt * 1000;
+}
+
+// Map raw speed → blend factor in [0, speedWhitenMax]. Below speedWhitenStart
+// the factor is 0; above speedWhitenFull it saturates at the max.
+function _speedWhitenFactor(speed) {
+  const ink = INK_VARIATION;
+  if (speed <= ink.speedWhitenStart) return 0;
+  const t = Math.min(1, (speed - ink.speedWhitenStart) /
+                        (ink.speedWhitenFull - ink.speedWhitenStart));
+  return t * ink.speedWhitenMax;
+}
+
+// Per-segment-coloured quad fill. Same geometry as the plain quad chain,
+// but each quad's fill drifts slightly toward white as the pen accelerated
+// across that segment. Whitening is capped at speedWhitenMax so the effect
+// reads as natural ink density variation, not a colour shift.
+function fillStrokeAsQuadsWithSpeed(ctx, polygon, points, color, baseOpacity) {
+  const n = points.length;
+  if (n < 2 || polygon.length !== 2 * n) return;
+  const [r, g, b] = color;
+  const aStr = baseOpacity.toFixed(2);
   for (let i = 0; i < n - 1; i++) {
+    const wf = _speedWhitenFactor(_segmentSpeedPxPerSec(points, i));
+    const cr = Math.round(r + (255 - r) * wf);
+    const cg = Math.round(g + (255 - g) * wf);
+    const cb = Math.round(b + (255 - b) * wf);
+    ctx.fillStyle = `rgba(${cr},${cg},${cb},${aStr})`;
     const li  = polygon[i];
     const li2 = polygon[i + 1];
     const ri  = polygon[2 * n - 1 - i];
@@ -1760,9 +1802,11 @@ function fillStrokeAsQuads(ctx, polygon, n) {
 // freehand carves at each end of a stroke — without these caps, two
 // strokes meeting at an angle leave a small white wedge where their
 // tapered tips both narrow toward the crossing.
-function paintEndpointCaps(ctx, polygon, points) {
+function paintEndpointCaps(ctx, polygon, points, color, opacity) {
   const n = points.length;
   if (n < 2 || polygon.length !== 2 * n) return;
+  const [r, g, b] = color;
+  ctx.fillStyle = `rgba(${r},${g},${b},${opacity.toFixed(2)})`;
   for (const idx of [0, n - 1]) {
     const leftPt  = polygon[idx];
     const rightPt = polygon[2 * n - 1 - idx];
@@ -1795,20 +1839,20 @@ function renderStrokePolygon(ctx, polygon, tool, color = [38, 32, 28], points = 
   if (tool === 'pen') {
     ctx.shadowBlur = 1.2;
     ctx.shadowColor = `rgba(${r},${g},${b},0.25)`;
-    ctx.fillStyle = `rgba(${r},${g},${b},${opacity.toFixed(2)})`;
     if (points && points.length >= 3 && polygon.length === 2 * points.length) {
       // Endpoint caps go down first — they fill the tapered-tip area so
       // two strokes meeting at an angle don't leave a white wedge at the
       // crossing. Quads paint on top with the same alpha so the cap area
       // ends up only slightly denser than the body (acceptable trade-off
       // vs visible white gaps).
-      paintEndpointCaps(ctx, polygon, points);
-      // Chain of small quads (left[i], left[i+1], right[i+1], right[i]) —
-      // each quad is non-self-intersecting by construction, so a stroke
-      // that crosses itself just paints two overlapping quads instead of
-      // leaving a winding-rule hole where the lines meet.
-      fillStrokeAsQuads(ctx, polygon, points.length);
+      paintEndpointCaps(ctx, polygon, points, color, opacity);
+      // Chain of small quads (left[i], left[i+1], right[i+1], right[i]),
+      // each one filled at a colour drifted slightly toward white based
+      // on the pen's speed across that segment. Non-self-intersecting
+      // quads also avoid the winding-rule hole at stroke crossings.
+      fillStrokeAsQuadsWithSpeed(ctx, polygon, points, color, opacity);
     } else {
+      ctx.fillStyle = `rgba(${r},${g},${b},${opacity.toFixed(2)})`;
       ctx.fill();
     }
     ctx.shadowBlur = 0;
@@ -1958,7 +2002,8 @@ function addPenInkVariation(ctx, polygon, points, color, baseOpacity) {
   // No polygon clip — dots are painted in the stroke colour with their
   // centre pulled slightly *inside* the edge so the outer ~30 % of each
   // disc extends past the polygon, reading as a tiny bump attached to
-  // the stroke.
+  // the stroke. Dot colour also picks up the speed-based whitening so
+  // bumps blend into the local stroke tone rather than standing out.
   for (let side = 0; side < 2; side++) {
     const sidePhase = phase + (side === 0 ? 50.3 : 81.7);
     for (let i = 1; i < n - 1; i++) {
@@ -1979,7 +2024,15 @@ function addPenInkVariation(ctx, polygon, points, color, baseOpacity) {
                      + intensity * (ink.dotRadius[1] - ink.dotRadius[0]);
         const cx = edgePt.x + ix * radius * ink.dotInsetFrac;
         const cy = edgePt.y + iy * radius * ink.dotInsetFrac;
-        ctx.fillStyle = `rgba(${r},${g},${b},${ink.dotAlpha.toFixed(2)})`;
+        // Speed at this point — average of segment in / segment out so
+        // dots sitting at fast portions of the stroke also whiten.
+        const sIn  = i > 0      ? _segmentSpeedPxPerSec(points, i - 1) : 0;
+        const sOut = i < n - 1  ? _segmentSpeedPxPerSec(points, i)     : 0;
+        const wf = _speedWhitenFactor((sIn + sOut) / 2);
+        const cr = Math.round(r + (255 - r) * wf);
+        const cg = Math.round(g + (255 - g) * wf);
+        const cb = Math.round(b + (255 - b) * wf);
+        ctx.fillStyle = `rgba(${cr},${cg},${cb},${ink.dotAlpha.toFixed(2)})`;
         ctx.beginPath();
         ctx.arc(cx, cy, radius, 0, Math.PI * 2);
         ctx.fill();
