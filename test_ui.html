@@ -1067,15 +1067,20 @@ const TOOL_PROFILES = {
 
 // Pen-mode ink variation — simulates the natural along-stroke darkness drift
 // of a real pen on paper. Driven by 1D value noise sampled along arc length.
+// Dots and divots share the same scale so the stroke reads as balanced
+// micro-variation instead of dots on a smooth field.
 const INK_VARIATION = {
   poolFreq:          0.040,   // dark patches per canvas px (~1 cycle / 25 px)
   poolThreshold:     0.20,    // noise must exceed this to spawn a pool
-  poolAlpha:         0.22,    // overlay opacity of dark patches
-  poolDarken:        0.62,    // 0..1 multiplier applied to base color
+  poolAlpha:         0.30,    // overlay opacity of darker patches
+  poolRadiusBase:    0.8,     // half the previous base radius
+  poolRadiusGain:    1.4,     // half the previous intensity gain
   poolPressureBias:  0.5,     // pressure deviation added to noise (>0 ⇒ more pools at high pressure)
-  speckFreq:         0.085,   // light specks per canvas px (denser than pools)
-  speckThreshold:    0.45,    // anti-peak threshold for specks
-  speckAlpha:        0.18,    // brightness of light specks
+  speckFreq:         0.085,   // light divots per canvas px (denser than pools)
+  speckThreshold:    0.45,    // anti-peak threshold for divots
+  speckAlpha:        0.55,    // brightness of light divots — readable now, not dust
+  speckSizeBase:     0.8,     // mirror pool size so divots match dots
+  speckSizeGain:     1.4,
 };
 
 // Tiny 1D value noise — smoothstep-interpolated hash. Outputs in [-1, +1].
@@ -1729,6 +1734,27 @@ function strokeToPolygon(points, maxSize, tool) {
   return poly;
 }
 
+// Paint a stroke polygon as a chain of small left[i]/left[i+1]/right[i+1]/right[i]
+// quads. polygonLen must equal 2*n where n is the centerline point count, with
+// the polygon laid out as [...left, ...right.reverse()] (the strokeToPolygon
+// output). Used by pen mode so a stroke that crosses itself doesn't punch a
+// winding-rule hole at the crossing.
+function fillStrokeAsQuads(ctx, polygon, n) {
+  for (let i = 0; i < n - 1; i++) {
+    const li  = polygon[i];
+    const li2 = polygon[i + 1];
+    const ri  = polygon[2 * n - 1 - i];
+    const ri2 = polygon[2 * n - 1 - (i + 1)];
+    ctx.beginPath();
+    ctx.moveTo(li.x,  li.y);
+    ctx.lineTo(li2.x, li2.y);
+    ctx.lineTo(ri2.x, ri2.y);
+    ctx.lineTo(ri.x,  ri.y);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
 function renderStrokePolygon(ctx, polygon, tool, color = [38, 32, 28], points = null) {
   if (polygon.length < 3) return;
 
@@ -1751,7 +1777,15 @@ function renderStrokePolygon(ctx, polygon, tool, color = [38, 32, 28], points = 
     ctx.shadowBlur = 1.2;
     ctx.shadowColor = `rgba(${r},${g},${b},0.25)`;
     ctx.fillStyle = `rgba(${r},${g},${b},${opacity.toFixed(2)})`;
-    ctx.fill();
+    if (points && points.length >= 3 && polygon.length === 2 * points.length) {
+      // Chain of small quads (left[i], left[i+1], right[i+1], right[i]) —
+      // each quad is non-self-intersecting by construction, so a stroke
+      // that crosses itself just paints two overlapping quads instead of
+      // leaving a winding-rule hole where the lines meet.
+      fillStrokeAsQuads(ctx, polygon, points.length);
+    } else {
+      ctx.fill();
+    }
     ctx.shadowBlur = 0;
     if (points && points.length >= 3) {
       addPenInkVariation(ctx, polygon, points, color, opacity);
@@ -1866,26 +1900,27 @@ function addPenInkVariation(ctx, polygon, points, color, baseOpacity) {
   ctx.closePath();
   ctx.clip();
 
-  // Dark pools: walk centerline, place a soft blob at each noise peak
-  const dr = Math.max(0, Math.floor(r * ink.poolDarken));
-  const dg = Math.max(0, Math.floor(g * ink.poolDarken));
-  const db = Math.max(0, Math.floor(b * ink.poolDarken));
+  // Dots: walk centerline, place a soft same-colour blob at each noise peak.
+  // Same RGB as the stroke means the blob reads as a slight tonal denser
+  // patch rather than a contrast-popping black dot.
   for (let i = 1; i < n - 1; i++) {
     const noise = _inkNoise1d(arc[i] * ink.poolFreq + phase);
     const driven = noise + (points[i].p - 0.5) * ink.poolPressureBias;
     if (driven > ink.poolThreshold) {
       const intensity = Math.min(1, (driven - ink.poolThreshold) / (1 - ink.poolThreshold));
-      const radius = 1.6 + intensity * 2.8;
+      const radius = ink.poolRadiusBase + intensity * ink.poolRadiusGain;
       const a = (ink.poolAlpha * (0.6 + 0.4 * intensity)).toFixed(2);
-      ctx.fillStyle = `rgba(${dr},${dg},${db},${a})`;
+      ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
       ctx.beginPath();
       ctx.arc(points[i].x, points[i].y, radius, 0, Math.PI * 2);
       ctx.fill();
     }
   }
 
-  // Light specks: scatter tiny brights at noise troughs, offset perpendicular
-  // to stroke direction so they sit near the edge like paper-tooth voids
+  // Divots: paper-tooth notches drawn at the same scale as dots, slightly
+  // offset perpendicular to the stroke direction so they sit nearer the
+  // edge. Now rendered as little circles (not pixel squares) so they read
+  // as real ink-lift gaps, not dust.
   for (let i = 1; i < n - 1; i++) {
     const noise = _inkNoise1d(arc[i] * ink.speckFreq + phase + 99.7);
     if (noise < -ink.speckThreshold) {
@@ -1893,12 +1928,14 @@ function addPenInkVariation(ctx, polygon, points, color, baseOpacity) {
       const dy = points[i + 1].y - points[i - 1].y;
       const tl = Math.hypot(dx, dy) || 1;
       const nx = -dy / tl, ny = dx / tl;
-      const off = (_inkHash(Math.floor(arc[i] * 2.7) + 17) ) * 3.0;
-      const sz = 0.9 + Math.abs(noise) * 0.6;
-      const a = (ink.speckAlpha * (0.5 + 0.5 * Math.abs(noise))).toFixed(2);
+      const off = _inkHash(Math.floor(arc[i] * 2.7) + 17) * 3.0;
+      const intensity = Math.min(1, (-noise - ink.speckThreshold) / (1 - ink.speckThreshold));
+      const radius = ink.speckSizeBase + intensity * ink.speckSizeGain;
+      const a = (ink.speckAlpha * (0.6 + 0.4 * intensity)).toFixed(2);
       ctx.fillStyle = `rgba(255,255,255,${a})`;
-      ctx.fillRect(points[i].x + nx * off - sz / 2,
-                   points[i].y + ny * off - sz / 2, sz, sz);
+      ctx.beginPath();
+      ctx.arc(points[i].x + nx * off, points[i].y + ny * off, radius, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 

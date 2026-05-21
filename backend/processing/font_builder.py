@@ -657,16 +657,16 @@ def build_otf(
         privateDict=private_dict,
     )
 
-    # COLR/CPAL — one palette with [base, pool, speck] colors. Renderers that
-    # don't support COLR (older Windows GDI, some PDF viewers) silently fall
-    # back to the cmap-mapped base glyph, which is correct.
+    # COLR/CPAL — palette stack is [base, pool, speck]. The pool entry now
+    # matches the base colour so dots read as a slight tonal denser patch
+    # instead of obvious darker dots. Specks stay near paper-white so the
+    # divots punch through as gaps in the stroke. Renderers without COLR
+    # silently fall back to the cmap base glyph, which is correct.
     if color_glyph_layers:
-        # Derive pool/speck from base_color so non-default ink colors keep a
-        # consistent tonal relationship (pool ≈ much darker base; speck ≈ near
-        # paper white but slightly tinted).
         br, bg, bb = base_color
-        _pool = pool_color if pool_color is not None else (
-            int(br * 0.30), int(bg * 0.30), int(bb * 0.30))
+        # Pool override is still respected — caller can force a darker tone
+        # if they want explicit contrast — but the default just matches base.
+        _pool = pool_color if pool_color is not None else (br, bg, bb)
         _speck = speck_color if speck_color is not None else (
             int(br + (255 - br) * 0.92),
             int(bg + (255 - bg) * 0.92),
@@ -1016,12 +1016,15 @@ def _build_color_layer_charstring(
     seed = int(hashlib.md5((glyph_name + kind).encode()).hexdigest()[:6], 16)
     rng = random.Random(seed)
 
+    # Pools and specks now share the same radius range so dots and divots
+    # match each other visually. Pools are slightly sparser than specks so
+    # the divot count tracks dot count overall once both are placed.
     if kind == 'pool':
-        target = max(4, int(w * h / 22000))
-        radius_min, radius_max = 6.0, 11.0
+        target = max(3, int(w * h / 50000))   # was /22000 — half the density
+        radius_min, radius_max = 3.0, 5.5     # was 6..11 — halved
     else:  # speck
-        target = max(3, int(w * h / 32000))
-        radius_min, radius_max = 2.5, 4.5
+        target = max(3, int(w * h / 22000))   # was /32000 — denser, divots
+        radius_min, radius_max = 3.0, 5.5     # was 2.5..4.5 — match pools
 
     pen = T2CharStringPen(advance, glyphSet=None)
     placed = 0
