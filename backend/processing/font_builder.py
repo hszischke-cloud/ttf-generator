@@ -507,8 +507,8 @@ def build_otf(
     forced_advances: Optional[Dict[str, int]] = None,
     color_layers: bool = True,
     base_color: Tuple[int, int, int] = (38, 32, 28),
-    dark_color: Optional[Tuple[int, int, int]] = None,
-    dark_inset: float = 22.0,
+    pool_color: Optional[Tuple[int, int, int]] = None,
+    speck_color: Optional[Tuple[int, int, int]] = None,
 ) -> bytes:
     """
     Assemble an OTF font from a list of vectorized glyphs.
@@ -606,23 +606,32 @@ def build_otf(
         metrics[g.glyph_name] = (final_advance, 0)
 
         if do_color and perturbed_contours:
-            # One inset-silhouette layer per glyph — painted in a darker
-            # palette colour to give the stroke a smooth darker core with
-            # the base ink showing through at the edges. Replaces the old
-            # scatter approach that read as dots stamped onto the stroke.
-            dark_cs = _build_inset_silhouette_charstring(
-                perturbed_contours, final_advance, inset=dark_inset)
-            if dark_cs is not None:
-                dark_name = f"{g.glyph_name}.dark"
-                if dark_cs.program and isinstance(dark_cs.program[0], (int, float)):
-                    dark_cs.program[0] = final_advance
-                charstrings[dark_name] = dark_cs
-                metrics[dark_name] = (final_advance, 0)
-                glyph_order.append(dark_name)
-                color_glyph_layers[g.glyph_name] = [
-                    (g.glyph_name, 0),
-                    (dark_name, 1),
-                ]
+            layers: List[Tuple[str, int]] = [(g.glyph_name, 0)]
+            pool_cs = _build_color_layer_charstring(
+                perturbed_contours, g.glyph_name, final_advance, 'pool')
+            if pool_cs is not None:
+                pool_name = f"{g.glyph_name}.pool"
+                if pool_cs.program and isinstance(pool_cs.program[0], (int, float)):
+                    pool_cs.program[0] = final_advance
+                charstrings[pool_name] = pool_cs
+                metrics[pool_name] = (final_advance, 0)
+                glyph_order.append(pool_name)
+                layers.append((pool_name, 1))
+            speck_cs = _build_color_layer_charstring(
+                perturbed_contours, g.glyph_name, final_advance, 'speck')
+            if speck_cs is not None:
+                speck_name = f"{g.glyph_name}.speck"
+                if speck_cs.program and isinstance(speck_cs.program[0], (int, float)):
+                    speck_cs.program[0] = final_advance
+                charstrings[speck_name] = speck_cs
+                metrics[speck_name] = (final_advance, 0)
+                glyph_order.append(speck_name)
+                layers.append((speck_name, 2))
+            # Only register a COLR entry when there's at least one real layer
+            # beyond the base — otherwise an unaltered glyph just maps to itself
+            # and we save a tiny bit of table space.
+            if len(layers) > 1:
+                color_glyph_layers[g.glyph_name] = layers
 
     # Now that all glyphs (base + COLR layers) are known, commit them to the
     # FontBuilder. setupGlyphOrder/setupCharacterMap have to come before
@@ -648,16 +657,20 @@ def build_otf(
         privateDict=private_dict,
     )
 
-    # COLR/CPAL — one palette with [base, pool, speck] colors. Renderers that
-    # don't support COLR (older Windows GDI, some PDF viewers) silently fall
-    # back to the cmap-mapped base glyph, which is correct.
+    # COLR/CPAL — palette stack is [base, pool, speck]. The pool entry now
+    # matches the base colour so dots read as a slight tonal denser patch
+    # instead of obvious darker dots. Specks stay near paper-white so the
+    # divots punch through as gaps in the stroke. Renderers without COLR
+    # silently fall back to the cmap base glyph, which is correct.
     if color_glyph_layers:
-        # Derive dark_color from base so non-default ink keeps a consistent
-        # tonal relationship: the inset layer is roughly 60% as bright,
-        # producing a noticeable but not harsh inner darkening.
         br, bg, bb = base_color
-        _dark = dark_color if dark_color is not None else (
-            int(br * 0.55), int(bg * 0.55), int(bb * 0.55))
+        # Pool override is still respected — caller can force a darker tone
+        # if they want explicit contrast — but the default just matches base.
+        _pool = pool_color if pool_color is not None else (br, bg, bb)
+        _speck = speck_color if speck_color is not None else (
+            int(br + (255 - br) * 0.92),
+            int(bg + (255 - bg) * 0.92),
+            int(bb + (255 - bb) * 0.92))
         glyph_index_map = {name: i for i, name in enumerate(glyph_order)}
         try:
             colr_table = buildCOLR(
@@ -665,7 +678,8 @@ def build_otf(
             )
             cpal_table = buildCPAL([[
                 (br / 255, bg / 255, bb / 255, 1.0),
-                (_dark[0] / 255, _dark[1] / 255, _dark[2] / 255, 1.0),
+                (_pool[0] / 255, _pool[1] / 255, _pool[2] / 255, 1.0),
+                (_speck[0] / 255, _speck[1] / 255, _speck[2] / 255, 1.0),
             ]])
             fb.font['COLR'] = colr_table
             fb.font['CPAL'] = cpal_table
@@ -976,144 +990,69 @@ def _point_inside_contours(x: float, y: float, contours: List[list]) -> bool:
     return inside
 
 
-def _signed_area(pts: List[Tuple[float, float]]) -> float:
-    """Twice the signed polygon area; positive for CCW, negative for CW."""
-    s = 0.0
-    n = len(pts)
-    for i in range(n):
-        x1, y1 = pts[i]
-        x2, y2 = pts[(i + 1) % n]
-        s += x1 * y2 - x2 * y1
-    return s
-
-
-def _inset_contour(contour: list, inset: float, outer_sign: float) -> Optional[list]:
-    """
-    Shift every on-curve point along the perpendicular to the local tangent
-    by *inset* UPM. Direction is governed by *outer_sign* — a single value
-    chosen once per glyph based on the dominant winding so all contours
-    (outer + holes) move consistently toward the body of the ink.
-
-    Bezier control points inherit the shift of their associated on-curve
-    point (c1 ← previous endpoint's shift, c2 ← current endpoint's shift)
-    so each curve segment slides inward as a whole rather than warping.
-
-    Returns None when the contour has fewer than 2 on-curve points.
-    """
-    on_idx = [i for i, op in enumerate(contour)
-              if op[0] in ('moveTo', 'lineTo', 'curveTo')]
-    if len(on_idx) < 2:
-        return None
-
-    on_pts = [contour[i][-1] for i in on_idx]
-    closed = any(op[0] == 'closePath' for op in contour)
-    n = len(on_pts)
-
-    deltas: List[Tuple[float, float]] = []
-    for k in range(n):
-        if closed:
-            prev_pt = on_pts[(k - 1) % n]
-            next_pt = on_pts[(k + 1) % n]
-        else:
-            prev_pt = on_pts[max(0, k - 1)]
-            next_pt = on_pts[min(n - 1, k + 1)]
-        dx = next_pt[0] - prev_pt[0]
-        dy = next_pt[1] - prev_pt[1]
-        length = math.hypot(dx, dy)
-        if length < 1e-6:
-            deltas.append((0.0, 0.0))
-            continue
-        tx, ty = dx / length, dy / length
-        # CCW outer (outer_sign=+1): left normal of tangent points into the
-        # ink. CW outer (outer_sign=-1): right normal does. Hole contours of
-        # the opposite winding work out automatically because the same global
-        # normal points away from their interior, which is what makes them
-        # grow into the surrounding ink.
-        nx = -ty * outer_sign
-        ny =  tx * outer_sign
-        deltas.append((nx * inset, ny * inset))
-
-    op_to_k = {oi: k for k, oi in enumerate(on_idx)}
-    new_ops: List[tuple] = []
-    for i, op in enumerate(contour):
-        name = op[0]
-        if name == 'moveTo':
-            k = op_to_k[i]
-            dx_, dy_ = deltas[k]
-            x, y = on_pts[k]
-            new_ops.append(('moveTo', (round(x + dx_), round(y + dy_))))
-        elif name == 'lineTo':
-            k = op_to_k[i]
-            dx_, dy_ = deltas[k]
-            x, y = on_pts[k]
-            new_ops.append(('lineTo', (round(x + dx_), round(y + dy_))))
-        elif name == 'curveTo':
-            k = op_to_k[i]
-            prev_k = (k - 1) % n if closed else max(0, k - 1)
-            c1, c2, end_pt = op[1], op[2], op[3]
-            pdx, pdy = deltas[prev_k]
-            cdx, cdy = deltas[k]
-            new_ops.append(('curveTo',
-                (round(c1[0] + pdx),    round(c1[1] + pdy)),
-                (round(c2[0] + cdx),    round(c2[1] + cdy)),
-                (round(end_pt[0] + cdx), round(end_pt[1] + cdy)),
-            ))
-        else:
-            new_ops.append(op)
-    return new_ops
-
-
-def _build_inset_silhouette_charstring(
+def _build_color_layer_charstring(
     contours: List[list],
+    glyph_name: str,
     advance: int,
-    inset: float = 22.0,
+    kind: str,                              # 'pool' or 'speck'
 ) -> Optional["T2CharString"]:
     """
-    Build a CFF charstring that draws the glyph's silhouette inset by
-    *inset* UPM. Used as a COLR layer painted in a darker color: the result
-    is a soft darker core inside each stroke with the lighter base color
-    showing through at the edges, mimicking the way ink pools toward the
-    centre of a real pen stroke.
+    Generate a CFF charstring of scattered small ellipses inside *contours*.
 
-    Determines glyph-level winding from the largest contour so holes grow
-    into the ink while the outer shrinks, both reducing the silhouette's
-    total area.
+    Pools are larger and seeded denser; specks are smaller and sparser. Both
+    use a deterministic per-(glyph,kind) seed so the same font compiles
+    identically every time. Returns None when the glyph is too small or no
+    patch can be placed inside the outline.
     """
     if not contours:
         return None
 
-    largest_area = 0.0
-    outer_sign = 1.0
-    for contour in contours:
-        pts = [op[-1] for op in contour
-               if op[0] in ('moveTo', 'lineTo', 'curveTo')]
-        if len(pts) < 3:
-            continue
-        area = _signed_area(pts)
-        if abs(area) > largest_area:
-            largest_area = abs(area)
-            outer_sign = 1.0 if area > 0 else -1.0
+    xmin, ymin, xmax, ymax = _contours_bbox(contours)
+    w = xmax - xmin
+    h = ymax - ymin
+    if w < 40 or h < 40:
+        return None
+
+    seed = int(hashlib.md5((glyph_name + kind).encode()).hexdigest()[:6], 16)
+    rng = random.Random(seed)
+
+    # Pools and specks now share the same radius range so dots and divots
+    # match each other visually. Pools are slightly sparser than specks so
+    # the divot count tracks dot count overall once both are placed.
+    if kind == 'pool':
+        target = max(3, int(w * h / 50000))   # was /22000 — half the density
+        radius_min, radius_max = 3.0, 5.5     # was 6..11 — halved
+    else:  # speck
+        target = max(3, int(w * h / 22000))   # was /32000 — denser, divots
+        radius_min, radius_max = 3.0, 5.5     # was 2.5..4.5 — match pools
 
     pen = T2CharStringPen(advance, glyphSet=None)
-    drew_any = False
-    for contour in contours:
-        inset_ops = _inset_contour(contour, inset, outer_sign)
-        if inset_ops is None:
+    placed = 0
+    attempts = 0
+    max_attempts = target * 30
+    steps = 8                                 # octagonal ellipse approximation
+
+    while placed < target and attempts < max_attempts:
+        attempts += 1
+        x = rng.uniform(xmin, xmax)
+        y = rng.uniform(ymin, ymax)
+        if not _point_inside_contours(x, y, contours):
             continue
-        for op in inset_ops:
-            name = op[0]
-            if name == 'moveTo':
-                pen.moveTo(op[1])
-            elif name == 'lineTo':
-                pen.lineTo(op[1])
-            elif name == 'curveTo':
-                pen.curveTo(*op[1:])
-            elif name == 'closePath':
-                pen.closePath()
-            elif name == 'endPath':
-                pen.endPath()
-            drew_any = True
-    return pen.getCharString() if drew_any else None
+        r = rng.uniform(radius_min, radius_max)
+        for k in range(steps):
+            ang = (k / steps) * 2 * math.pi
+            xx = x + math.cos(ang) * r
+            yy = y + math.sin(ang) * r
+            if k == 0:
+                pen.moveTo((round(xx), round(yy)))
+            else:
+                pen.lineTo((round(xx), round(yy)))
+        pen.closePath()
+        placed += 1
+
+    if placed == 0:
+        return None
+    return pen.getCharString()
 
 
 def _build_notdef_charstring() -> "T2CharString":

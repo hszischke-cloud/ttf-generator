@@ -1066,23 +1066,21 @@ const TOOL_PROFILES = {
 };
 
 // Pen-mode ink variation — simulates the natural along-stroke darkness drift
-// of a real pen on paper. The stroke is rendered as a chain of arc-length
-// ribbon slices, each with its own alpha driven by 1D value noise + pen
-// pressure. Pen-land / pen-lift accents drop a soft puddle at each endpoint;
-// edge paper-tooth bands lighten irregular notches at the outline.
+// of a real pen on paper. Driven by 1D value noise sampled along arc length.
+// Dots and divots share the same scale so the stroke reads as balanced
+// micro-variation instead of dots on a smooth field.
 const INK_VARIATION = {
-  ribbonLen:        6,           // canvas px of arc length per ribbon slice
-  noiseFreq:        0.024,       // cycles per canvas px along the centerline
-  alphaRange:       [0.74, 0.97],// min/max ribbon fill opacity
-  pressureRange:    0.06,        // ±additive to alpha based on pen pressure
-  landLiftBoost:    0.10,        // extra alpha for the accent puddle
-  landLiftFrac:     0.05,        // fraction of arc length used to size accent
-  landLiftMinArc:   28,          // skip accents on strokes shorter than this
-  edgeStepPx:       1.6,         // sampling stride along the outline
-  edgeNoiseFreq:    0.12,        // cycles per outline-px for paper-tooth
-  edgeBandThreshold: 0.35,       // |noise| above this triggers a band
-  edgeBandLen:      [0.9, 1.7],  // perpendicular band size range (px)
-  edgeBandAlpha:    [0.08, 0.18],// white-band alpha range
+  poolFreq:          0.040,   // dark patches per canvas px (~1 cycle / 25 px)
+  poolThreshold:     0.20,    // noise must exceed this to spawn a pool
+  poolAlpha:         0.30,    // overlay opacity of darker patches
+  poolRadiusBase:    0.8,     // half the previous base radius
+  poolRadiusGain:    1.4,     // half the previous intensity gain
+  poolPressureBias:  0.5,     // pressure deviation added to noise (>0 ⇒ more pools at high pressure)
+  speckFreq:         0.085,   // light divots per canvas px (denser than pools)
+  speckThreshold:    0.45,    // anti-peak threshold for divots
+  speckAlpha:        0.55,    // brightness of light divots — readable now, not dust
+  speckSizeBase:     0.8,     // mirror pool size so divots match dots
+  speckSizeGain:     1.4,
 };
 
 // Tiny 1D value noise — smoothstep-interpolated hash. Outputs in [-1, +1].
@@ -1736,6 +1734,27 @@ function strokeToPolygon(points, maxSize, tool) {
   return poly;
 }
 
+// Paint a stroke polygon as a chain of small left[i]/left[i+1]/right[i+1]/right[i]
+// quads. polygonLen must equal 2*n where n is the centerline point count, with
+// the polygon laid out as [...left, ...right.reverse()] (the strokeToPolygon
+// output). Used by pen mode so a stroke that crosses itself doesn't punch a
+// winding-rule hole at the crossing.
+function fillStrokeAsQuads(ctx, polygon, n) {
+  for (let i = 0; i < n - 1; i++) {
+    const li  = polygon[i];
+    const li2 = polygon[i + 1];
+    const ri  = polygon[2 * n - 1 - i];
+    const ri2 = polygon[2 * n - 1 - (i + 1)];
+    ctx.beginPath();
+    ctx.moveTo(li.x,  li.y);
+    ctx.lineTo(li2.x, li2.y);
+    ctx.lineTo(ri2.x, ri2.y);
+    ctx.lineTo(ri.x,  ri.y);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
 function renderStrokePolygon(ctx, polygon, tool, color = [38, 32, 28], points = null) {
   if (polygon.length < 3) return;
 
@@ -1755,19 +1774,21 @@ function renderStrokePolygon(ctx, polygon, tool, color = [38, 32, 28], points = 
   ctx.closePath();
 
   if (tool === 'pen') {
-    if (points && points.length >= 4) {
-      // Variable-alpha ribbon-slice rendering — no separate base fill.
-      // Each ribbon along the centerline carries its own opacity driven by
-      // noise + pressure, producing continuous tonal drift instead of dots.
-      renderPenInkRibbons(ctx, polygon, points, color);
+    ctx.shadowBlur = 1.2;
+    ctx.shadowColor = `rgba(${r},${g},${b},0.25)`;
+    ctx.fillStyle = `rgba(${r},${g},${b},${opacity.toFixed(2)})`;
+    if (points && points.length >= 3 && polygon.length === 2 * points.length) {
+      // Chain of small quads (left[i], left[i+1], right[i+1], right[i]) —
+      // each quad is non-self-intersecting by construction, so a stroke
+      // that crosses itself just paints two overlapping quads instead of
+      // leaving a winding-rule hole where the lines meet.
+      fillStrokeAsQuads(ctx, polygon, points.length);
     } else {
-      // Too few points for slicing — single soft fill keeps short ticks
-      // looking inky rather than flat.
-      ctx.shadowBlur = 1.2;
-      ctx.shadowColor = `rgba(${r},${g},${b},0.25)`;
-      ctx.fillStyle = `rgba(${r},${g},${b},${opacity.toFixed(2)})`;
       ctx.fill();
-      ctx.shadowBlur = 0;
+    }
+    ctx.shadowBlur = 0;
+    if (points && points.length >= 3) {
+      addPenInkVariation(ctx, polygon, points, color, opacity);
     }
   } else if (tool === 'pencil') {
     // Layer A: blur-softened base fill — removes the crisp polygon edge
@@ -1849,22 +1870,14 @@ function addPencilTexture(ctx, polygon, strokeAngle, color) {
   ctx.restore();
 }
 
-// Render the pen stroke as a chain of non-overlapping arc-length ribbons.
-// Each ribbon is a thin slice of the stroke polygon between centerline
-// indices i..j, filled at an alpha sampled from 1D noise and pen pressure.
-// The result is a single uniform-coverage stroke whose tone breathes from
-// ~0.75 to ~0.97 along its length — no discrete dots, no compositing
-// surprises from overlapping fills.
-function renderPenInkRibbons(ctx, polygon, points, color) {
+// Pen-mode along-stroke ink variation: dark "pools" at noise peaks (correlated
+// with high pressure) and lighter "skips" at noise troughs. Both clipped to
+// the stroke polygon so nothing bleeds onto paper.
+function addPenInkVariation(ctx, polygon, points, color, baseOpacity) {
   const [r, g, b] = color;
   const ink = INK_VARIATION;
   const n = points.length;
-  if (n < 4) return;
-
-  // The polygon was built as [...left, ...right.reverse()], so polygon[k]
-  // and polygon[2n-1-k] are the outline points across the stroke at
-  // centerline index k.
-  if (polygon.length !== 2 * n) return;
+  if (n < 3) return;
 
   // Cumulative arc length along the centerline
   const arc = new Array(n);
@@ -1873,111 +1886,59 @@ function renderPenInkRibbons(ctx, polygon, points, color) {
     arc[i] = arc[i - 1] + Math.hypot(points[i].x - points[i - 1].x,
                                      points[i].y - points[i - 1].y);
   }
-  const totalArc = arc[n - 1];
+  if (arc[n - 1] < 6) return;  // too short to vary
 
-  // Per-stroke phase keeps successive strokes from sharing the same dark/light
-  // pattern — derived from the first point so it's deterministic per draw.
+  // Per-stroke phase derived from the first point — keeps successive strokes
+  // from sharing the same dark/light pattern
   const phase = Math.abs(points[0].x * 0.137 + points[0].y * 0.213) % 1024;
 
-  // ── Layer 1+3: ribbon slices ──────────────────────────────────────────
-  // March the centerline; each slice covers ribbonLen px of arc length.
-  // Adjacent slices share an endpoint index (no overlap), so opacity
-  // transitions are 1-pixel hard but tiny in magnitude.
-  let i = 0;
-  while (i < n - 1) {
-    let j = i + 1;
-    const startArc = arc[i];
-    while (j < n - 1 && arc[j] - startArc < ink.ribbonLen) j++;
-
-    // Average pressure across this slice
-    let pSum = 0;
-    for (let k = i; k <= j; k++) pSum += points[k].p;
-    const pAvg = pSum / (j - i + 1);
-
-    // Noise sampled at the slice midpoint
-    const midArc = (arc[i] + arc[j]) / 2;
-    const nz = _inkNoise1d(midArc * ink.noiseFreq + phase);
-    const noiseAlpha = ink.alphaRange[0]
-                     + (nz * 0.5 + 0.5) * (ink.alphaRange[1] - ink.alphaRange[0]);
-    const pressureMod = (pAvg - 0.5) * 2 * ink.pressureRange;
-    const alpha = Math.max(0.55, Math.min(1.0, noiseAlpha + pressureMod));
-
-    // Build the slice polygon by walking the left side forward then the
-    // right side backward — matches the polygon's [...left, ...right.rev()]
-    // layout so the slice is correctly closed.
-    ctx.beginPath();
-    ctx.moveTo(polygon[i].x, polygon[i].y);
-    for (let k = i + 1; k <= j; k++) ctx.lineTo(polygon[k].x, polygon[k].y);
-    for (let k = j; k >= i; k--) {
-      const rk = 2 * n - 1 - k;
-      ctx.lineTo(polygon[rk].x, polygon[rk].y);
-    }
-    ctx.closePath();
-    ctx.fillStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
-    ctx.fill();
-
-    i = j;
-  }
-
-  // ── Layer 2: pen-land / pen-lift accents ──────────────────────────────
-  // Real pens deposit a tiny puddle when they touch down and lift off.
-  // Skip on very short strokes or the accent dominates the whole mark.
-  if (totalArc > ink.landLiftMinArc) {
-    ctx.save();
-    ctx.shadowBlur = 2.6;
-    ctx.shadowColor = `rgba(${r},${g},${b},0.45)`;
-    for (const idx of [0, n - 1]) {
-      const left = polygon[idx];
-      const right = polygon[2 * n - 1 - idx];
-      const hw = Math.hypot(left.x - right.x, left.y - right.y) / 2;
-      if (hw < 0.8) continue;
-      ctx.fillStyle = `rgba(${r},${g},${b},${ink.landLiftBoost.toFixed(2)})`;
-      ctx.beginPath();
-      ctx.arc(points[idx].x, points[idx].y, hw * 0.82, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
-  // ── Layer 4: edge paper-tooth bands ───────────────────────────────────
-  // Walk the stroke outline, drop tiny near-white squares wherever noise
-  // is sufficiently negative. Clipped to the polygon so any band that
-  // extends outward is cleanly trimmed — the visual is a fine perpendicular
-  // notch at the edge, not a square sticker on the paper.
   ctx.save();
+  // Clip every overlay to the stroke polygon
   ctx.beginPath();
   ctx.moveTo(polygon[0].x, polygon[0].y);
-  for (let k = 1; k < polygon.length; k++) ctx.lineTo(polygon[k].x, polygon[k].y);
+  for (let i = 1; i < polygon.length; i++) ctx.lineTo(polygon[i].x, polygon[i].y);
   ctx.closePath();
   ctx.clip();
 
-  let edgeArc = 0;
-  const m = polygon.length;
-  for (let k = 0; k < m; k++) {
-    const next = (k + 1) % m;
-    const dx = polygon[next].x - polygon[k].x;
-    const dy = polygon[next].y - polygon[k].y;
-    const segLen = Math.hypot(dx, dy);
-    if (segLen < 0.001) { edgeArc += segLen; continue; }
-    const samples = Math.max(1, Math.floor(segLen / ink.edgeStepPx));
-    for (let s = 0; s < samples; s++) {
-      const t = (s + 0.5) / samples;
-      const cx = polygon[k].x + dx * t;
-      const cy = polygon[k].y + dy * t;
-      const localArc = edgeArc + segLen * t;
-      const nz = _inkNoise1d(localArc * ink.edgeNoiseFreq + phase + 50.0);
-      if (nz < -ink.edgeBandThreshold) {
-        const intensity = Math.min(1, (-nz - ink.edgeBandThreshold) / 0.65);
-        const sz = ink.edgeBandLen[0]
-                 + intensity * (ink.edgeBandLen[1] - ink.edgeBandLen[0]);
-        const a = ink.edgeBandAlpha[0]
-                + intensity * (ink.edgeBandAlpha[1] - ink.edgeBandAlpha[0]);
-        ctx.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
-        ctx.fillRect(cx - sz / 2, cy - sz / 2, sz, sz);
-      }
+  // Dots: walk centerline, place a soft same-colour blob at each noise peak.
+  // Same RGB as the stroke means the blob reads as a slight tonal denser
+  // patch rather than a contrast-popping black dot.
+  for (let i = 1; i < n - 1; i++) {
+    const noise = _inkNoise1d(arc[i] * ink.poolFreq + phase);
+    const driven = noise + (points[i].p - 0.5) * ink.poolPressureBias;
+    if (driven > ink.poolThreshold) {
+      const intensity = Math.min(1, (driven - ink.poolThreshold) / (1 - ink.poolThreshold));
+      const radius = ink.poolRadiusBase + intensity * ink.poolRadiusGain;
+      const a = (ink.poolAlpha * (0.6 + 0.4 * intensity)).toFixed(2);
+      ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
+      ctx.beginPath();
+      ctx.arc(points[i].x, points[i].y, radius, 0, Math.PI * 2);
+      ctx.fill();
     }
-    edgeArc += segLen;
   }
+
+  // Divots: paper-tooth notches drawn at the same scale as dots, slightly
+  // offset perpendicular to the stroke direction so they sit nearer the
+  // edge. Now rendered as little circles (not pixel squares) so they read
+  // as real ink-lift gaps, not dust.
+  for (let i = 1; i < n - 1; i++) {
+    const noise = _inkNoise1d(arc[i] * ink.speckFreq + phase + 99.7);
+    if (noise < -ink.speckThreshold) {
+      const dx = points[i + 1].x - points[i - 1].x;
+      const dy = points[i + 1].y - points[i - 1].y;
+      const tl = Math.hypot(dx, dy) || 1;
+      const nx = -dy / tl, ny = dx / tl;
+      const off = _inkHash(Math.floor(arc[i] * 2.7) + 17) * 3.0;
+      const intensity = Math.min(1, (-noise - ink.speckThreshold) / (1 - ink.speckThreshold));
+      const radius = ink.speckSizeBase + intensity * ink.speckSizeGain;
+      const a = (ink.speckAlpha * (0.6 + 0.4 * intensity)).toFixed(2);
+      ctx.fillStyle = `rgba(255,255,255,${a})`;
+      ctx.beginPath();
+      ctx.arc(points[i].x + nx * off, points[i].y + ny * off, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   ctx.restore();
 }
 
