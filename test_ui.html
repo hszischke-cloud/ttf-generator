@@ -1450,15 +1450,32 @@ function renderCanvas() {
   drawGuidelines(ctx);
   drawCursiveGuides(ctx);
   const {currentChar: char, currentSlot: slot, currentForm: form, tool, toolSize, color} = drawState;
-  for (const stroke of getStrokes(char, slot, form)) {
+  // Pre-build every stroke's polygon so each render call can be given the
+  // OTHER strokes' polygons — used to suppress dots/divots whose anchor
+  // edge sits buried inside another stroke (otherwise they'd appear
+  // floating in the middle of a crossing region).
+  const committedStrokes = getStrokes(char, slot, form);
+  const allPolys = committedStrokes.map(s =>
+    strokeToPolygon(s, toolSize, s.tool || tool)
+  );
+  let currentPoly = null;
+  if (drawState.currentStroke.length > 1) {
+    currentPoly = strokeToPolygon(drawState.currentStroke, toolSize, tool);
+  }
+
+  for (let i = 0; i < committedStrokes.length; i++) {
+    const stroke = committedStrokes[i];
     const strokeTool = stroke.tool || tool;
     const strokeColor = stroke.color || color;
-    const poly = strokeToPolygon(stroke, toolSize, strokeTool);
-    renderStrokePolygon(ctx, poly, strokeTool, strokeColor, stroke);
+    const others = [];
+    for (let j = 0; j < allPolys.length; j++) {
+      if (j !== i) others.push(allPolys[j]);
+    }
+    if (currentPoly) others.push(currentPoly);
+    renderStrokePolygon(ctx, allPolys[i], strokeTool, strokeColor, stroke, others);
   }
-  if (drawState.currentStroke.length > 1) {
-    const poly = strokeToPolygon(drawState.currentStroke, toolSize, tool);
-    renderStrokePolygon(ctx, poly, tool, color, drawState.currentStroke);
+  if (currentPoly) {
+    renderStrokePolygon(ctx, currentPoly, tool, color, drawState.currentStroke, allPolys);
   }
 }
 
@@ -1816,7 +1833,7 @@ function paintEndpointCaps(ctx, polygon, points, color, opacity) {
   }
 }
 
-function renderStrokePolygon(ctx, polygon, tool, color = [38, 32, 28], points = null) {
+function renderStrokePolygon(ctx, polygon, tool, color = [38, 32, 28], points = null, otherPolys = null) {
   if (polygon.length < 3) return;
 
   const [r, g, b] = color;
@@ -1855,7 +1872,7 @@ function renderStrokePolygon(ctx, polygon, tool, color = [38, 32, 28], points = 
     }
     ctx.shadowBlur = 0;
     if (points && points.length >= 3) {
-      addPenInkVariation(ctx, polygon, points, color, opacity);
+      addPenInkVariation(ctx, polygon, points, color, opacity, otherPolys);
     }
   } else if (tool === 'pencil') {
     // Layer A: blur-softened base fill — removes the crisp polygon edge
@@ -1944,7 +1961,32 @@ function addPencilTexture(ctx, polygon, strokeAngle, color) {
 // leaving a half-circle notch. Dots are drawn without clip and sit
 // mostly inside the polygon so only a small bump protrudes — the
 // alternation of bumps and notches reads as a high-frequency wavy edge.
-function addPenInkVariation(ctx, polygon, points, color, baseOpacity) {
+// Ray-casting point-in-polygon used to suppress overlay placement at edges
+// that are buried inside another stroke's body (avoids dots / divots
+// floating in the middle of a stroke crossing).
+function _pointInPolygon(x, y, poly) {
+  if (!poly || poly.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y;
+    const xj = poly[j].x, yj = poly[j].y;
+    if (((yi > y) !== (yj > y)) &&
+        (x < (xj - xi) * (y - yi) / ((yj - yi) || 1e-9) + xi)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function _edgeBuriedInOther(x, y, otherPolys) {
+  if (!otherPolys || otherPolys.length === 0) return false;
+  for (let k = 0; k < otherPolys.length; k++) {
+    if (_pointInPolygon(x, y, otherPolys[k])) return true;
+  }
+  return false;
+}
+
+function addPenInkVariation(ctx, polygon, points, color, baseOpacity, otherPolys = null) {
   const [r, g, b] = color;
   const ink = INK_VARIATION;
   const n = points.length;
@@ -1980,6 +2022,10 @@ function addPenInkVariation(ctx, polygon, points, color, baseOpacity) {
     const sidePhase = phase + (side === 0 ? 0.0 : 31.7);
     for (let i = 1; i < n - 1; i++) {
       const edgePt = side === 0 ? polygon[i] : polygon[2 * n - 1 - i];
+      // Skip if this outline point is buried inside another stroke — the
+      // notch would otherwise appear floating in the middle of a crossing
+      // where there's no real "edge" to bite into.
+      if (_edgeBuriedInOther(edgePt.x, edgePt.y, otherPolys)) continue;
       const nz = _inkNoise1d(arc[i] * ink.outlineNoiseFreq + sidePhase);
       const driven = nz + (0.5 - points[i].p) * ink.pressureBias;
       if (driven < -ink.divotThreshold) {
@@ -2006,6 +2052,10 @@ function addPenInkVariation(ctx, polygon, points, color, baseOpacity) {
     const sidePhase = phase + (side === 0 ? 50.3 : 81.7);
     for (let i = 1; i < n - 1; i++) {
       const edgePt   = side === 0 ? polygon[i] : polygon[2 * n - 1 - i];
+      // Skip bumps whose edge anchor is inside another stroke — without
+      // this, dots from one stroke leak into the body of the other at
+      // crossings and read as floating spots in the overlap region.
+      if (_edgeBuriedInOther(edgePt.x, edgePt.y, otherPolys)) continue;
       const centerPt = points[i];
       const dx = centerPt.x - edgePt.x;
       const dy = centerPt.y - edgePt.y;
@@ -2239,9 +2289,12 @@ function glyphThumbnailB64(char, slot, form) {
   off.width = DRAW_W; off.height = DRAW_H;
   const ctx = off.getContext('2d');
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, DRAW_W, DRAW_H);
-  for (const stroke of getStrokes(char, slot, form)) {
-    const poly = strokeToPolygon(stroke, drawState.toolSize, drawState.tool);
-    renderStrokePolygon(ctx, poly, drawState.tool, drawState.color, stroke);
+  const strokes = getStrokes(char, slot, form);
+  const polys = strokes.map(s => strokeToPolygon(s, drawState.toolSize, drawState.tool));
+  for (let i = 0; i < strokes.length; i++) {
+    const others = [];
+    for (let j = 0; j < polys.length; j++) if (j !== i) others.push(polys[j]);
+    renderStrokePolygon(ctx, polys[i], drawState.tool, drawState.color, strokes[i], others);
   }
   return off.toDataURL('image/png').split(',')[1];
 }
