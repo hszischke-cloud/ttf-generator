@@ -562,6 +562,7 @@ def _build_font_job(job_id: str):
                 positional=positional or None,
                 perturb=False,
                 forced_advances=dim_advances,
+                base_color=font_base_color,
             )
 
         with ThreadPoolExecutor(max_workers=2) as pool:

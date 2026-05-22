@@ -578,9 +578,11 @@ def build_otf(
     # Maps each base glyph name to its (layer_glyph_name, palette_index) stack.
     color_glyph_layers: Dict[str, List[Tuple[str, int]]] = {}
 
-    # COLR is only meaningful when perturb is on — the pool/speck patches are
-    # what give the textured look, and they're keyed off the perturbed contours.
-    do_color = color_layers and perturb
+    # COLR is built whenever color_layers is on. With perturb, the pool patches
+    # add textured variation; without perturb (e.g. the line OTF), every glyph
+    # still gets a single-layer COLR entry so renderers paint it in the user's
+    # chosen palette colour instead of the document/CSS foreground colour.
+    do_color = color_layers
 
     for g in glyphs:
         cs, advance, perturbed_contours = _build_charstring_from_svg(
@@ -605,50 +607,54 @@ def build_otf(
         charstrings[g.glyph_name] = cs
         metrics[g.glyph_name] = (final_advance, 0)
 
-        if do_color and perturbed_contours:
-            # Determine outer winding for this glyph from the largest contour
-            # so holes inset the opposite direction of the outer (otherwise
-            # 'o', 'a', 'B', 'P' etc. would place patches outside the ink).
-            largest_area = 0.0
-            outer_sign = -1.0   # default: CW outer (our pipeline's convention)
-            for contour in perturbed_contours:
-                _on = [op[-1] for op in contour
-                       if op[0] in ('moveTo', 'lineTo', 'curveTo')]
-                if len(_on) < 3:
-                    continue
-                area = _signed_area(_on)
-                if abs(area) > largest_area:
-                    largest_area = abs(area)
-                    outer_sign = 1.0 if area > 0 else -1.0
-
+        if do_color:
+            # Every glyph gets at least a single-layer COLR entry that paints
+            # the base outline in palette index 0. Without this, glyphs without
+            # pool/speck patches fall back to the cmap base in the renderer's
+            # foreground colour (CSS `color`, doc text colour) and never show
+            # the user's chosen pen colour.
             layers: List[Tuple[str, int]] = [(g.glyph_name, 0)]
-            pool_cs = _build_color_layer_charstring(
-                perturbed_contours, g.glyph_name, final_advance, 'pool',
-                outer_sign=outer_sign)
-            if pool_cs is not None:
-                pool_name = f"{g.glyph_name}.pool"
-                if pool_cs.program and isinstance(pool_cs.program[0], (int, float)):
-                    pool_cs.program[0] = final_advance
-                charstrings[pool_name] = pool_cs
-                metrics[pool_name] = (final_advance, 0)
-                glyph_order.append(pool_name)
-                layers.append((pool_name, 1))
-            speck_cs = _build_color_layer_charstring(
-                perturbed_contours, g.glyph_name, final_advance, 'speck',
-                outer_sign=outer_sign)
-            if speck_cs is not None:
-                speck_name = f"{g.glyph_name}.speck"
-                if speck_cs.program and isinstance(speck_cs.program[0], (int, float)):
-                    speck_cs.program[0] = final_advance
-                charstrings[speck_name] = speck_cs
-                metrics[speck_name] = (final_advance, 0)
-                glyph_order.append(speck_name)
-                layers.append((speck_name, 2))
-            # Only register a COLR entry when there's at least one real layer
-            # beyond the base — otherwise an unaltered glyph just maps to itself
-            # and we save a tiny bit of table space.
-            if len(layers) > 1:
-                color_glyph_layers[g.glyph_name] = layers
+
+            if perturbed_contours:
+                # Determine outer winding for this glyph from the largest contour
+                # so holes inset the opposite direction of the outer (otherwise
+                # 'o', 'a', 'B', 'P' etc. would place patches outside the ink).
+                largest_area = 0.0
+                outer_sign = -1.0   # default: CW outer (our pipeline's convention)
+                for contour in perturbed_contours:
+                    _on = [op[-1] for op in contour
+                           if op[0] in ('moveTo', 'lineTo', 'curveTo')]
+                    if len(_on) < 3:
+                        continue
+                    area = _signed_area(_on)
+                    if abs(area) > largest_area:
+                        largest_area = abs(area)
+                        outer_sign = 1.0 if area > 0 else -1.0
+
+                pool_cs = _build_color_layer_charstring(
+                    perturbed_contours, g.glyph_name, final_advance, 'pool',
+                    outer_sign=outer_sign)
+                if pool_cs is not None:
+                    pool_name = f"{g.glyph_name}.pool"
+                    if pool_cs.program and isinstance(pool_cs.program[0], (int, float)):
+                        pool_cs.program[0] = final_advance
+                    charstrings[pool_name] = pool_cs
+                    metrics[pool_name] = (final_advance, 0)
+                    glyph_order.append(pool_name)
+                    layers.append((pool_name, 1))
+                speck_cs = _build_color_layer_charstring(
+                    perturbed_contours, g.glyph_name, final_advance, 'speck',
+                    outer_sign=outer_sign)
+                if speck_cs is not None:
+                    speck_name = f"{g.glyph_name}.speck"
+                    if speck_cs.program and isinstance(speck_cs.program[0], (int, float)):
+                        speck_cs.program[0] = final_advance
+                    charstrings[speck_name] = speck_cs
+                    metrics[speck_name] = (final_advance, 0)
+                    glyph_order.append(speck_name)
+                    layers.append((speck_name, 2))
+
+            color_glyph_layers[g.glyph_name] = layers
 
     # Now that all glyphs (base + COLR layers) are known, commit them to the
     # FontBuilder. setupGlyphOrder/setupCharacterMap have to come before
@@ -674,23 +680,31 @@ def build_otf(
         privateDict=private_dict,
     )
 
-    # COLR/CPAL — palette stack is [base, pool, speck]. The pool entry now
-    # matches the base colour so dots read as a slight tonal denser patch
-    # instead of obvious darker dots. Specks stay near paper-white so the
-    # divots punch through as gaps in the stroke. Renderers without COLR
-    # silently fall back to the cmap base glyph, which is correct.
+    # COLR/CPAL — palette stack is [base, pool, speck].
+    #   base  → user-chosen ink colour, opaque
+    #   pool  → slightly darker base, opaque (denser-ink patches)
+    #   speck → fully transparent so divot patches punch through to whatever
+    #           background the font is rendered on (white paper, dark UI,
+    #           coloured letterheads). Painting them in a fixed light tint
+    #           used to leave visible white dots on non-white backgrounds.
+    # Renderers without COLR silently fall back to the cmap base glyph,
+    # which is correct.
     if color_glyph_layers:
         br, bg, bb = base_color
         # Pool sits slightly darker than base — COLRv0 paints solid colours
-        # with no alpha so the pool layer needs *some* tonal difference to
-        # be visible at all. 0.75× base keeps it a subtle denser-ink patch,
-        # not a contrast-popping black dot. Override still respected.
+        # so the pool layer needs *some* tonal difference to be visible at
+        # all. 0.75× base keeps it a subtle denser-ink patch, not a
+        # contrast-popping black dot. Override still respected.
         _pool = pool_color if pool_color is not None else (
             int(br * 0.75), int(bg * 0.75), int(bb * 0.75))
+        # Speck colour is unused on screen (alpha 0) but still encoded so
+        # palette-aware tooling can read a sensible RGB. Override is still
+        # respected if the caller wants opaque specks back.
         _speck = speck_color if speck_color is not None else (
             int(br + (255 - br) * 0.92),
             int(bg + (255 - bg) * 0.92),
             int(bb + (255 - bb) * 0.92))
+        _speck_alpha = 1.0 if speck_color is not None else 0.0
         glyph_index_map = {name: i for i, name in enumerate(glyph_order)}
         try:
             colr_table = buildCOLR(
@@ -699,7 +713,7 @@ def build_otf(
             cpal_table = buildCPAL([[
                 (br / 255, bg / 255, bb / 255, 1.0),
                 (_pool[0] / 255, _pool[1] / 255, _pool[2] / 255, 1.0),
-                (_speck[0] / 255, _speck[1] / 255, _speck[2] / 255, 1.0),
+                (_speck[0] / 255, _speck[1] / 255, _speck[2] / 255, _speck_alpha),
             ]])
             fb.font['COLR'] = colr_table
             fb.font['CPAL'] = cpal_table

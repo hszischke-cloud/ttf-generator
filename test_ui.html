@@ -253,6 +253,9 @@
     min-width: 52px; text-align: center;
   }
   .draw-slot-display { font-size: 13px; color: #a89688; font-style: italic; }
+  /* Undo button anchored to the top-right of the canvas frame so the user
+     can hit it without crossing the canvas to the control panel. */
+  .draw-header-undo { margin-left: auto; align-self: center; }
   #draw-canvas {
     display: block; width: 100%;
     border: 1px solid #e2d9cc; border-radius: 8px; cursor: crosshair;
@@ -502,6 +505,7 @@
       <div class="draw-header">
         <div class="draw-char-display" id="draw-char-display">A</div>
         <div class="draw-slot-display" id="draw-slot-display">Primary</div>
+        <button class="ctrl-btn draw-header-undo" onclick="undoStroke()" title="Undo last stroke (Ctrl/Cmd+Z)">↩ Undo</button>
       </div>
       <!-- Canvas is wrapped so cursive connector handles can sit *outside*
            the drawing area and never interfere with strokes. -->
@@ -564,11 +568,10 @@
         </div>
       </div>
 
-      <!-- Edit controls -->
+      <!-- Edit controls (Undo lives in the canvas header — see draw-header-undo) -->
       <div class="panel-section">
         <span class="panel-label">Edit</span>
         <div class="draw-ctrl-btns">
-          <button class="ctrl-btn" onclick="undoStroke()">↩ Undo</button>
           <button class="ctrl-btn" onclick="redoStroke()">↪ Redo</button>
           <button class="ctrl-btn" onclick="clearCurrent()">Clear</button>
           <button class="ctrl-btn" id="eraser-btn" onclick="toggleEraser()">Eraser</button>
@@ -928,6 +931,14 @@ async function showDownloadPage(feaWarning, cacheBust, lineInfo) {
   previewEl.style.wordSpacing = '';
   previewEl.style.fontFamily = 'serif'; // hold on fallback while loading
   previewEl.style.opacity = '0.4';      // dim to signal "loading"
+  // Mirror the chosen pen colour as the CSS foreground colour. COLR-aware
+  // renderers already paint with the font's CPAL palette, but this keeps the
+  // preview the right colour for any glyph that lacks a COLR entry or any
+  // renderer that doesn't honour palette colours.
+  if (fontSettings && Array.isArray(fontSettings.color)) {
+    const [pr, pg, pb] = fontSettings.color;
+    previewEl.style.color = `rgb(${pr},${pg},${pb})`;
+  }
 
   let style = document.getElementById('preview-style');
   if (!style) {
