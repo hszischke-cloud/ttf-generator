@@ -609,50 +609,36 @@ def build_otf(
 
         if do_color:
             # Every glyph gets at least a single-layer COLR entry that paints
-            # the base outline in palette index 0. Without this, glyphs without
-            # pool/speck patches fall back to the cmap base in the renderer's
-            # foreground colour (CSS `color`, doc text colour) and never show
-            # the user's chosen pen colour.
+            # the base outline in palette index 0. Without this, glyphs
+            # without overlay patches fall back to the cmap base in the
+            # renderer's foreground colour (CSS `color`, document text
+            # colour) and never show the user's chosen pen colour.
             layers: List[Tuple[str, int]] = [(g.glyph_name, 0)]
 
             if perturbed_contours:
-                # Determine outer winding for this glyph from the largest contour
-                # so holes inset the opposite direction of the outer (otherwise
-                # 'o', 'a', 'B', 'P' etc. would place patches outside the ink).
-                largest_area = 0.0
-                outer_sign = -1.0   # default: CW outer (our pipeline's convention)
-                for contour in perturbed_contours:
-                    _on = [op[-1] for op in contour
-                           if op[0] in ('moveTo', 'lineTo', 'curveTo')]
-                    if len(_on) < 3:
-                        continue
-                    area = _signed_area(_on)
-                    if abs(area) > largest_area:
-                        largest_area = abs(area)
-                        outer_sign = 1.0 if area > 0 else -1.0
+                outer_sign = _detect_outer_sign(perturbed_contours)
 
-                pool_cs = _build_color_layer_charstring(
-                    perturbed_contours, g.glyph_name, final_advance, 'pool',
-                    outer_sign=outer_sign)
-                if pool_cs is not None:
-                    pool_name = f"{g.glyph_name}.pool"
-                    if pool_cs.program and isinstance(pool_cs.program[0], (int, float)):
-                        pool_cs.program[0] = final_advance
-                    charstrings[pool_name] = pool_cs
-                    metrics[pool_name] = (final_advance, 0)
-                    glyph_order.append(pool_name)
-                    layers.append((pool_name, 1))
-                speck_cs = _build_color_layer_charstring(
-                    perturbed_contours, g.glyph_name, final_advance, 'speck',
-                    outer_sign=outer_sign)
-                if speck_cs is not None:
-                    speck_name = f"{g.glyph_name}.speck"
-                    if speck_cs.program and isinstance(speck_cs.program[0], (int, float)):
-                        speck_cs.program[0] = final_advance
-                    charstrings[speck_name] = speck_cs
-                    metrics[speck_name] = (final_advance, 0)
-                    glyph_order.append(speck_name)
-                    layers.append((speck_name, 2))
+                # Pool is split into a darker and a lighter half (palette
+                # indices 1 + 2). The two share a candidate set and a
+                # darkness-split noise picks which one each position goes
+                # into, so together they paint visible ink-density variation
+                # on top of the base — approximating the canvas-side
+                # speed-whitening effect that can't otherwise be encoded
+                # in a vector OTF.
+                for sub_kind, palette_idx in (('pool', 1), ('pool_light', 2)):
+                    sub_cs = _build_color_layer_charstring(
+                        perturbed_contours, g.glyph_name, final_advance,
+                        sub_kind, outer_sign=outer_sign,
+                    )
+                    if sub_cs is None:
+                        continue
+                    sub_name = f"{g.glyph_name}.{sub_kind}"
+                    if sub_cs.program and isinstance(sub_cs.program[0], (int, float)):
+                        sub_cs.program[0] = final_advance
+                    charstrings[sub_name] = sub_cs
+                    metrics[sub_name] = (final_advance, 0)
+                    glyph_order.append(sub_name)
+                    layers.append((sub_name, palette_idx))
 
             color_glyph_layers[g.glyph_name] = layers
 
@@ -680,31 +666,33 @@ def build_otf(
         privateDict=private_dict,
     )
 
-    # COLR/CPAL — palette stack is [base, pool, speck].
-    #   base  → user-chosen ink colour, opaque
-    #   pool  → slightly darker base, opaque (denser-ink patches)
-    #   speck → fully transparent so divot patches punch through to whatever
-    #           background the font is rendered on (white paper, dark UI,
-    #           coloured letterheads). Painting them in a fixed light tint
-    #           used to leave visible white dots on non-white backgrounds.
-    # Renderers without COLR silently fall back to the cmap base glyph,
-    # which is correct.
+    # CPAL palette — [base, pool_dark, pool_light].
+    #   index 0: base colour (user-chosen pen colour, opaque)
+    #   index 1: pool_dark, ~0.7× base, opaque (denser-ink patches)
+    #   index 2: pool_light, ~halfway base→white, opaque (whitened ink,
+    #           the OTF approximation of canvas-side speed-whitening)
+    # Divots are now baked into the base outline as CFF holes, so there's
+    # no longer a speck palette entry — the background shows through them
+    # in every renderer (COLR-aware or not).
     if color_glyph_layers:
         br, bg, bb = base_color
-        # Pool sits slightly darker than base — COLRv0 paints solid colours
-        # so the pool layer needs *some* tonal difference to be visible at
-        # all. 0.75× base keeps it a subtle denser-ink patch, not a
-        # contrast-popping black dot. Override still respected.
         _pool = pool_color if pool_color is not None else (
-            int(br * 0.75), int(bg * 0.75), int(bb * 0.75))
-        # Speck colour is unused on screen (alpha 0) but still encoded so
-        # palette-aware tooling can read a sensible RGB. Override is still
-        # respected if the caller wants opaque specks back.
-        _speck = speck_color if speck_color is not None else (
-            int(br + (255 - br) * 0.92),
-            int(bg + (255 - bg) * 0.92),
-            int(bb + (255 - bb) * 0.92))
-        _speck_alpha = 1.0 if speck_color is not None else 0.0
+            int(br * 0.70), int(bg * 0.70), int(bb * 0.70))
+        # Default "light" pool is a 50/50 blend toward white. With a dark
+        # ink colour like the default brown this lands around mid-grey
+        # which reads clearly as a lighter ink-density patch against the
+        # full-strength base.
+        _pool_light_default = (
+            int(br + (255 - br) * 0.50),
+            int(bg + (255 - bg) * 0.50),
+            int(bb + (255 - bb) * 0.50),
+        )
+        # speck_color used to set the COLR speck layer colour; with divots
+        # baked into the base outline that layer no longer exists, so the
+        # parameter is repurposed: callers that want to override the
+        # whitened pool colour can pass speck_color (back-compat with the
+        # previous signature without bumping API).
+        _pool_light = speck_color if speck_color is not None else _pool_light_default
         glyph_index_map = {name: i for i, name in enumerate(glyph_order)}
         try:
             colr_table = buildCOLR(
@@ -713,7 +701,7 @@ def build_otf(
             cpal_table = buildCPAL([[
                 (br / 255, bg / 255, bb / 255, 1.0),
                 (_pool[0] / 255, _pool[1] / 255, _pool[2] / 255, 1.0),
-                (_speck[0] / 255, _speck[1] / 255, _speck[2] / 255, _speck_alpha),
+                (_pool_light[0] / 255, _pool_light[1] / 255, _pool_light[2] / 255, 1.0),
             ]])
             fb.font['COLR'] = colr_table
             fb.font['CPAL'] = cpal_table
@@ -949,19 +937,36 @@ def _build_charstring_from_svg(
     contours: List[list] = []
 
     if perturb and svg_paths:
-        # Collect → perturb → replay
+        # Collect → perturb → carve divot holes → replay everything.
+        # Divots used to live as a separate COLR layer painted near-white,
+        # which left visible light dots on non-white backgrounds. Baking
+        # them into the base outline as CFF holes makes the background
+        # show through whatever colour it is, in every renderer (COLR-
+        # aware or not).
         collector = _CollectingPen()
         _draw_svg_paths_to_pen(
             collector, svg_paths, svg_width, svg_height,
             baseline_y_in_svg, upscale_factor=upscale_factor, form=form,
             entry_x=entry_x, exit_x=exit_x,
         )
-        collector.perturb_and_replay(
-            real_pen, glyph_name or "unknown",
+        collector._flush()
+        perturbed = perturb_glyph(
+            collector._contours, glyph_name or "unknown",
             amplitude=perturb_amplitude,
             frequency=perturb_frequency,
         )
-        contours = collector._contours
+        outer_sign = _detect_outer_sign(perturbed)
+        hole_contours = _collect_speck_hole_contours(
+            perturbed, glyph_name or "unknown", outer_sign,
+        )
+        for c in perturbed:
+            _CollectingPen._replay_contour(c, real_pen)
+        for c in hole_contours:
+            _CollectingPen._replay_contour(c, real_pen)
+        # Pool layers are computed from the base contours only — the holes
+        # are already baked in, and we don't want pool patches placed on
+        # the divot edges.
+        contours = perturbed
     else:
         _draw_svg_paths_to_pen(
             real_pen, svg_paths, svg_width, svg_height,
@@ -1041,16 +1046,30 @@ def _build_color_layer_charstring(
     contours: List[list],
     glyph_name: str,
     advance: int,
-    kind: str,                              # 'pool' or 'speck'
+    kind: str,                              # 'pool', 'pool_light', or 'speck'
     outer_sign: float = -1.0,               # +1 for CCW-outer glyphs, -1 for CW
 ) -> Optional["T2CharString"]:
     """
     Walk every contour's on-curve points and drop small octagonal patches
-    at noise-sampled positions. Pools (dots) are pulled slightly inward
-    so they sit fully inside the ink; specks (divots) are placed *on*
-    the edge so they straddle it and the half outside the glyph silhouette
-    gets covered by the base layer rather than appearing as a free-floating
-    paper spot.
+    at noise-sampled positions.
+
+    kinds
+      'pool'       — denser-ink patches, inset inside the stroke. Only
+                     fires when a secondary "darkness" noise is on the
+                     dark half, so the dark/light split is mutually
+                     exclusive with 'pool_light' at every candidate.
+      'pool_light' — whitened-ink patches, inset inside the stroke. Fires
+                     on the opposite half of the same darkness noise, so
+                     pool + pool_light cover every candidate position
+                     between them. Together they give the COLR overlay
+                     visible ink-density variation that approximates the
+                     canvas-side speed-whitening on outward bumps (which
+                     can't otherwise round-trip through a vector OTF).
+      'speck'      — edge-straddling light divots. Historical; the
+                     production path now bakes divots into the base
+                     outline as CFF holes (see _collect_speck_hole_contours)
+                     so they show the actual background instead of a
+                     fixed light tint.
 
     *outer_sign* picks the inward normal direction once per glyph based
     on the largest contour's winding — without this, holes in 'o', 'a',
@@ -1059,14 +1078,25 @@ def _build_color_layer_charstring(
     if not contours:
         return None
 
-    seed = int(hashlib.md5((glyph_name + kind).encode()).hexdigest()[:6], 16)
+    # Pool and pool_light share a single seed so they generate the same
+    # candidate set; the split below decides which one each position lands in.
+    seed_kind = 'pool' if kind in ('pool', 'pool_light') else kind
+    seed = int(hashlib.md5((glyph_name + seed_kind).encode()).hexdigest()[:6], 16)
+    # Independent seed for the darkness split so it isn't correlated with
+    # the patch-placement noise.
+    split_seed = int(hashlib.md5((glyph_name + 'pool_split').encode()).hexdigest()[:6], 16)
 
     # Outline-walking parameters (font UPM space)
     noise_freq = 0.06           # ~16 UPM per noise cycle
     threshold = 0.25
     radius_min, radius_max = 4.5, 7.5
-    inset_frac = 0.7 if kind == 'pool' else 0.0
+    inset_frac = 0.7 if kind in ('pool', 'pool_light') else 0.0
     steps = 8                   # octagonal patches
+
+    # Darkness-split noise sampled at a different frequency so it doesn't
+    # mirror the placement noise (which would line dark/light patches up
+    # with stroke curvature instead of looking randomly distributed).
+    split_freq = 0.037
 
     pen = T2CharStringPen(advance, glyphSet=None)
     drew_any = False
@@ -1089,8 +1119,9 @@ def _build_color_layer_charstring(
             continue
 
         # Per-contour phase keeps adjacent contours uncorrelated
-        phase_kind_offset = 0.0 if kind == 'pool' else 50.3
+        phase_kind_offset = 0.0 if kind in ('pool', 'pool_light') else 50.3
         phase = (c_idx * 19.3 + seed * 0.137 + phase_kind_offset) % 1024
+        split_phase = (c_idx * 11.7 + split_seed * 0.211) % 1024
 
         for i in range(n):
             # Local tangent (centered difference, wraps on closed contours)
@@ -1110,10 +1141,19 @@ def _build_color_layer_charstring(
             inward_y =  tx * outer_sign
 
             nz = _py_noise1d(arc[i] * noise_freq + phase)
-            if kind == 'pool':
+            if kind in ('pool', 'pool_light'):
                 if nz <= threshold:
                     continue
                 magnitude = nz - threshold
+                # Darkness split: positive split-noise → pool_light,
+                # negative → pool. Same threshold of 0 keeps the two halves
+                # roughly equal in count.
+                split_nz = _py_noise1d(arc[i] * split_freq + split_phase)
+                is_light = split_nz > 0.0
+                if kind == 'pool' and is_light:
+                    continue
+                if kind == 'pool_light' and not is_light:
+                    continue
             else:
                 if nz >= -threshold:
                     continue
@@ -1136,6 +1176,139 @@ def _build_color_layer_charstring(
             drew_any = True
 
     return pen.getCharString() if drew_any else None
+
+
+def _detect_outer_sign(contours: List[list]) -> float:
+    """Determine outer-contour winding direction from the largest contour.
+    Returns +1 for CCW outer, -1 for CW outer (this pipeline's default).
+    Used so divot holes and patch insets always go the right way for the
+    glyph at hand — 'o', 'a', 'B' etc. otherwise place patches outside the
+    ink."""
+    largest_area = 0.0
+    outer_sign = -1.0
+    for contour in contours:
+        on_pts = [op[-1] for op in contour
+                  if op[0] in ('moveTo', 'lineTo', 'curveTo')]
+        if len(on_pts) < 3:
+            continue
+        area = _signed_area(on_pts)
+        if abs(area) > largest_area:
+            largest_area = abs(area)
+            outer_sign = 1.0 if area > 0 else -1.0
+    return outer_sign
+
+
+def _collect_speck_hole_contours(
+    contours: List[list],
+    glyph_name: str,
+    outer_sign: float,
+) -> List[list]:
+    """
+    Build divot patches as reverse-winding octagonal contours, fully inset
+    inside the stroke, ready to append to the base charstring. CFF's
+    non-zero winding rule then carves them as real holes — the background
+    shows through on any colour, instead of the old approach of painting
+    a fixed light tint that looked wrong on non-white backgrounds.
+
+    Patches must sit fully inside the base outline; if they straddled the
+    edge the outside half would add ink (winding still non-zero outside
+    the base). inset_frac = 1.2 nudges the centre past the edge by one
+    radius plus a small safety margin so even on convex curves the
+    octagon stays inside the silhouette.
+
+    Returned contours are sequences of pen ops (moveTo / lineTo / closePath),
+    matching the format of `_CollectingPen._contours`.
+    """
+    if not contours:
+        return []
+
+    seed = int(hashlib.md5((glyph_name + 'speck').encode()).hexdigest()[:6], 16)
+
+    noise_freq = 0.06
+    threshold = 0.25
+    # Slightly tighter than the COLR-speck radii — fully-inset octagons
+    # bite deeper into thin strokes than edge-straddling ones did, so we
+    # shrink a little to keep the same visual weight.
+    radius_min, radius_max = 3.5, 6.0
+    inset_frac = 1.2
+    steps = 8
+
+    holes: List[list] = []
+
+    for c_idx, contour in enumerate(contours):
+        on_pts = [op[-1] for op in contour
+                  if op[0] in ('moveTo', 'lineTo', 'curveTo')]
+        n = len(on_pts)
+        if n < 4:
+            continue
+        closed = any(op[0] == 'closePath' for op in contour)
+
+        arc = [0.0]
+        for i in range(1, n):
+            dx = on_pts[i][0] - on_pts[i - 1][0]
+            dy = on_pts[i][1] - on_pts[i - 1][1]
+            arc.append(arc[-1] + math.hypot(dx, dy))
+        if arc[-1] < 30:
+            continue
+
+        phase = (c_idx * 19.3 + seed * 0.137 + 50.3) % 1024
+
+        for i in range(n):
+            if closed:
+                prev_pt = on_pts[(i - 1) % n]
+                next_pt = on_pts[(i + 1) % n]
+            else:
+                prev_pt = on_pts[max(0, i - 1)]
+                next_pt = on_pts[min(n - 1, i + 1)]
+            dx = next_pt[0] - prev_pt[0]
+            dy = next_pt[1] - prev_pt[1]
+            length = math.hypot(dx, dy)
+            if length < 1e-6:
+                continue
+            tx, ty = dx / length, dy / length
+            inward_x = -ty * outer_sign
+            inward_y =  tx * outer_sign
+
+            nz = _py_noise1d(arc[i] * noise_freq + phase)
+            if nz >= -threshold:
+                continue
+            magnitude = -nz - threshold
+            intensity = min(1.0, magnitude / (1.0 - threshold))
+            radius = radius_min + intensity * (radius_max - radius_min)
+
+            cx = on_pts[i][0] + inward_x * radius * inset_frac
+            cy = on_pts[i][1] + inward_y * radius * inset_frac
+
+            # Build the octagon in REVERSE winding (k goes high → low) so
+            # its signed area has the opposite sign of the outer contour.
+            # CFF non-zero winding then subtracts the patch from the fill.
+            ops: list = []
+            for k in range(steps - 1, -1, -1):
+                ang = (k / steps) * 2 * math.pi
+                xx = round(cx + math.cos(ang) * radius)
+                yy = round(cy + math.sin(ang) * radius)
+                if k == steps - 1:
+                    ops.append(('moveTo', (xx, yy)))
+                else:
+                    ops.append(('lineTo', (xx, yy)))
+            ops.append(('closePath',))
+
+            # Sanity check: reversed winding should have the opposite sign
+            # of outer_sign. If for any reason it doesn't, flip the
+            # contour rather than emit a patch that would add fill.
+            sample_pts = [op[-1] for op in ops if op[0] in ('moveTo', 'lineTo')]
+            if outer_sign * _signed_area(sample_pts) > 0:
+                # Same sign as outer → would *add* fill, not subtract. Flip.
+                pts = [op[-1] for op in ops if op[0] in ('moveTo', 'lineTo')]
+                pts = list(reversed(pts))
+                ops = [('moveTo', pts[0])]
+                for p in pts[1:]:
+                    ops.append(('lineTo', p))
+                ops.append(('closePath',))
+
+            holes.append(ops)
+
+    return holes
 
 
 def _py_hash1d(i: int) -> float:
