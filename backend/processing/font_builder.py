@@ -668,24 +668,24 @@ def build_otf(
 
     # CPAL palette — [base, pool_dark, pool_light].
     #   index 0: base colour (user-chosen pen colour, opaque)
-    #   index 1: pool_dark, ~0.7× base, opaque (denser-ink patches)
-    #   index 2: pool_light, ~halfway base→white, opaque (whitened ink,
-    #           the OTF approximation of canvas-side speed-whitening)
-    # Divots are now baked into the base outline as CFF holes, so there's
-    # no longer a speck palette entry — the background shows through them
-    # in every renderer (COLR-aware or not).
+    #   index 1: pool_dark, ~0.45× base, opaque (denser-ink patches —
+    #           dropping all the way to ~half of base means even very
+    #           dark inks like the default brown have a perceptible
+    #           denser-tone variation rather than a 10-luminance whisper)
+    #   index 2: pool_light, ~0.7 toward white, opaque (whitened-ink
+    #           patches — the OTF stand-in for the canvas-side
+    #           speed-whitening on outward bumps)
+    # Divots are now baked into the base outline as half-octagonal CFF
+    # holes biting into the edge, so there's no longer a speck palette
+    # entry — the background shows through them in every renderer.
     if color_glyph_layers:
         br, bg, bb = base_color
         _pool = pool_color if pool_color is not None else (
-            int(br * 0.70), int(bg * 0.70), int(bb * 0.70))
-        # Default "light" pool is a 50/50 blend toward white. With a dark
-        # ink colour like the default brown this lands around mid-grey
-        # which reads clearly as a lighter ink-density patch against the
-        # full-strength base.
+            int(br * 0.45), int(bg * 0.45), int(bb * 0.45))
         _pool_light_default = (
-            int(br + (255 - br) * 0.50),
-            int(bg + (255 - bg) * 0.50),
-            int(bb + (255 - bb) * 0.50),
+            int(br + (255 - br) * 0.70),
+            int(bg + (255 - bg) * 0.70),
+            int(bb + (255 - bb) * 0.70),
         )
         # speck_color used to set the COLR speck layer colour; with divots
         # baked into the base outline that layer no longer exists, so the
@@ -1089,7 +1089,12 @@ def _build_color_layer_charstring(
     # Outline-walking parameters (font UPM space)
     noise_freq = 0.06           # ~16 UPM per noise cycle
     threshold = 0.25
-    radius_min, radius_max = 4.5, 7.5
+    # Larger patches than the original 4.5–7.5 UPM range. At 36 px preview
+    # text the old size landed below half a pixel — invisible. 10–18 UPM
+    # is still small relative to a 700 UPM cap height (≈1.4–2.6% of the
+    # glyph height) but renders as roughly 0.4–0.65 px at 36 px and a
+    # clearly perceptible 0.7–1.2 px at the 64 px preview the UI now uses.
+    radius_min, radius_max = 10.0, 18.0
     inset_frac = 0.7 if kind in ('pool', 'pool_light') else 0.0
     steps = 8                   # octagonal patches
 
@@ -1204,20 +1209,21 @@ def _collect_speck_hole_contours(
     outer_sign: float,
 ) -> List[list]:
     """
-    Build divot patches as reverse-winding octagonal contours, fully inset
-    inside the stroke, ready to append to the base charstring. CFF's
-    non-zero winding rule then carves them as real holes — the background
-    shows through on any colour, instead of the old approach of painting
-    a fixed light tint that looked wrong on non-white backgrounds.
+    Build divot patches as half-octagonal contours sitting flush on the
+    stroke edge, with the curved side biting inward — exactly the
+    half-moon "edge eaten by paper" effect the canvas pen draws with its
+    polygon-clipped white discs.
 
-    Patches must sit fully inside the base outline; if they straddled the
-    edge the outside half would add ink (winding still non-zero outside
-    the base). inset_frac = 1.2 nudges the centre past the edge by one
-    radius plus a small safety margin so even on convex curves the
-    octagon stays inside the silhouette.
+    Half-octagons sit entirely on the inside-half of the local edge, so
+    nothing pokes outside the base outline (which would otherwise add
+    ink under CFF's non-zero winding rule and produce ugly little
+    bumps next to every divot).
 
-    Returned contours are sequences of pen ops (moveTo / lineTo / closePath),
-    matching the format of `_CollectingPen._contours`.
+    Winding is chosen at construction time so the shape acts as a hole
+    against an outer contour with sign *outer_sign*.
+
+    Returned contours are sequences of pen ops (moveTo / lineTo /
+    closePath), ready to feed back to a T2CharStringPen.
     """
     if not contours:
         return []
@@ -1226,11 +1232,13 @@ def _collect_speck_hole_contours(
 
     noise_freq = 0.06
     threshold = 0.25
-    # Slightly tighter than the COLR-speck radii — fully-inset octagons
-    # bite deeper into thin strokes than edge-straddling ones did, so we
-    # shrink a little to keep the same visual weight.
-    radius_min, radius_max = 3.5, 6.0
-    inset_frac = 1.2
+    # Half-octagons bite only as deep as their radius (vs a full octagon
+    # which could pierce all the way through a thin stroke) so we can run
+    # them a touch bigger than the old COLR-speck radii without risk.
+    # They're also expressed at a size that's at least marginally
+    # perceptible in the in-app preview, which the previous 3.5–6 UPM
+    # range wasn't.
+    radius_min, radius_max = 7.0, 12.0
     steps = 8
 
     holes: List[list] = []
@@ -1276,36 +1284,39 @@ def _collect_speck_hole_contours(
             intensity = min(1.0, magnitude / (1.0 - threshold))
             radius = radius_min + intensity * (radius_max - radius_min)
 
-            cx = on_pts[i][0] + inward_x * radius * inset_frac
-            cy = on_pts[i][1] + inward_y * radius * inset_frac
+            px, py = on_pts[i]
 
-            # Build the octagon in REVERSE winding (k goes high → low) so
-            # its signed area has the opposite sign of the outer contour.
-            # CFF non-zero winding then subtracts the patch from the fill.
-            ops: list = []
-            for k in range(steps - 1, -1, -1):
-                ang = (k / steps) * 2 * math.pi
-                xx = round(cx + math.cos(ang) * radius)
-                yy = round(cy + math.sin(ang) * radius)
-                if k == steps - 1:
-                    ops.append(('moveTo', (xx, yy)))
-                else:
-                    ops.append(('lineTo', (xx, yy)))
-            ops.append(('closePath',))
+            # Half-octagon vertices: two endpoints sit on the edge tangent
+            # at ±radius from the centre, three arc vertices bulge inward
+            # along the normal. The shape is entirely on the inside-half
+            # of the edge so nothing pokes outside the base outline.
+            #
+            # Edge-right → inward-right → apex → inward-left → edge-left,
+            # close back along the diameter (implicit via closePath).
+            inv_sqrt2 = 0.70710678
+            pts = [
+                (px + radius * tx,                                          py + radius * ty),
+                (px + inv_sqrt2 * radius * tx + inv_sqrt2 * radius * inward_x,
+                 py + inv_sqrt2 * radius * ty + inv_sqrt2 * radius * inward_y),
+                (px + radius * inward_x,                                    py + radius * inward_y),
+                (px - inv_sqrt2 * radius * tx + inv_sqrt2 * radius * inward_x,
+                 py - inv_sqrt2 * radius * ty + inv_sqrt2 * radius * inward_y),
+                (px - radius * tx,                                          py - radius * ty),
+            ]
 
-            # Sanity check: reversed winding should have the opposite sign
-            # of outer_sign. If for any reason it doesn't, flip the
-            # contour rather than emit a patch that would add fill.
-            sample_pts = [op[-1] for op in ops if op[0] in ('moveTo', 'lineTo')]
-            if outer_sign * _signed_area(sample_pts) > 0:
-                # Same sign as outer → would *add* fill, not subtract. Flip.
-                pts = [op[-1] for op in ops if op[0] in ('moveTo', 'lineTo')]
+            # Winding sanity: the hole must wind OPPOSITE to the outer
+            # contour. _signed_area > 0 ⇒ CCW; outer_sign = -1 means CW
+            # outer (negative area), so we want positive area here.
+            # If construction came out same-sign as the outer (rare —
+            # depends on inward_x/y orientation), reverse the vertex order.
+            sa = _signed_area(pts)
+            if outer_sign * sa > 0:
                 pts = list(reversed(pts))
-                ops = [('moveTo', pts[0])]
-                for p in pts[1:]:
-                    ops.append(('lineTo', p))
-                ops.append(('closePath',))
 
+            ops: list = [('moveTo', (round(pts[0][0]), round(pts[0][1])))]
+            for p in pts[1:]:
+                ops.append(('lineTo', (round(p[0]), round(p[1]))))
+            ops.append(('closePath',))
             holes.append(ops)
 
     return holes
