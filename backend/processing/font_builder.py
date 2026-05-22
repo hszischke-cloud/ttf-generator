@@ -608,39 +608,17 @@ def build_otf(
         metrics[g.glyph_name] = (final_advance, 0)
 
         if do_color:
-            # Every glyph gets at least a single-layer COLR entry that paints
-            # the base outline in palette index 0. Without this, glyphs
-            # without overlay patches fall back to the cmap base in the
-            # renderer's foreground colour (CSS `color`, document text
-            # colour) and never show the user's chosen pen colour.
-            layers: List[Tuple[str, int]] = [(g.glyph_name, 0)]
-
-            if perturbed_contours:
-                outer_sign = _detect_outer_sign(perturbed_contours)
-
-                # Pool is split into a darker and a lighter half (palette
-                # indices 1 + 2). The two share a candidate set and a
-                # darkness-split noise picks which one each position goes
-                # into, so together they paint visible ink-density variation
-                # on top of the base — approximating the canvas-side
-                # speed-whitening effect that can't otherwise be encoded
-                # in a vector OTF.
-                for sub_kind, palette_idx in (('pool', 1), ('pool_light', 2)):
-                    sub_cs = _build_color_layer_charstring(
-                        perturbed_contours, g.glyph_name, final_advance,
-                        sub_kind, outer_sign=outer_sign,
-                    )
-                    if sub_cs is None:
-                        continue
-                    sub_name = f"{g.glyph_name}.{sub_kind}"
-                    if sub_cs.program and isinstance(sub_cs.program[0], (int, float)):
-                        sub_cs.program[0] = final_advance
-                    charstrings[sub_name] = sub_cs
-                    metrics[sub_name] = (final_advance, 0)
-                    glyph_order.append(sub_name)
-                    layers.append((sub_name, palette_idx))
-
-            color_glyph_layers[g.glyph_name] = layers
+            # Single-layer COLR entry painting the base outline in palette
+            # index 0 (the user's chosen pen colour). Without this, glyphs
+            # fall back to the cmap base in the renderer's foreground
+            # colour (CSS `color`, document text colour) and ignore the
+            # user's chosen pen colour entirely. No pool overlay layers
+            # — the synthetic dot patches read as polka dots at preview
+            # size and the canvas's per-stamp speed-whitening can't
+            # round-trip through a vector OTF anyway. Divots stay (baked
+            # into the base outline as half-octagonal CFF holes), which
+            # gives natural-looking edge texture without interior spots.
+            color_glyph_layers[g.glyph_name] = [(g.glyph_name, 0)]
 
     # Now that all glyphs (base + COLR layers) are known, commit them to the
     # FontBuilder. setupGlyphOrder/setupCharacterMap have to come before
@@ -666,36 +644,15 @@ def build_otf(
         privateDict=private_dict,
     )
 
-    # CPAL palette — [base, pool_dark, pool_light].
-    #   index 0: base colour (user-chosen pen colour, opaque)
-    #   index 1: pool_dark, ~0.75× base, opaque — slightly denser ink.
-    #           Keeping the contrast subtle is what makes patches read as
-    #           texture instead of polka dots; the previous 0.45× setting
-    #           gave a strong dark spot every time, which lined up with
-    #           pool_light spots and produced an obvious dotted pattern.
-    #   index 2: pool_light, ~0.20 toward white from base, opaque —
-    #           slightly thinner ink. Same logic: subtle wins. The
-    #           previous 0.7-toward-white setting jumped most of the way
-    #           to grey and read as a bright spot on top of the ink, not
-    #           as ink density variation.
+    # CPAL palette — single entry, the user's chosen pen colour. With
+    # no pool overlay layers there's nothing to put at indices 1+, so
+    # the palette is just [base]. pool_color/speck_color params are
+    # ignored now; kept on the signature for back-compat.
     # Divots are baked into the base outline as half-octagonal CFF holes
-    # biting into the edge — no speck palette entry needed; the
-    # background shows through them in every renderer.
+    # biting into the edge, so the background shows through them in
+    # every renderer.
     if color_glyph_layers:
         br, bg, bb = base_color
-        _pool = pool_color if pool_color is not None else (
-            int(br * 0.75), int(bg * 0.75), int(bb * 0.75))
-        _pool_light_default = (
-            int(br + (255 - br) * 0.20),
-            int(bg + (255 - bg) * 0.20),
-            int(bb + (255 - bb) * 0.20),
-        )
-        # speck_color used to set the COLR speck layer colour; with divots
-        # baked into the base outline that layer no longer exists, so the
-        # parameter is repurposed: callers that want to override the
-        # whitened pool colour can pass speck_color (back-compat with the
-        # previous signature without bumping API).
-        _pool_light = speck_color if speck_color is not None else _pool_light_default
         glyph_index_map = {name: i for i, name in enumerate(glyph_order)}
         try:
             colr_table = buildCOLR(
@@ -703,8 +660,6 @@ def build_otf(
             )
             cpal_table = buildCPAL([[
                 (br / 255, bg / 255, bb / 255, 1.0),
-                (_pool[0] / 255, _pool[1] / 255, _pool[2] / 255, 1.0),
-                (_pool_light[0] / 255, _pool_light[1] / 255, _pool_light[2] / 255, 1.0),
             ]])
             fb.font['COLR'] = colr_table
             fb.font['CPAL'] = cpal_table
