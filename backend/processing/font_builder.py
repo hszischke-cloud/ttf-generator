@@ -668,24 +668,27 @@ def build_otf(
 
     # CPAL palette — [base, pool_dark, pool_light].
     #   index 0: base colour (user-chosen pen colour, opaque)
-    #   index 1: pool_dark, ~0.45× base, opaque (denser-ink patches —
-    #           dropping all the way to ~half of base means even very
-    #           dark inks like the default brown have a perceptible
-    #           denser-tone variation rather than a 10-luminance whisper)
-    #   index 2: pool_light, ~0.7 toward white, opaque (whitened-ink
-    #           patches — the OTF stand-in for the canvas-side
-    #           speed-whitening on outward bumps)
-    # Divots are now baked into the base outline as half-octagonal CFF
-    # holes biting into the edge, so there's no longer a speck palette
-    # entry — the background shows through them in every renderer.
+    #   index 1: pool_dark, ~0.75× base, opaque — slightly denser ink.
+    #           Keeping the contrast subtle is what makes patches read as
+    #           texture instead of polka dots; the previous 0.45× setting
+    #           gave a strong dark spot every time, which lined up with
+    #           pool_light spots and produced an obvious dotted pattern.
+    #   index 2: pool_light, ~0.20 toward white from base, opaque —
+    #           slightly thinner ink. Same logic: subtle wins. The
+    #           previous 0.7-toward-white setting jumped most of the way
+    #           to grey and read as a bright spot on top of the ink, not
+    #           as ink density variation.
+    # Divots are baked into the base outline as half-octagonal CFF holes
+    # biting into the edge — no speck palette entry needed; the
+    # background shows through them in every renderer.
     if color_glyph_layers:
         br, bg, bb = base_color
         _pool = pool_color if pool_color is not None else (
-            int(br * 0.45), int(bg * 0.45), int(bb * 0.45))
+            int(br * 0.75), int(bg * 0.75), int(bb * 0.75))
         _pool_light_default = (
-            int(br + (255 - br) * 0.70),
-            int(bg + (255 - bg) * 0.70),
-            int(bb + (255 - bb) * 0.70),
+            int(br + (255 - br) * 0.20),
+            int(bg + (255 - bg) * 0.20),
+            int(bb + (255 - bb) * 0.20),
         )
         # speck_color used to set the COLR speck layer colour; with divots
         # baked into the base outline that layer no longer exists, so the
@@ -1088,13 +1091,17 @@ def _build_color_layer_charstring(
 
     # Outline-walking parameters (font UPM space)
     noise_freq = 0.06           # ~16 UPM per noise cycle
-    threshold = 0.25
-    # Larger patches than the original 4.5–7.5 UPM range. At 36 px preview
-    # text the old size landed below half a pixel — invisible. 10–18 UPM
-    # is still small relative to a 700 UPM cap height (≈1.4–2.6% of the
-    # glyph height) but renders as roughly 0.4–0.65 px at 36 px and a
-    # clearly perceptible 0.7–1.2 px at the 64 px preview the UI now uses.
-    radius_min, radius_max = 10.0, 18.0
+    # Higher threshold than before drops patch density roughly in half.
+    # At display sizes this stops the patches from reading as a regular
+    # polka-dot pattern marching along every stroke.
+    threshold = 0.45
+    # Patches sit closer to the original 4.5–7.5 UPM range. The previous
+    # 10–18 UPM bump made each one read as a discrete dot at display
+    # sizes (which is how the user sees the preview) instead of blending
+    # into ink texture. Anti-aliasing carries the smaller patches as
+    # subtle tone variation at preview size and clear-but-not-spotty
+    # texture at very large sizes.
+    radius_min, radius_max = 5.0, 8.0
     inset_frac = 0.7 if kind in ('pool', 'pool_light') else 0.0
     steps = 8                   # octagonal patches
 
@@ -1234,11 +1241,10 @@ def _collect_speck_hole_contours(
     threshold = 0.25
     # Half-octagons bite only as deep as their radius (vs a full octagon
     # which could pierce all the way through a thin stroke) so we can run
-    # them a touch bigger than the old COLR-speck radii without risk.
-    # They're also expressed at a size that's at least marginally
-    # perceptible in the in-app preview, which the previous 3.5–6 UPM
-    # range wasn't.
-    radius_min, radius_max = 7.0, 12.0
+    # them a touch bigger than the original 3.5–6 UPM speck range. 5–8
+    # UPM matches the pool patches' scale so divots read as edge texture
+    # rather than discrete oversized bites.
+    radius_min, radius_max = 5.0, 8.0
     steps = 8
 
     holes: List[list] = []
