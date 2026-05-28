@@ -302,6 +302,12 @@ def _stroke_end_tangent(start: Point, segs: List[Segment]) -> Point:
     return (tx / n, ty / n) if n > 1e-6 else (1.0, 0.0)
 
 
+def _stroke_end_perp(start: Point, segs: List[Segment]) -> Point:
+    """Unit vector perpendicular to the stroke at its end point (rotated 90° CCW)."""
+    tx, ty = _stroke_end_tangent(start, segs)
+    return (-ty, tx)
+
+
 def _stroke_to_svg(pts: Sequence[Sequence[float]]) -> str:
     """One pen stroke → one SVG path string (forward + tip jog + reversed retrace)."""
     start, segs = _smooth_polyline_to_segments(pts)
@@ -311,12 +317,16 @@ def _stroke_to_svg(pts: Sequence[Sequence[float]]) -> str:
     parts: List[str] = [f"M {start[0]:.2f} {start[1]:.2f}"]
     parts.extend(_segments_to_svg_parts(segs))
 
-    # Tip jog 1px along the stroke's own end tangent — defeats T2CharStringPen
-    # axis-merging while keeping the jog collinear with the stroke so it doesn't
-    # appear as a kink when OTF outlines are extracted to SVG.
+    # Tip jog 1px perpendicular to the stroke at its end point. Must be
+    # perpendicular (not along the tangent): a collinear jog leaves every
+    # contour point on the stroke line, so T2CharStringPen folds the whole
+    # contour into an hlineto/vlineto chain that the rasterizer collapses
+    # to a degenerate point — straight strokes (A's crossbar, B's middle bar,
+    # E's three bars) then render as nothing. Perpendicular keeps the contour
+    # 2D so it survives CFF round-trip with non-zero area.
     end = _seg_target(segs[-1])
-    tx, ty = _stroke_end_tangent(start, segs)
-    parts.append(f"L {end[0] + tx:.2f} {end[1] + ty:.2f}")
+    px, py = _stroke_end_perp(start, segs)
+    parts.append(f"L {end[0] + px:.2f} {end[1] + py:.2f}")
 
     # Reverse retrace through the same control points, ending back at start.
     # Z closes the contour explicitly so any SVG parser sees an unambiguous
