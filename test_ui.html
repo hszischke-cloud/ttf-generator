@@ -545,29 +545,6 @@
         <div class="draw-slot-tabs" id="draw-slot-tabs"></div>
       </div>
 
-      <!-- Tools -->
-      <div class="panel-section">
-        <span class="panel-label">Tool</span>
-        <div class="tool-btns">
-          <button id="tool-pen"         class="tool-btn active-tool" onclick="selectTool('pen')">Pen</button>
-          <button id="tool-pencil"      class="tool-btn"             onclick="selectTool('pencil')">Pencil</button>
-          <button id="tool-calligraphy" class="tool-btn"             onclick="selectTool('calligraphy')">Calli</button>
-          <button id="tool-felt"        class="tool-btn"             onclick="selectTool('felt')">Felt</button>
-        </div>
-        <div class="size-row">
-          <span>Size</span>
-          <input type="range" id="tool-size" min="4" max="40" value="14"
-            oninput="onToolSizeChange(this)">
-          <span class="size-val" id="size-val">14</span>
-        </div>
-        <div class="size-row">
-          <span>Color</span>
-          <input type="color" id="tool-color" value="#26201c"
-            oninput="onToolColorChange(this.value)"
-            style="width:44px;height:22px;padding:1px 2px;border:1px solid #ccc;border-radius:4px;cursor:pointer;vertical-align:middle;">
-        </div>
-      </div>
-
       <!-- Edit controls (Undo lives in the canvas header — see draw-header-undo) -->
       <div class="panel-section">
         <span class="panel-label">Edit</span>
@@ -1071,9 +1048,6 @@ const SMOOTH_ALPHA = 0.62;   // input low-pass: 0=very smooth, 1=raw
 // (visible gaps when the font is zoomed out).
 const TOOL_PROFILES = {
   pen:         {thinning: 0.35, startTaper: 0.06, endTaper: 0.08, widthMult: 1.0,  taperFloor: 0.62},
-  pencil:      {thinning: 0.18, startTaper: 0.08, endTaper: 0.10, widthMult: 0.72, taperFloor: 0.45},
-  calligraphy: {thinning: 0.55, startTaper: 0.06, endTaper: 0.08, widthMult: 1.0,  taperFloor: 0.50},
-  felt:        {thinning: 0.10, startTaper: 0.03, endTaper: 0.04, widthMult: 1.15, taperFloor: 0.70},
 };
 
 // Pen-mode ink variation — both dots and divots are placed on the polygon
@@ -1168,7 +1142,7 @@ const drawState = {
   currentStroke: [],
   isDrawing: false,
   tool: 'pen',
-  toolSize: 14,
+  toolSize: 6,          // fixed pen size for all strokes
   color: [38, 32, 28],  // [r, g, b] — default dark graphite
   eraserMode: false,
   lastPoint: null,
@@ -1186,24 +1160,9 @@ const drawState = {
   cursiveX: {},
 };
 
-// Font-level style settings — last-used tool/size/color, sent with every
-// glyph so it can be restored when re-opening a saved font.
-let fontSettings = { tool: 'pen', toolSize: 14, color: [38, 32, 28] };
-
-function syncToolUI() {
-  document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active-tool'));
-  const btn = document.getElementById(`tool-${fontSettings.tool}`);
-  if (btn) btn.classList.add('active-tool');
-  const sizeSlider = document.getElementById('tool-size');
-  const sizeVal    = document.getElementById('size-val');
-  if (sizeSlider) sizeSlider.value = fontSettings.toolSize;
-  if (sizeVal)    sizeVal.textContent = fontSettings.toolSize;
-  const colorPicker = document.getElementById('tool-color');
-  if (colorPicker) {
-    const [r, g, b] = fontSettings.color;
-    colorPicker.value = '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
-  }
-}
+// Font-level style settings — fixed pen tool, size and ink colour, sent with
+// every glyph. Kept on the request payload so saved fonts stay self-describing.
+let fontSettings = { tool: 'pen', toolSize: 6, color: [38, 32, 28] };
 
 function _ensure(d, ...keys) {
   let cur = d;
@@ -1711,7 +1670,6 @@ function strokeToPolygon(points, maxSize, tool) {
   if (points.length < 2) return [];
   const prof = TOOL_PROFILES[tool] || TOOL_PROFILES.pen;
   const n = points.length;
-  const NIB_ANGLE = Math.PI / 4;
 
   // Average pressure across the stroke — passed to renderStrokePolygon for opacity
   const avgP = points.reduce((s, pt) => s + pt.p, 0) / n;
@@ -1735,15 +1693,8 @@ function strokeToPolygon(points, maxSize, tool) {
     const et = easeIn(Math.min((n - 1 - i) / Math.max(n * prof.endTaper, 1), 1));
     const taper = Math.max(prof.taperFloor ?? 0.0, st * et);
 
-    let hw;
-    if (tool === 'calligraphy') {
-      const angFactor = Math.abs(Math.cos(Math.atan2(ty, tx) - NIB_ANGLE));
-      const pMod = (1 - prof.thinning) + prof.thinning * pt.p;
-      hw = maxSize * prof.widthMult * pMod * (0.15 + 0.85 * angFactor) * taper / 2;
-    } else {
-      const pMod = (1 - prof.thinning) + prof.thinning * pt.p;
-      hw = maxSize * prof.widthMult * pMod * taper / 2;
-    }
+    const pMod = (1 - prof.thinning) + prof.thinning * pt.p;
+    const hw = maxSize * prof.widthMult * pMod * taper / 2;
     hws.push(Math.max(0.05, hw));
   }
 
@@ -1862,106 +1813,28 @@ function renderStrokePolygon(ctx, polygon, tool, color = [38, 32, 28], points = 
   }
   ctx.closePath();
 
-  if (tool === 'pen') {
-    ctx.shadowBlur = 1.2;
-    ctx.shadowColor = `rgba(${r},${g},${b},0.25)`;
-    if (points && points.length >= 3 && polygon.length === 2 * points.length) {
-      // Endpoint caps go down first — they fill the tapered-tip area so
-      // two strokes meeting at an angle don't leave a white wedge at the
-      // crossing. Quads paint on top with the same alpha so the cap area
-      // ends up only slightly denser than the body (acceptable trade-off
-      // vs visible white gaps).
-      paintEndpointCaps(ctx, polygon, points, color, opacity);
-      // Chain of small quads (left[i], left[i+1], right[i+1], right[i]),
-      // each one filled at a colour drifted slightly toward white based
-      // on the pen's speed across that segment. Non-self-intersecting
-      // quads also avoid the winding-rule hole at stroke crossings.
-      fillStrokeAsQuadsWithSpeed(ctx, polygon, points, color, opacity);
-    } else {
-      ctx.fillStyle = `rgba(${r},${g},${b},${opacity.toFixed(2)})`;
-      ctx.fill();
-    }
-    ctx.shadowBlur = 0;
-    if (points && points.length >= 3) {
-      addPenInkVariation(ctx, polygon, points, color, opacity, otherPolys);
-    }
-  } else if (tool === 'pencil') {
-    // Layer A: blur-softened base fill — removes the crisp polygon edge
-    // that makes canvas strokes look digital rather than hand-drawn
-    ctx.filter = 'blur(0.5px)';
-    ctx.fillStyle = `rgba(${r},${g},${b},${(opacity * 0.50).toFixed(2)})`;
-    ctx.fill();
-    ctx.filter = 'none';
-    // Stroke direction from first half of the left-side outline
-    const half = Math.floor(polygon.length / 2);
-    const strokeAngle = Math.atan2(
-      polygon[half].y - polygon[0].y,
-      polygon[half].x - polygon[0].x
-    );
-    addPencilTexture(ctx, polygon, strokeAngle, color);
-  } else if (tool === 'calligraphy') {
-    ctx.shadowBlur = 1.0;
-    ctx.shadowColor = `rgba(${r},${g},${b},0.20)`;
+  ctx.shadowBlur = 1.2;
+  ctx.shadowColor = `rgba(${r},${g},${b},0.25)`;
+  if (points && points.length >= 3 && polygon.length === 2 * points.length) {
+    // Endpoint caps go down first — they fill the tapered-tip area so
+    // two strokes meeting at an angle don't leave a white wedge at the
+    // crossing. Quads paint on top with the same alpha so the cap area
+    // ends up only slightly denser than the body (acceptable trade-off
+    // vs visible white gaps).
+    paintEndpointCaps(ctx, polygon, points, color, opacity);
+    // Chain of small quads (left[i], left[i+1], right[i+1], right[i]),
+    // each one filled at a colour drifted slightly toward white based
+    // on the pen's speed across that segment. Non-self-intersecting
+    // quads also avoid the winding-rule hole at stroke crossings.
+    fillStrokeAsQuadsWithSpeed(ctx, polygon, points, color, opacity);
+  } else {
     ctx.fillStyle = `rgba(${r},${g},${b},${opacity.toFixed(2)})`;
     ctx.fill();
-  } else if (tool === 'felt') {
-    ctx.fillStyle = `rgba(${r},${g},${b},${(0.80 + avgP * 0.05).toFixed(2)})`;
-    ctx.fill();
   }
-  ctx.restore();
-}
-
-function addPencilTexture(ctx, polygon, strokeAngle, color) {
-  const [r, g, b] = color;
-
-  // Bounding box
-  let bx1 = Infinity, by1 = Infinity, bx2 = -Infinity, by2 = -Infinity;
-  for (const p of polygon) {
-    if (p.x < bx1) bx1 = p.x; if (p.x > bx2) bx2 = p.x;
-    if (p.y < by1) by1 = p.y; if (p.y > by2) by2 = p.y;
+  ctx.shadowBlur = 0;
+  if (points && points.length >= 3) {
+    addPenInkVariation(ctx, polygon, points, color, opacity, otherPolys);
   }
-  const bw = bx2 - bx1, bh = by2 - by1;
-  const area = bw * bh;
-
-  ctx.save();
-
-  // Clip all layers to the stroke polygon
-  ctx.beginPath();
-  ctx.moveTo(polygon[0].x, polygon[0].y);
-  for (let i = 1; i < polygon.length; i++) ctx.lineTo(polygon[i].x, polygon[i].y);
-  ctx.closePath();
-  ctx.clip();
-
-  // Layer B: directional grain lines — short strokes aligned to the stroke
-  // direction with slight angular scatter, simulating graphite fibres
-  const grainCount = Math.min(Math.floor(area * 0.0028), 75);
-  ctx.lineCap = 'round';
-  for (let i = 0; i < grainCount; i++) {
-    const tx = bx1 + Math.random() * bw;
-    const ty = by1 + Math.random() * bh;
-    const len = 3 + Math.random() * 10;
-    // Scatter ±20° around stroke direction; occasional cross-grain fibres
-    const angle = strokeAngle + (Math.random() - 0.5) * 0.7;
-    const op = (0.04 + Math.random() * 0.12).toFixed(2);
-    ctx.strokeStyle = `rgba(${r},${g},${b},${op})`;
-    ctx.lineWidth = 0.25 + Math.random() * 0.55;
-    ctx.beginPath();
-    ctx.moveTo(tx - Math.cos(angle) * len * 0.5, ty - Math.sin(angle) * len * 0.5);
-    ctx.lineTo(tx + Math.cos(angle) * len * 0.5, ty + Math.sin(angle) * len * 0.5);
-    ctx.stroke();
-  }
-
-  // Layer C: paper tooth — small bright gaps where paper fibre sits below
-  // the graphite surface, concentrated slightly away from stroke centre
-  const gapCount = Math.min(Math.floor(area * 0.0007), 22);
-  for (let i = 0; i < gapCount; i++) {
-    const tx = bx1 + Math.random() * bw;
-    const ty = by1 + Math.random() * bh;
-    const op = (0.07 + Math.random() * 0.14).toFixed(2);
-    ctx.fillStyle = `rgba(255,255,255,${op})`;
-    ctx.fillRect(tx, ty, 1.1, 1.1);
-  }
-
   ctx.restore();
 }
 
@@ -2100,14 +1973,6 @@ function addPenInkVariation(ctx, polygon, points, color, baseOpacity, otherPolys
   }
 }
 
-function setDrawColor(hex) {
-  drawState.color = [
-    parseInt(hex.slice(1, 3), 16),
-    parseInt(hex.slice(3, 5), 16),
-    parseInt(hex.slice(5, 7), 16),
-  ];
-}
-
 // ── Edit controls ─────────────────────────────────────────────
 function undoStroke() {
   const {currentChar: c, currentSlot: s} = drawState;
@@ -2143,29 +2008,6 @@ function updateCharCellStatus(char) {
       break;
     }
   }
-}
-
-// ── Tool selection ────────────────────────────────────────────
-function selectTool(tool) {
-  drawState.tool = tool;
-  fontSettings.tool = tool;
-  drawState.eraserMode = false;
-  document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active-tool'));
-  const btn = document.getElementById(`tool-${tool}`);
-  if (btn) btn.classList.add('active-tool');
-  document.getElementById('eraser-btn').classList.remove('active-tool');
-}
-
-function onToolSizeChange(el) {
-  const val = parseInt(el.value);
-  drawState.toolSize = val;
-  fontSettings.toolSize = val;
-  document.getElementById('size-val').textContent = val;
-}
-
-function onToolColorChange(hex) {
-  setDrawColor(hex);
-  fontSettings.color = [...drawState.color];
 }
 
 // ── Character navigation ──────────────────────────────────────
@@ -2223,18 +2065,17 @@ function startDrawMode(mode) {
   // Cursive starts on lowercase 'a' in the medial form (most common case).
   const startChar = drawMode === 'cursive' ? 'a' : 'A';
   const startForm = drawMode === 'cursive' ? 'medi' : 'iso';
-  // Reset font-level style settings so the user can choose fresh for this font.
-  fontSettings = { tool: 'pen', toolSize: 14, color: [38, 32, 28] };
+  // Style is fixed for every font: pen tool, size 6, default ink colour.
+  fontSettings = { tool: 'pen', toolSize: 6, color: [38, 32, 28] };
   Object.assign(drawState, {
     currentChar: startChar, currentSlot: 0, currentForm: startForm,
     slotCounts: {}, strokes: {}, redoStacks: {},
     currentStroke: [], isDrawing: false,
-    tool: 'pen', toolSize: 14, color: [38, 32, 28], eraserMode: false, lastPoint: null, smoothedPoint: null,
+    tool: 'pen', toolSize: 6, color: [38, 32, 28], eraserMode: false, lastPoint: null, smoothedPoint: null,
     cursiveConnY: (GUIDELINES.baseline + GUIDELINES.xheight) / 2,
     cursiveLocked: false,
     cursiveX: {},
   });
-  syncToolUI();
   buildCharGrid();
   goTo('page-draw');
   setTimeout(() => { initDrawCanvas(); updateDrawUI(); }, 50);
@@ -2599,18 +2440,13 @@ async function openSavedFont(savedJobId) {
     }
   }
 
-  // Restore font-level style settings from the first saved glyph that has them.
-  // Older saves without these fields fall back to the default pen/14/dark-graphite.
-  const firstWithStyle = data.glyphs.find(g => g.pen_tool);
-  fontSettings = {
-    tool:     firstWithStyle?.pen_tool  || 'pen',
-    toolSize: firstWithStyle?.pen_size  || 14,
-    color:    firstWithStyle?.pen_color || [38, 32, 28],
-  };
+  // Style is fixed for every font: pen tool, size 6, default ink colour —
+  // saved pen_tool/pen_size/pen_color are ignored on restore.
+  fontSettings = { tool: 'pen', toolSize: 6, color: [38, 32, 28] };
   Object.assign(drawState, {
-    tool:     fontSettings.tool,
-    toolSize: fontSettings.toolSize,
-    color:    [...fontSettings.color],
+    tool:     'pen',
+    toolSize: 6,
+    color:    [38, 32, 28],
   });
 
   // Pre-fill font name for the review page.
@@ -2625,7 +2461,6 @@ async function openSavedFont(savedJobId) {
   goTo('page-draw');
   setTimeout(() => {
     initDrawCanvas();
-    syncToolUI();
     // Mark chars that have saved data with the green dot.
     for (const cell of document.querySelectorAll('.draw-char-cell')) {
       const char = cell.dataset.char;
