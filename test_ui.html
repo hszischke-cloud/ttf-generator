@@ -331,6 +331,8 @@
   .slot-tab.active { border-color: #3d2b1f; background: #3d2b1f; color: #f0ebe3; }
   .slot-tab.add-alt { border-style: dashed; color: #7a9e9f; border-color: #a8c9ca; }
   .slot-tab.add-alt:hover { background: #eef4f4; }
+  .slot-tab.del-alt { padding: 4px 8px; border-color: #e0b4b4; color: #b06a6a; }
+  .slot-tab.del-alt:hover { border-color: #d39a9a; background: #fbeded; color: #8a4a4a; }
 
   /* Tool buttons */
   .tool-btns { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 9px; }
@@ -1222,6 +1224,45 @@ function addAlt() {
   drawState.currentSlot = getSlotCount(char) - 1;
   updateDrawUI();
 }
+function deleteAlt(slot) {
+  if (slot < 1) return;                       // Primary can't be deleted
+  const char = drawState.currentChar;
+  const oldCount = getSlotCount(char);
+  if (slot >= oldCount) return;
+  const hasInk = formsFor(char).some(f => getStrokes(char, slot, f).length > 0);
+  const label = char === ' ' ? 'space' : char;
+  if (hasInk && !confirm(`Delete Alt ${slot} for "${label}"? Its drawing will be removed.`)) return;
+
+  // In edit mode, mark every affected slot/form so the submit-time sync
+  // re-saves the shifted-down glyphs and deletes the now-vacated top slot.
+  if (editingJobId) {
+    for (let s = slot; s < oldCount; s++) {
+      for (const f of formsFor(char)) touchedInEdit.add(drawCharKey(char, s, f));
+    }
+  }
+
+  drawState.strokes[char] = drawState.strokes[char] || {};
+  drawState.redoStacks[char] = drawState.redoStacks[char] || {};
+  // Shift higher alternates down so slot indices stay contiguous.
+  for (let i = slot; i < oldCount - 1; i++) {
+    drawState.strokes[char][i] = drawState.strokes[char][i + 1];
+    drawState.redoStacks[char][i] = drawState.redoStacks[char][i + 1];
+  }
+  delete drawState.strokes[char][oldCount - 1];
+  delete drawState.redoStacks[char][oldCount - 1];
+
+  const newCount = oldCount - 1;
+  if (newCount <= 1) delete drawState.slotCounts[char];
+  else drawState.slotCounts[char] = newCount;
+
+  // Keep the active selection on a valid slot.
+  if (drawState.currentSlot === slot) drawState.currentSlot = slot - 1;
+  else if (drawState.currentSlot > slot) drawState.currentSlot -= 1;
+  if (drawState.currentSlot >= getSlotCount(char)) drawState.currentSlot = getSlotCount(char) - 1;
+
+  updateCharCellStatus(char);
+  updateDrawUI();
+}
 function updateDrawUI() {
   const char = drawState.currentChar;
   const slot = drawState.currentSlot;
@@ -1259,6 +1300,15 @@ function renderSlotTabs() {
     btn.textContent = i === 0 ? 'Primary' : `Alt ${i}`;
     btn.onclick = (() => { const s = i; return () => selectDrawSlot(s); })();
     container.appendChild(btn);
+    if (i >= 1) {
+      const delBtn = document.createElement('button');
+      delBtn.className = 'slot-tab del-alt';
+      delBtn.textContent = '×';
+      delBtn.title = 'Delete Alt ' + i;
+      delBtn.setAttribute('aria-label', 'Delete Alt ' + i);
+      delBtn.onclick = (() => { const s = i; return (e) => { e.stopPropagation(); deleteAlt(s); }; })();
+      container.appendChild(delBtn);
+    }
   }
   const addBtn = document.createElement('button');
   addBtn.className = 'slot-tab add-alt';
