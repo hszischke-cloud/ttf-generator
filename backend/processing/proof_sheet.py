@@ -22,6 +22,12 @@ from fontTools.ttLib import TTFont
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.boundsPen import ControlBoundsPen
 
+from processing.font_builder import CHAR_TO_GLYPH_NAME
+
+# glyph base name -> codepoint, so digit/punctuation names (e.g. "zero",
+# "period") can be categorised and ordered even when not present in cmap.
+_NAME_TO_CP: Dict[str, int] = {name: ord(ch) for ch, name in CHAR_TO_GLYPH_NAME.items()}
+
 # Vertical metrics (UPM space) — mirror font_builder so the guides line up with
 # how glyphs were actually placed.
 UPM = 1000
@@ -57,17 +63,64 @@ def _reverse_cmap(font: TTFont) -> Dict[str, int]:
     return out
 
 
-def _ordered_glyph_names(font: TTFont) -> List[str]:
-    """Glyph order with .notdef/space dropped, base glyphs before .alt/.form variants."""
+def _base_codepoint(name: str, rev_cmap: Dict[str, int]) -> Optional[int]:
+    """
+    Codepoint of a glyph's *base* character (the part before any '.suffix').
+
+    Variants (a.alt1, a.init, …) aren't in cmap, so we resolve via the base
+    name: the cmap first, then a single-char name, then the builder's
+    char→name table reversed. Returns None for genuinely unmappable bases.
+    """
+    base = name.split(".", 1)[0]
+    cp = rev_cmap.get(base)
+    if cp is not None:
+        return cp
+    if len(base) == 1:
+        return ord(base)
+    return _NAME_TO_CP.get(base)
+
+
+def _variant_rank(name: str) -> Tuple[int, str]:
+    """Ordering among one base's forms: base itself, then alt1, alt2…, then
+    init/medi/fina. Keeps each alternate directly after the glyph it varies."""
+    if "." not in name:
+        return (0, "")
+    suffix = name.split(".", 1)[1]
+    if suffix.startswith("alt"):
+        try:
+            return (1, f"{int(suffix[3:]):04d}")
+        except ValueError:
+            return (1, suffix)
+    form_order = {"init": 0, "medi": 1, "fina": 2}
+    return (2, f"{form_order.get(suffix, 9)}_{suffix}")
+
+
+def _category(cp: Optional[int]) -> int:
+    """Sort bucket: 0 uppercase, 1 lowercase, 2 digits, 3 other, 4 unmappable."""
+    if cp is None:
+        return 4
+    c = chr(cp)
+    if c.isalpha() and c.isupper():
+        return 0
+    if c.isalpha() and c.islower():
+        return 1
+    if c.isdigit():
+        return 2
+    return 3
+
+
+def _ordered_glyph_names(font: TTFont, rev_cmap: Dict[str, int]) -> List[str]:
+    """
+    Glyph order for the proof sheet: uppercase, then lowercase, then digits,
+    then special characters. Within each group glyphs sort by codepoint, and
+    every alternate/positional form appears immediately after its base glyph.
+    """
     names = [n for n in font.getGlyphOrder() if n not in (".notdef", "space")]
 
-    def sort_key(n: str) -> Tuple[int, str]:
-        # Bases (no dot suffix) first, then variants grouped after — keeps a, a.alt1
-        # a.init etc. adjacent for easy comparison.
-        if "." in n:
-            base, suffix = n.split(".", 1)
-            return (1, f"{base}.{suffix}")
-        return (0, n)
+    def sort_key(n: str) -> Tuple[int, int, Tuple[int, str]]:
+        cp = _base_codepoint(n, rev_cmap)
+        cp_sort = cp if cp is not None else 0x10FFFF
+        return (_category(cp), cp_sort, _variant_rank(n))
 
     return sorted(names, key=sort_key)
 
@@ -106,7 +159,7 @@ def render_proof_svg(
     glyph_set = font.getGlyphSet()
     hmtx = font["hmtx"]
     rev_cmap = _reverse_cmap(font)
-    names = _ordered_glyph_names(font)
+    names = _ordered_glyph_names(font, rev_cmap)
 
     skipped = skipped or []
     cells: List[str] = []
