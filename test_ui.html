@@ -252,6 +252,7 @@
     font-size: 46px; font-weight: 700; line-height: 1; color: #3d2b1f;
     min-width: 52px; text-align: center;
   }
+  .draw-char-name { font-size: 14px; font-weight: 500; color: #7a6a5a; letter-spacing: 0.01em; }
   .draw-slot-display { font-size: 13px; color: #a89688; font-style: italic; }
   /* Undo button anchored to the top-right of the canvas frame so the user
      can hit it without crossing the canvas to the control panel. */
@@ -386,7 +387,10 @@
   }
   .badge-print   { background: #e8f0ee; color: #3a7265; }
   .badge-cursive { background: #ede8f0; color: #5c3a72; }
-  .saved-font-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+  .saved-font-actions { display: flex; gap: 14px; align-items: flex-end; flex-shrink: 0; flex-wrap: wrap; }
+  .saved-font-group { display: flex; flex-direction: column; gap: 4px; }
+  .saved-font-group-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.07em; color: #a89688; font-weight: 600; }
+  .saved-font-group-btns { display: flex; gap: 6px; }
   .btn-delete {
     background: none; border: none; color: #c4b5a5; cursor: pointer;
     font-size: 18px; line-height: 1; padding: 4px; border-radius: 4px;
@@ -504,6 +508,7 @@
     <div class="draw-canvas-area">
       <div class="draw-header">
         <div class="draw-char-display" id="draw-char-display">A</div>
+        <div class="draw-char-name" id="draw-char-name">capital A</div>
         <div class="draw-slot-display" id="draw-slot-display">Primary</div>
         <button class="ctrl-btn draw-header-undo" onclick="undoStroke()" title="Undo last stroke (Ctrl/Cmd+Z)">↩ Undo</button>
       </div>
@@ -1133,6 +1138,28 @@ const SPECIAL_IDS = {
   '–':'endash', '—':'emdash',
 };
 
+// Human-readable names shown next to the symbol in the drawing header,
+// e.g. "!" → "! exclamation". Helps disambiguate look-alike symbols.
+const CHAR_NAMES = {
+  '.':'period', ',':'comma', ';':'semicolon', ':':'colon',
+  '!':'exclamation', '?':'question mark', '"':'double quote', "'":'apostrophe',
+  '(':'left parenthesis', ')':'right parenthesis', '-':'hyphen', '/':'slash',
+  '@':'at sign', '&':'ampersand', '#':'number sign', '%':'percent',
+  '$':'dollar', '*':'asterisk', '+':'plus', '=':'equals',
+  '_':'underscore', '^':'caret', '~':'tilde', '`':'backtick',
+  '[':'left bracket', ']':'right bracket', '{':'left brace', '}':'right brace',
+  '|':'vertical bar', '\\':'backslash', '<':'less than', '>':'greater than',
+  '–':'en dash', '—':'em dash',
+  '0':'zero', '1':'one', '2':'two', '3':'three', '4':'four',
+  '5':'five', '6':'six', '7':'seven', '8':'eight', '9':'nine',
+};
+function charName(char) {
+  if (CHAR_NAMES[char]) return CHAR_NAMES[char];
+  if (char >= 'A' && char <= 'Z') return `capital ${char}`;
+  if (char >= 'a' && char <= 'z') return `small ${char}`;
+  return char;
+}
+
 function drawCharKey(char, slot, form) {
   // Cursive: use the form name as the suffix (a_init, a_medi, a_fina, a_iso)
   // so the backend can infer positional role from the glyph_id.
@@ -1241,6 +1268,7 @@ function updateDrawUI() {
   const slot = drawState.currentSlot;
   const form = drawState.currentForm;
   document.getElementById('draw-char-display').textContent = char;
+  document.getElementById('draw-char-name').textContent = charName(char);
   let label = slot === 0 ? 'Primary' : `Alt ${slot}`;
   if (drawMode === 'cursive' && form !== 'iso') {
     label = FORM_LABELS[form] || form;
@@ -2321,8 +2349,20 @@ function renderSavedFonts(fonts) {
       </div>
       <div class="saved-font-actions">
         ${f.job_exists ? `
-          <button class="btn btn-outline btn-sm" onclick="openSavedFontDownload('${f.job_id}','${escHtml(f.font_name)}','${f.mode}')">Download</button>
-          <button class="btn btn-outline btn-sm" onclick="window.open('${API}/process/${f.job_id}/proof?font=line','_blank')" title="Verify single-line glyphs">Proof ↗</button>
+          <div class="saved-font-group">
+            <span class="saved-font-group-label">Download</span>
+            <div class="saved-font-group-btns">
+              <button class="btn btn-outline btn-sm" onclick="downloadSavedFont('${f.job_id}','${escHtml(f.font_name)}',false)" title="Download the normal OTF">Normal</button>
+              ${f.has_line_font ? `<button class="btn btn-outline btn-sm" onclick="downloadSavedFont('${f.job_id}','${escHtml(f.font_name)}',true)" title="Download the single-line OTF (pen plotters)">Single-line</button>` : ''}
+            </div>
+          </div>
+          <div class="saved-font-group">
+            <span class="saved-font-group-label">Proof</span>
+            <div class="saved-font-group-btns">
+              <button class="btn btn-outline btn-sm" onclick="window.open('${API}/process/${f.job_id}/proof?font=dimensional','_blank')" title="Proof sheet for the normal OTF">Normal ↗</button>
+              ${f.has_line_font ? `<button class="btn btn-outline btn-sm" onclick="window.open('${API}/process/${f.job_id}/proof?font=line','_blank')" title="Proof sheet for the single-line OTF">Single-line ↗</button>` : ''}
+            </div>
+          </div>
           <button class="btn btn-primary btn-sm" onclick="openSavedFont('${f.job_id}')">Edit</button>
         ` : '<span style="font-size:12px;color:#c0604a;">Expired</span>'}
         <button class="btn-delete" title="Remove from list" onclick="deleteSavedFont('${f.job_id}', this)">&#x2715;</button>
@@ -2365,28 +2405,19 @@ async function saveFont() {
   }
 }
 
-// ── Open saved font for download ──────────────────────────
+// ── Download a saved font directly ────────────────────────
+// The OTF is already built and stored, so we can fetch it straight from the
+// serve endpoint. `line` picks the single-line (pen-plotter) OTF.
 
-async function openSavedFontDownload(savedJobId, fontName, mode) {
-  try {
-    const settings = await fetch(`${API}/process/${savedJobId}/settings`).then(r => {
-      if (!r.ok) throw new Error('Font data not found — it may have expired.');
-      return r.json();
-    });
-    jobId = savedJobId;
-    currentFontName = fontName;
-    fontSafeName = fontName.replace(/\s+/g, '_');
-    approvedGlyphIds = settings.approved_glyph_ids;
-    drawMode = mode;
-
-    document.getElementById('letter-spacing').value = settings.letter_spacing || 0;
-    document.getElementById('space-width').value = settings.space_width || 600;
-    onSpacingChange();
-
-    await showDownloadPage(null, Date.now(), { hasLineFont: settings.has_line_font, skipped: [] });
-  } catch (e) {
-    alert(e.message);
-  }
+function downloadSavedFont(jobId, fontName, line) {
+  const safe = fontName.replace(/\s+/g, '_');
+  const filename = line ? `${safe}-Line.otf` : `${safe}.otf`;
+  const a = document.createElement('a');
+  a.href = `${API}/fonts/${jobId}/${encodeURIComponent(filename)}?v=${Date.now()}`;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 // ── Open saved font for editing ───────────────────────────
