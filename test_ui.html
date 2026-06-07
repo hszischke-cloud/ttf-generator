@@ -635,6 +635,7 @@
 
   <div class="download-btns" style="margin-top:20px;">
     <button id="otf-btn" class="btn btn-primary" onclick="downloadFont('otf')">Download OTF</button>
+    <button id="proof-btn" class="btn btn-teal" onclick="openProofSheet('dimensional')" style="margin-left:4px;">Proof sheet ↗</button>
     <button id="save-font-btn" class="btn btn-teal" onclick="saveFont()" style="margin-left:4px;">Save to My Fonts</button>
     <span id="download-status" style="font-size:13px;color:#888;"></span>
   </div>
@@ -648,8 +649,13 @@
     </p>
     <div class="download-btns" style="margin:0;">
       <button id="otf-line-btn" class="btn btn-primary" onclick="downloadFont('otf', true)">Download Line OTF</button>
+      <button id="proof-line-btn" class="btn btn-teal" onclick="openProofSheet('line')">Verify line glyphs ↗</button>
       <span id="line-skipped-note" style="font-size:13px;color:#a06a00;"></span>
     </div>
+    <p style="font-size:12px;color:#777;margin:8px 0 0 0;">
+      “Verify line glyphs” opens a proof sheet rendered from the actual OTF outlines so you can
+      check every single-line glyph rendered correctly (degenerate or missing glyphs are flagged).
+    </p>
     <div id="line-unavailable" style="display:none;margin-top:10px;font-size:13px;color:#a06a00;">
       The single-line font couldn't be built — none of your approved letters produced a usable centerline trace.
       Try thicker, clearer pen strokes or accept more letters.
@@ -950,6 +956,14 @@ function onSpacingChange() {
   previewEl.style.letterSpacing = (ls / 1000) + 'em';
   // word-spacing: extra width beyond default 600 UPM space
   previewEl.style.wordSpacing = ((sw - 600) / 1000) + 'em';
+}
+
+// Open the SVG proof sheet for the current job in a new tab. `which` is
+// 'line' or 'dimensional'. The font must already be built (status complete);
+// the download page is only shown once it is, so jobId is valid here.
+function openProofSheet(which) {
+  if (!jobId) return;
+  window.open(`${API}/process/${jobId}/proof?font=${which}`, '_blank');
 }
 
 async function downloadFont(fmt, line) {
@@ -2308,6 +2322,7 @@ function renderSavedFonts(fonts) {
       <div class="saved-font-actions">
         ${f.job_exists ? `
           <button class="btn btn-outline btn-sm" onclick="openSavedFontDownload('${f.job_id}','${escHtml(f.font_name)}','${f.mode}')">Download</button>
+          <button class="btn btn-outline btn-sm" onclick="window.open('${API}/process/${f.job_id}/proof?font=line','_blank')" title="Verify single-line glyphs">Proof ↗</button>
           <button class="btn btn-primary btn-sm" onclick="openSavedFont('${f.job_id}')">Edit</button>
         ` : '<span style="font-size:12px;color:#c0604a;">Expired</span>'}
         <button class="btn-delete" title="Remove from list" onclick="deleteSavedFont('${f.job_id}', this)">&#x2715;</button>

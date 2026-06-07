@@ -225,6 +225,53 @@ async def finalize(job_id: str, req: FinalizeRequest, background_tasks: Backgrou
     )
 
 
+@app.get("/process/{job_id}/proof", response_class=Response)
+async def proof_sheet(job_id: str, font: str = "line"):
+    """
+    Render a built OTF into an SVG contact sheet for visual QA.
+
+    Query param `font`: "line" (default) renders the single-line OTF, anything
+    else renders the dimensional OTF. Returns an inline SVG the browser displays
+    directly (and can print to PDF).
+    """
+    _require_job(job_id)
+    state = job_store.get_state(job_id)
+    if state.get("status") != "complete":
+        raise HTTPException(202, "Font not ready yet")
+
+    from processing.proof_sheet import render_proof_svg
+
+    font_name = state.get("font_name", "Font")
+    safe_name = font_name.replace(" ", "_")
+    is_line = font == "line"
+
+    if is_line:
+        if not state.get("has_line_font"):
+            raise HTTPException(404, "No line font was built for this job")
+        filename = f"{safe_name}-Line.otf"
+        title = f"{font_name} — Line (single-line proof)"
+        skipped = state.get("line_skipped_glyphs", [])
+    else:
+        filename = f"{safe_name}.otf"
+        title = f"{font_name} — Regular (proof)"
+        skipped = []
+
+    otf_bytes = await run_in_threadpool(
+        job_store.download_font_file, job_id, filename
+    )
+    if not otf_bytes:
+        raise HTTPException(404, "Font file not found in storage")
+
+    svg = await run_in_threadpool(
+        render_proof_svg, otf_bytes, title, is_line, skipped
+    )
+    return Response(
+        content=svg,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @app.get("/fonts/{job_id}/{filename}")
 async def serve_font(job_id: str, filename: str):
     _require_job(job_id)

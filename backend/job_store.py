@@ -122,6 +122,14 @@ class JobStore:
         """Return the stable public URL for a font file."""
         return _public_url(f"{job_id}/output/{filename}")
 
+    def download_font_file(self, job_id: str, filename: str) -> Optional[bytes]:
+        """Read a built font binary back from storage. Returns None if missing."""
+        path = f"{job_id}/output/{filename}"
+        try:
+            return supabase.storage.from_(STORAGE_BUCKET).download(path)
+        except Exception:
+            return None
+
     # ------------------------------------------------------------------
     # Cleanup
     # ------------------------------------------------------------------
