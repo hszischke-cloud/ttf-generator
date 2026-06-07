@@ -252,6 +252,7 @@
     font-size: 46px; font-weight: 700; line-height: 1; color: #3d2b1f;
     min-width: 52px; text-align: center;
   }
+  .draw-char-name { font-size: 14px; font-weight: 500; color: #7a6a5a; letter-spacing: 0.01em; }
   .draw-slot-display { font-size: 13px; color: #a89688; font-style: italic; }
   /* Undo button anchored to the top-right of the canvas frame so the user
      can hit it without crossing the canvas to the control panel. */
@@ -504,6 +505,7 @@
     <div class="draw-canvas-area">
       <div class="draw-header">
         <div class="draw-char-display" id="draw-char-display">A</div>
+        <div class="draw-char-name" id="draw-char-name">capital A</div>
         <div class="draw-slot-display" id="draw-slot-display">Primary</div>
         <button class="ctrl-btn draw-header-undo" onclick="undoStroke()" title="Undo last stroke (Ctrl/Cmd+Z)">↩ Undo</button>
       </div>
@@ -1133,6 +1135,28 @@ const SPECIAL_IDS = {
   '–':'endash', '—':'emdash',
 };
 
+// Human-readable names shown next to the symbol in the drawing header,
+// e.g. "!" → "! exclamation". Helps disambiguate look-alike symbols.
+const CHAR_NAMES = {
+  '.':'period', ',':'comma', ';':'semicolon', ':':'colon',
+  '!':'exclamation', '?':'question mark', '"':'double quote', "'":'apostrophe',
+  '(':'left parenthesis', ')':'right parenthesis', '-':'hyphen', '/':'slash',
+  '@':'at sign', '&':'ampersand', '#':'number sign', '%':'percent',
+  '$':'dollar', '*':'asterisk', '+':'plus', '=':'equals',
+  '_':'underscore', '^':'caret', '~':'tilde', '`':'backtick',
+  '[':'left bracket', ']':'right bracket', '{':'left brace', '}':'right brace',
+  '|':'vertical bar', '\\':'backslash', '<':'less than', '>':'greater than',
+  '–':'en dash', '—':'em dash',
+  '0':'zero', '1':'one', '2':'two', '3':'three', '4':'four',
+  '5':'five', '6':'six', '7':'seven', '8':'eight', '9':'nine',
+};
+function charName(char) {
+  if (CHAR_NAMES[char]) return CHAR_NAMES[char];
+  if (char >= 'A' && char <= 'Z') return `capital ${char}`;
+  if (char >= 'a' && char <= 'z') return `small ${char}`;
+  return char;
+}
+
 function drawCharKey(char, slot, form) {
   // Cursive: use the form name as the suffix (a_init, a_medi, a_fina, a_iso)
   // so the backend can infer positional role from the glyph_id.
@@ -1241,6 +1265,7 @@ function updateDrawUI() {
   const slot = drawState.currentSlot;
   const form = drawState.currentForm;
   document.getElementById('draw-char-display').textContent = char;
+  document.getElementById('draw-char-name').textContent = charName(char);
   let label = slot === 0 ? 'Primary' : `Alt ${slot}`;
   if (drawMode === 'cursive' && form !== 'iso') {
     label = FORM_LABELS[form] || form;
