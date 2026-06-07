@@ -233,11 +233,15 @@ async def proof_sheet(job_id: str, font: str = "line"):
     Query param `font`: "line" (default) renders the single-line OTF, anything
     else renders the dimensional OTF. Returns an inline SVG the browser displays
     directly (and can print to PDF).
+
+    The proof inspects the OTF that was last built and uploaded to storage, so
+    it gates on that file existing rather than on the live job status. A job
+    re-opened for editing flips back to `awaiting_review` (status != complete)
+    while its last-built OTF is still on disk — the proof should still render
+    it instead of failing with "Font not ready yet".
     """
     _require_job(job_id)
     state = job_store.get_state(job_id)
-    if state.get("status") != "complete":
-        raise HTTPException(202, "Font not ready yet")
 
     from processing.proof_sheet import render_proof_svg
 
@@ -246,8 +250,6 @@ async def proof_sheet(job_id: str, font: str = "line"):
     is_line = font == "line"
 
     if is_line:
-        if not state.get("has_line_font"):
-            raise HTTPException(404, "No line font was built for this job")
         filename = f"{safe_name}-Line.otf"
         title = f"{font_name} — Line (single-line proof)"
         skipped = state.get("line_skipped_glyphs", [])
@@ -260,6 +262,13 @@ async def proof_sheet(job_id: str, font: str = "line"):
         job_store.download_font_file, job_id, filename
     )
     if not otf_bytes:
+        # No built file in storage. Distinguish "this font never had a line
+        # version" from "nothing built yet / still building" so the UI can
+        # show a sensible message.
+        if is_line and not state.get("has_line_font", False):
+            raise HTTPException(404, "No line font was built for this job")
+        if state.get("status") != "complete":
+            raise HTTPException(202, "Font not ready yet — build it first")
         raise HTTPException(404, "Font file not found in storage")
 
     svg = await run_in_threadpool(
