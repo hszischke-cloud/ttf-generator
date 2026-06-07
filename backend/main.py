@@ -328,13 +328,20 @@ async def save_font(job_id: str):
 async def list_saved_fonts():
     """Return all fonts the user has explicitly saved."""
     fonts = registry_list_fonts()
-    # Annotate with whether the job directory still exists on disk.
-    return {
-        "fonts": [
-            {**f, "job_exists": job_store.job_exists(f["job_id"])}
-            for f in fonts
-        ]
-    }
+    # Annotate with whether the job directory still exists on disk, and whether
+    # a single-line OTF was built (so the UI can offer line proof/download).
+    annotated = []
+    for f in fonts:
+        exists = job_store.job_exists(f["job_id"])
+        has_line_font = False
+        if exists:
+            has_line_font = bool(
+                job_store.get_state(f["job_id"]).get("has_line_font", False)
+            )
+        annotated.append(
+            {**f, "job_exists": exists, "has_line_font": has_line_font}
+        )
+    return {"fonts": annotated}
 
 
 @app.delete("/fonts/saved/{job_id}")
