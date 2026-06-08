@@ -119,7 +119,8 @@ input[type=range]::-moz-range-thumb{ width:24px; height:24px; border-radius:50%;
 .progress-fill{ height:100%; background:var(--sage); border-radius:9999px; transition:width .3s ease; width:0%; }
 
 .prompt{ text-align:center; margin-bottom:14px; }
-.prompt .glyph{ font-family:var(--font-serif); font-size:2.6rem; font-weight:400; line-height:1; }
+.prompt .glyph{ font-family:var(--font-serif); font-size:2.6rem; font-weight:400; line-height:1;
+  font-feature-settings:'lnum' 1; font-variant-numeric:lining-nums; }
 .prompt .name{ font-size:1rem; color:var(--ink-light); margin-top:2px; }
 .prompt .alt-chip{ display:inline-block; margin-top:8px; font-size:.72rem; font-weight:600; letter-spacing:.04em;
   text-transform:uppercase; color:#2f6f6a; background:rgba(107,199,193,.20); border-radius:9999px; padding:3px 12px; }
@@ -407,12 +408,13 @@ const HINTS = {
   '^': 'A caret sits <strong>high</strong>, near the top line.',
   '`': 'A backtick hangs <strong>up near the top</strong> line.',
   '~': 'A tilde wave centred on the <strong>middle line</strong>.',
+  '0': 'A zero sits <strong>like a capital</strong> on the baseline — a tall, narrow oval (slimmer than a capital O).',
 };
 function hintFor(char){
   if (HINTS[char]) return HINTS[char];
   if (char>='A'&&char<='Z') return 'Fill from the <strong>top dashed line</strong> down to the <strong>baseline</strong>.';
   if (char>='a'&&char<='z') return 'Small letters reach the <strong>middle line</strong>. Tails (g, j, p, q, y) drop below the baseline.';
-  if (char>='0'&&char<='9') return 'Numbers usually fill from the <strong>top</strong> to the <strong>baseline</strong>.';
+  if (char>='0'&&char<='9') return 'Numbers sit <strong>like capitals</strong> — fill from the <strong>top line</strong> down to the <strong>baseline</strong>, and <strong>never below it</strong>.';
   return 'Follow the faint grey guide for size and position.';
 }
 
@@ -627,8 +629,14 @@ function drawGhost(ctx){
   ctx.save();
   ctx.beginPath(); ctx.rect(SAFE.left,SAFE.top,SAFE.right-SAFE.left,SAFE.bottom-SAFE.top); ctx.clip();
   const isLower = ch>='a'&&ch<='z';
+  const isDigit = ch>='0'&&ch<='9';
+  // Letters: serif at cap/x-height size. Digits: a lining-figure sans so the
+  // reference sits like a capital ON the baseline (Cormorant uses old-style
+  // figures that dip below the line and whose 0 reads like an O — wrong guide).
   const size = isLower ? 232 : 300;
-  ctx.font = `300 ${size}px ${ghostFontReady ? "'Cormorant Garamond', serif" : 'Georgia, serif'}`;
+  const fam = isDigit ? "'Arial','Helvetica Neue',sans-serif"
+                      : (ghostFontReady ? "'Cormorant Garamond',serif" : 'Georgia,serif');
+  ctx.font = `${isDigit?500:300} ${size}px ${fam}`;
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
   ctx.fillStyle='rgba(34,32,30,0.10)';
   ctx.fillText(ch, DRAW_W/2, GUIDELINES.baseline);
