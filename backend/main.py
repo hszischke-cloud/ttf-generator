@@ -103,7 +103,11 @@ async def serve_ui():
     # Rewrite API base to the same origin so the static HTML works in any deployment.
     content = content.replace("const API = 'http://localhost:8001';", "const API = '';")
     content = content.replace("const API = 'http://localhost:8000';", "const API = '';")
-    return Response(content=content, media_type="text/html")
+    return Response(
+        content=content,
+        media_type="text/html",
+        headers={"Cache-Control": "no-store, must-revalidate"},
+    )
 
 
 @app.get("/create", response_class=Response)
@@ -117,7 +121,12 @@ async def serve_client():
     content = client_path.read_text(encoding="utf-8")
     content = content.replace("const API = 'http://localhost:8001';", "const API = '';")
     content = content.replace("const API = 'http://localhost:8000';", "const API = '';")
-    return Response(content=content, media_type="text/html")
+    # no-store so browsers / edge caches never serve a stale build of the UI.
+    return Response(
+        content=content,
+        media_type="text/html",
+        headers={"Cache-Control": "no-store, must-revalidate"},
+    )
 
 
 @app.post("/draw/create")
