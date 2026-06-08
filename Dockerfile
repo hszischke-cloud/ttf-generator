@@ -30,6 +30,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copy application code
 COPY backend/ ./backend/
 COPY test_ui.html ./test_ui.html
+COPY client.html ./client.html
 
 # Render sets PORT env var; default to 8000
 ENV PORT=8000
