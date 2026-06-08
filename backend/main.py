@@ -106,6 +106,20 @@ async def serve_ui():
     return Response(content=content, media_type="text/html")
 
 
+@app.get("/create", response_class=Response)
+async def serve_client():
+    """Foolproof, end-to-end client font-creation flow (snailmail.eco styling).
+
+    Standalone single-file app — same API-base rewrite trick as /ui so it
+    talks to whatever origin it's served from.
+    """
+    client_path = Path(__file__).parent.parent / "client.html"
+    content = client_path.read_text(encoding="utf-8")
+    content = content.replace("const API = 'http://localhost:8001';", "const API = '';")
+    content = content.replace("const API = 'http://localhost:8000';", "const API = '';")
+    return Response(content=content, media_type="text/html")
+
+
 @app.post("/draw/create")
 async def draw_create():
     """Create an empty job for the digital drawing flow."""
