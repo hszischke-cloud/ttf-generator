@@ -846,8 +846,11 @@ async function finalize() {
         approved_glyph_ids: approved,
         font_name: name,
         font_style: 'Regular',
-        letter_spacing: 0,
-        space_width: 600,
+        // Read the spacing sliders so any spacing carried over from editing a
+        // saved font is preserved. New fonts reset these to 0 / 600 in
+        // startDrawMode(), so a fresh font still builds at default spacing.
+        letter_spacing: parseInt(document.getElementById('letter-spacing').value) || 0,
+        space_width: parseInt(document.getElementById('space-width').value) || 600,
       }),
     });
     if (!res.ok) {
@@ -971,9 +974,39 @@ function openProofSheet(which) {
   window.open(`${API}/process/${jobId}/proof?font=${which}`, '_blank');
 }
 
-async function downloadFont(fmt, line) {
+// Rebuild the current job's font with whatever the spacing sliders show, and
+// resolve with the final status payload once the build completes. Shared by
+// download + save so the stored OTF always matches the on-screen spacing.
+async function buildWithCurrentSpacing() {
   const ls = parseInt(document.getElementById('letter-spacing').value);
   const sw = parseInt(document.getElementById('space-width').value);
+  const res = await fetch(`${API}/process/${jobId}/finalize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      approved_glyph_ids: approvedGlyphIds,
+      font_name: currentFontName,
+      font_style: 'Regular',
+      letter_spacing: ls,
+      space_width: sw,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || 'Build failed');
+  }
+  return await new Promise((resolve, reject) => {
+    const t = setInterval(async () => {
+      try {
+        const s = await fetch(`${API}/process/${jobId}/status`).then(r => r.json());
+        if (s.status === 'complete') { clearInterval(t); resolve(s); }
+        else if (s.status === 'error') { clearInterval(t); reject(new Error(s.error_message || 'Build failed')); }
+      } catch(e) { clearInterval(t); reject(e); }
+    }, 1000);
+  });
+}
+
+async function downloadFont(fmt, line) {
   const status = document.getElementById('download-status');
   const allBtns = ['otf-btn', 'otf-line-btn']
     .map(id => document.getElementById(id));
@@ -983,33 +1016,9 @@ async function downloadFont(fmt, line) {
   hideError('download-error');
 
   try {
-    // Rebuild font with current spacing values
-    const res = await fetch(`${API}/process/${jobId}/finalize`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        approved_glyph_ids: approvedGlyphIds,
-        font_name: currentFontName,
-        font_style: 'Regular',
-        letter_spacing: ls,
-        space_width: sw,
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.detail || 'Build failed');
-    }
-
-    // Poll until complete (capture full status payload so we can surface line warnings)
-    const finalStatus = await new Promise((resolve, reject) => {
-      const t = setInterval(async () => {
-        try {
-          const s = await fetch(`${API}/process/${jobId}/status`).then(r => r.json());
-          if (s.status === 'complete') { clearInterval(t); resolve(s); }
-          else if (s.status === 'error') { clearInterval(t); reject(new Error(s.error_message || 'Build failed')); }
-        } catch(e) { clearInterval(t); reject(e); }
-      }, 1000);
-    });
+    // Rebuild font with current spacing values (capture full status payload so
+    // we can surface line warnings).
+    const finalStatus = await buildWithCurrentSpacing();
 
     // Trigger download with cache-busting so browser fetches the newly built file
     const bust = Date.now();
@@ -2109,6 +2118,11 @@ function startDrawMode(mode) {
   const startForm = drawMode === 'cursive' ? 'medi' : 'iso';
   // Style is fixed for every font: pen tool, size 6, default ink colour.
   fontSettings = { tool: 'pen', toolSize: 6, color: [38, 32, 28] };
+  // Fresh font: reset spacing sliders to defaults so a previous font's spacing
+  // doesn't leak into this one (finalize() reads these values directly).
+  document.getElementById('letter-spacing').value = 0;
+  document.getElementById('space-width').value = 600;
+  onSpacingChange();
   Object.assign(drawState, {
     currentChar: startChar, currentSlot: 0, currentForm: startForm,
     slotCounts: {}, strokes: {}, redoStacks: {},
@@ -2363,7 +2377,13 @@ function renderSavedFonts(fonts) {
               ${f.has_line_font ? `<button class="btn btn-outline btn-sm" onclick="window.open('${API}/process/${f.job_id}/proof?font=line','_blank')" title="Proof sheet for the single-line OTF">Single-line ↗</button>` : ''}
             </div>
           </div>
-          <button class="btn btn-primary btn-sm" onclick="openSavedFont('${f.job_id}')">Edit</button>
+          <div class="saved-font-group">
+            <span class="saved-font-group-label">Edit</span>
+            <div class="saved-font-group-btns">
+              <button class="btn btn-teal btn-sm" onclick="openSavedFontSpacing('${f.job_id}','${escHtml(f.font_name)}','${f.mode}')" title="Adjust spacing and re-download without re-editing glyphs">Spacing</button>
+              <button class="btn btn-primary btn-sm" onclick="openSavedFont('${f.job_id}')" title="Edit the drawn glyphs">Glyphs</button>
+            </div>
+          </div>
         ` : '<span style="font-size:12px;color:#c0604a;">Expired</span>'}
         <button class="btn-delete" title="Remove from list" onclick="deleteSavedFont('${f.job_id}', this)">&#x2715;</button>
       </div>
@@ -2394,6 +2414,11 @@ async function saveFont() {
   btn.disabled = true;
   btn.textContent = 'Saving…';
   try {
+    // Bake the current spacing into the stored OTF (and persist letter_spacing
+    // / space_width into the job state) before saving, so the saved font
+    // reflects exactly what's on screen — not the default 0 / 600 the font was
+    // first generated with. Re-opening via "Spacing" restores these values.
+    await buildWithCurrentSpacing();
     const res = await fetch(`${API}/fonts/save/${jobId}`, { method: 'POST' });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Save failed');
     btn.textContent = 'Saved!';
@@ -2498,6 +2523,15 @@ async function openSavedFont(savedJobId) {
   // Pre-fill font name for the review page.
   document.getElementById('font-name').value = data.font_name || '';
 
+  // Restore the saved spacing onto the sliders so re-generating after a glyph
+  // edit preserves it (finalize() reads these). Non-fatal if settings fail.
+  try {
+    const settings = await fetch(`${API}/process/${savedJobId}/settings`).then(r => r.json());
+    document.getElementById('letter-spacing').value = settings.letter_spacing ?? 0;
+    document.getElementById('space-width').value = settings.space_width ?? 600;
+    onSpacingChange();
+  } catch { /* keep whatever the sliders currently show */ }
+
   // Reopen the job so it accepts new glyph submissions.
   try {
     await fetch(`${API}/process/${savedJobId}/reopen`, { method: 'POST' });
@@ -2516,6 +2550,61 @@ async function openSavedFont(savedJobId) {
     }
     updateDrawUI();
   }, 50);
+}
+
+// ── Open a saved font straight to the spacing / download page ─
+// Skips the draw + glyph-review steps: jumps directly to the spacing controls
+// so the user can tweak spacing and re-download without touching glyphs. The
+// stored OTF was already built with the saved spacing, so we restore the
+// sliders from /settings and load that OTF for preview.
+
+async function openSavedFontSpacing(savedJobId, fontName, mode) {
+  let settings;
+  try {
+    const res = await fetch(`${API}/process/${savedJobId}/settings`);
+    if (!res.ok) throw new Error('Font settings not found — it may have expired.');
+    settings = await res.json();
+  } catch (e) {
+    alert(e.message);
+    return;
+  }
+
+  // We're adjusting spacing only — not editing glyphs — so clear edit state.
+  editingJobId = null;
+  loadedGlyphData = {};
+  touchedInEdit = new Set();
+
+  jobId = savedJobId;
+  currentFontName = settings.font_name || fontName;
+  fontSafeName = currentFontName.replace(/\s+/g, '_');
+  approvedGlyphIds = settings.approved_glyph_ids || [];
+  drawMode = mode || 'print';
+  fontSettings = { tool: 'pen', toolSize: 6, color: [38, 32, 28] };
+  document.getElementById('font-name').value = currentFontName;
+
+  // Restore the saved spacing onto the sliders + value labels.
+  document.getElementById('letter-spacing').value = settings.letter_spacing ?? 0;
+  document.getElementById('space-width').value = settings.space_width ?? 600;
+  onSpacingChange();
+
+  // If the job isn't currently complete (e.g. it was left open by a prior
+  // glyph-edit session), rebuild with the saved spacing so the preview + serve
+  // endpoints work. Otherwise the stored OTF already matches.
+  try {
+    const s = await fetch(`${API}/process/${savedJobId}/status`).then(r => r.json());
+    if (s.status !== 'complete') {
+      await buildWithCurrentSpacing();
+    }
+  } catch { /* showDownloadPage will dim the preview if the font can't load */ }
+
+  // showDownloadPage clears the CSS letter/word-spacing it applied for the live
+  // preview, so the preview reflects the spacing baked into the OTF (no double
+  // counting). The slider labels stay as set above. Pass lineInfo so the
+  // single-line download button is gated on whether a line OTF actually exists.
+  showDownloadPage(null, undefined, {
+    hasLineFont: !!settings.has_line_font,
+    skipped: [],
+  });
 }
 
 // ── Edit-mode send-to-review ──────────────────────────────
