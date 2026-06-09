@@ -770,6 +770,7 @@
       <input type="number" id="borders-rsb" step="5" oninput="onBordersInput('rsb', this.value)">
     </div>
     <button class="btn btn-outline btn-sm" onclick="resetCurrentBearing()">Reset to edges</button>
+    <button class="btn btn-outline btn-sm" onclick="resetAllBearings()" title="Snap every letter's lines back onto its edges">Reset all to edges</button>
   </div>
 
   <div class="borders-opts">
@@ -2972,6 +2973,17 @@ function resetCurrentBearing() {
       if (o.char === g.char) { o.lsb = o.default_lsb; o.rsb = o.default_rsb; }
     }
   }
+  renderBordersStrip();
+  selectBordersGlyph(bordersIdx);
+}
+
+// Snap every glyph's lines back onto its ink edges (clears all adjustments).
+function resetAllBearings() {
+  if (bordersList.some(bordersIsEdited) &&
+      !confirm('Reset every letter back to its edges? This clears all border adjustments.')) {
+    return;
+  }
+  for (const o of bordersList) { o.lsb = o.default_lsb; o.rsb = o.default_rsb; }
   renderBordersStrip();
   selectBordersGlyph(bordersIdx);
 }
