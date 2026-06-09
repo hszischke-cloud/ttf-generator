@@ -24,7 +24,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, Response
@@ -313,7 +313,7 @@ async def proof_sheet(job_id: str, font: str = "line"):
 
 
 @app.get("/fonts/{job_id}/{filename}")
-async def serve_font(job_id: str, filename: str):
+async def serve_font(job_id: str, filename: str, request: Request):
     _require_job(job_id)
     state = job_store.get_state(job_id)
 
@@ -323,6 +323,16 @@ async def serve_font(job_id: str, filename: str):
     # Strip cache-buster query param from filename (e.g. "MyFont.otf?v=123")
     clean_name = filename.split("?")[0]
     url = job_store.get_font_public_url(job_id, clean_name)
+
+    # Forward the request's query string (the frontend's ?v=<ts> cache-buster)
+    # onto the storage URL. Font files are overwritten in place on every
+    # rebuild (upsert), so without a per-build query the CDN can serve a stale
+    # copy after spacing/border edits — the dimensional and line OTFs would
+    # then disagree with what was just built. A distinct query key per build
+    # forces a fresh fetch.
+    qs = request.url.query
+    if qs:
+        url = f"{url}{'&' if '?' in url else '?'}{qs}"
 
     # 302 redirect → browser/fetch downloads directly from Supabase CDN.
     # Cache-Control: no-store on the redirect itself; Supabase serves the file.
@@ -719,6 +729,7 @@ def _build_font_job(job_id: str):
             return build_otf(
                 dimensional_glyphs, font_name, font_style, letter_spacing, space_width,
                 positional=positional or None,
+                forced_advances=dim_advances,
                 base_color=font_base_color,
             )
 
