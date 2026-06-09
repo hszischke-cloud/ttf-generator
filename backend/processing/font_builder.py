@@ -202,10 +202,14 @@ def _draw_svg_paths_to_pen(
     form: str = "iso",
     entry_x: Optional[float] = None,
     exit_x:  Optional[float] = None,
+    x_offset_override: Optional[float] = None,
 ) -> int:
     """
     Draw SVG paths into a fonttools pen, applying coordinate transform and
     cursive bearing adjustments per `form`.
+
+    When `x_offset_override` is given it replaces the form-derived horizontal
+    offset (used for manual left side-bearing adjustment on iso glyphs).
 
     Returns the advance width (in UPM units).
     """
@@ -216,6 +220,8 @@ def _draw_svg_paths_to_pen(
     y_offset = baseline_y_in_svg * CELL_SCALE
 
     x_offset, adv_extra = _bearing_offsets(form, coord_scale, svg_width, entry_x, exit_x)
+    if x_offset_override is not None:
+        x_offset = x_offset_override
     advance_width = int(svg_width * coord_scale) + adv_extra
 
     pen.beginPath = getattr(pen, 'beginPath', None)
@@ -474,6 +480,11 @@ class GlyphData:
     # canvas coordinates. None falls back to the canvas-PAD assumption.
     entry_x: Optional[float] = None
     exit_x:  Optional[float] = None
+    # Per-glyph manual side bearings (UPM). When both are set on an iso glyph,
+    # they override the auto bbox-derived advance and left bearing. lsb = gap
+    # from origin to leftmost ink; rsb = gap from rightmost ink to advance.
+    lsb_upm: Optional[int] = None
+    rsb_upm: Optional[int] = None
 
 
 # Canvas PAD value — the JS-side canvas adds this many pixels of padding on
@@ -482,11 +493,44 @@ class GlyphData:
 CANVAS_PAD = 12
 
 
+def default_bearings_upm(svg_width: int, upscale_factor: float = 1.0) -> Tuple[int, int]:
+    """
+    Auto-computed (lsb, rsb) in UPM for an iso glyph — the side bearings that
+    reproduce the legacy bbox-derived advance.  Ink spans [PAD, svg_width-PAD]
+    in submitted canvas coords, so the default left gap is PAD and the default
+    right gap is PAD + the historical +60 UPM trailing breathing room.
+    """
+    cs = CELL_SCALE / upscale_factor if upscale_factor > 0 else CELL_SCALE
+    return int(round(CANVAS_PAD * cs)), int(round(CANVAS_PAD * cs + 60))
+
+
+def _override_offsets(
+    lsb_upm: int, rsb_upm: int, svg_width: int, upscale_factor: float,
+) -> Tuple[float, int]:
+    """
+    Translate explicit side bearings into (x_offset, advance) for an iso glyph.
+
+    The glyph ink occupies [PAD, svg_width-PAD] px in submitted coords. To place
+    the leftmost ink at font x = lsb_upm we shift the outline by x_offset; the
+    advance then spans lsb + ink_width + rsb.
+    """
+    cs = CELL_SCALE / upscale_factor if upscale_factor > 0 else CELL_SCALE
+    ink_w = max(0, svg_width - 2 * CANVAS_PAD) * cs
+    x_offset = lsb_upm - CANVAS_PAD * cs
+    advance = int(round(lsb_upm + ink_w + rsb_upm))
+    return x_offset, max(0, advance)
+
+
 def compute_glyph_advance(g: "GlyphData", letter_spacing: int = 0) -> int:
     """
     Return the final advance width (in UPM) for a single glyph, matching the
     formula used inside build_otf.  letter_spacing is added on top.
     """
+    # Manual side-bearing override (iso/print glyphs only).
+    if g.form == "iso" and g.lsb_upm is not None and g.rsb_upm is not None and g.svg_width > 0:
+        _, adv = _override_offsets(g.lsb_upm, g.rsb_upm, g.svg_width, g.upscale_factor)
+        return max(0, adv + letter_spacing)
+
     coord_scale = CELL_SCALE / g.upscale_factor if g.upscale_factor > 0 else CELL_SCALE
     if g.svg_width > 0:
         _, adv_extra = _bearing_offsets(g.form, coord_scale, g.svg_width, g.entry_x, g.exit_x)
@@ -587,6 +631,15 @@ def build_otf(
     do_color = color_layers
 
     for g in glyphs:
+        # Manual side-bearing override (iso/print glyphs only): shift the outline
+        # by x_offset and fix the advance to lsb + ink + rsb.
+        x_off_ov = adv_ov = None
+        if (g.form == "iso" and g.lsb_upm is not None
+                and g.rsb_upm is not None and g.svg_width > 0):
+            x_off_ov, adv_ov = _override_offsets(
+                g.lsb_upm, g.rsb_upm, g.svg_width, g.upscale_factor,
+            )
+
         cs, advance, perturbed_contours = _build_charstring_from_svg(
             g.svg_paths, g.svg_width, g.svg_height,
             g.baseline_y_in_svg, g.is_lowercase,
@@ -597,6 +650,8 @@ def build_otf(
             perturb_amplitude=perturb_amplitude,
             perturb_frequency=perturb_frequency,
             glyph_name=g.glyph_name,
+            x_offset_override=x_off_ov,
+            advance_override=adv_ov,
         )
         # Determine final advance: forced_advances wins, otherwise add letter_spacing.
         if forced_advances is not None and g.glyph_name in forced_advances:
@@ -871,6 +926,8 @@ def _build_charstring_from_svg(
     perturb_amplitude: float = 3.0,
     perturb_frequency: float = 0.13,
     glyph_name: str = "",
+    x_offset_override: Optional[float] = None,
+    advance_override: Optional[int] = None,
 ) -> Tuple["T2CharString", int, List[list]]:
     """
     Build a CFF T2CharString by drawing SVG paths.
@@ -889,7 +946,9 @@ def _build_charstring_from_svg(
     from fontTools.pens.t2CharStringPen import T2CharStringPen
 
     coord_scale = CELL_SCALE / upscale_factor if upscale_factor > 0 else CELL_SCALE
-    if svg_width > 0:
+    if advance_override is not None:
+        advance = max(0, int(advance_override))
+    elif svg_width > 0:
         _, adv_extra = _bearing_offsets(form, coord_scale, svg_width, entry_x, exit_x)
         advance = int(svg_width * coord_scale) + adv_extra
     else:
@@ -909,7 +968,7 @@ def _build_charstring_from_svg(
         _draw_svg_paths_to_pen(
             collector, svg_paths, svg_width, svg_height,
             baseline_y_in_svg, upscale_factor=upscale_factor, form=form,
-            entry_x=entry_x, exit_x=exit_x,
+            entry_x=entry_x, exit_x=exit_x, x_offset_override=x_offset_override,
         )
         collector._flush()
         perturbed = perturb_glyph(
@@ -933,7 +992,7 @@ def _build_charstring_from_svg(
         _draw_svg_paths_to_pen(
             real_pen, svg_paths, svg_width, svg_height,
             baseline_y_in_svg, upscale_factor=upscale_factor, form=form,
-            entry_x=entry_x, exit_x=exit_x,
+            entry_x=entry_x, exit_x=exit_x, x_offset_override=x_offset_override,
         )
 
     return real_pen.getCharString(), advance, contours

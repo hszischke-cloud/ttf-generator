@@ -3,7 +3,7 @@ models.py — Pydantic request/response models for the FastAPI API.
 """
 
 from enum import Enum
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -41,12 +41,28 @@ class GlyphsResponse(BaseModel):
     alignment_warnings: List[str] = []  # legacy; always empty in draw-only flow
 
 
+class GlyphBearing(BaseModel):
+    """Per-glyph manual side-bearing override (UPM units).
+
+    lsb = left side bearing (gap from the glyph origin to the leftmost ink).
+    rsb = right side bearing (gap from the rightmost ink to the advance).
+    Only meaningful for iso (print) glyphs; cursive forms derive their
+    bearings from connection points and ignore these.
+    """
+    lsb: int
+    rsb: int
+
+
 class FinalizeRequest(BaseModel):
     approved_glyph_ids: List[str]
     font_name: str
     font_style: str = "Regular"
     letter_spacing: int = 0
     space_width: int = 600
+    # Per-glyph side-bearing overrides keyed by glyph_id. When None, existing
+    # overrides in job state are preserved (so a plain spacing re-finalize
+    # doesn't wipe out border adjustments).
+    glyph_bearings: Optional[Dict[str, GlyphBearing]] = None
 
 
 class FinalizeResponse(BaseModel):
