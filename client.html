@@ -293,7 +293,7 @@ input[type=range]::-moz-range-thumb{ width:24px; height:24px; border-radius:50%;
 
   <div class="slider-block">
     <div class="slider-top"><span class="field-label" style="margin:0">Letter spacing</span><span class="val" id="ls-val">normal</span></div>
-    <input type="range" id="ls-range" min="-60" max="160" step="5" value="0" oninput="onAdjustSliders()">
+    <input type="range" id="ls-range" min="-20" max="160" step="5" value="60" oninput="onAdjustSliders()">
   </div>
   <div class="slider-block">
     <div class="slider-top"><span class="field-label" style="margin:0">Space width</span><span class="val" id="sw-val">600</span></div>
@@ -917,7 +917,8 @@ async function submitAll(){
       if(!res.ok) throw new Error(`Could not save "${t.char}". Please try again.`);
     }
     // Kick off the first build (placeholder name; real name applied at "All done").
-    await runBuild('My Handwriting', 0, 600, /*onComplete*/ showAdjust);
+    // 60 = small comfortable gap; 0 would make letters touch (edges meet).
+    await runBuild('My Handwriting', 60, 600, /*onComplete*/ showAdjust);
   }catch(e){
     showBanner('build-err', e.message || 'Something went wrong. Please try again.');
   }
@@ -1001,7 +1002,7 @@ function onNameInput(){
 function onAdjustSliders(){
   const ls=parseInt(document.getElementById('ls-range').value,10);
   const sw=parseInt(document.getElementById('sw-range').value,10);
-  document.getElementById('ls-val').textContent = ls===0?'normal':(ls>0?`+${ls}`:`${ls}`);
+  document.getElementById('ls-val').textContent = ls===0?'touching':(ls>0?`+${ls}`:`${ls}`);
   document.getElementById('sw-val').textContent = sw;
   // Live CSS approximation against the preview font (size ~1.9rem ≈ 30px).
   const pv=document.getElementById('adj-preview');

@@ -185,9 +185,12 @@ def _bearing_offsets(
         x_off = x_for_entry(entry_x) if entry_x is not None else -pad_upm
         return x_off, 0
 
-    # iso (and print mode default): canvas PAD + historical +60 UPM trailing
-    # breathing room between standalone letters.
-    return 0.0, 60
+    # iso (print): no built-in buffer. The glyph sits flush at its ink edges so
+    # advance == ink width and adjacent letters touch when letter_spacing is 0.
+    # All spacing is added explicitly — globally via letter_spacing (tracking)
+    # or per-glyph via side-bearing overrides. x_offset places the leftmost ink
+    # (canvas x = PAD) at font x = 0; adv_extra strips the PAD on both sides.
+    return -CANVAS_PAD * coord_scale, -int(round(2 * CANVAS_PAD * coord_scale))
 
 
 def _draw_svg_paths_to_pen(
@@ -495,13 +498,14 @@ CANVAS_PAD = 12
 
 def default_bearings_upm(svg_width: int, upscale_factor: float = 1.0) -> Tuple[int, int]:
     """
-    Auto-computed (lsb, rsb) in UPM for an iso glyph — the side bearings that
-    reproduce the legacy bbox-derived advance.  Ink spans [PAD, svg_width-PAD]
-    in submitted canvas coords, so the default left gap is PAD and the default
-    right gap is PAD + the historical +60 UPM trailing breathing room.
+    Default (lsb, rsb) in UPM for an iso glyph: (0, 0).
+
+    The bearings are measured as space *beyond the ink edge*, so 0 means the
+    side-bearing line sits exactly on the leftmost / rightmost ink point and
+    adjacent letters touch. Inter-letter spacing is added explicitly via the
+    global letter_spacing tracking or per-glyph overrides.
     """
-    cs = CELL_SCALE / upscale_factor if upscale_factor > 0 else CELL_SCALE
-    return int(round(CANVAS_PAD * cs)), int(round(CANVAS_PAD * cs + 60))
+    return 0, 0
 
 
 def _override_offsets(
