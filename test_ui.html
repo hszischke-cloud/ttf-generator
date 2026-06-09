@@ -560,6 +560,24 @@
         </div>
       </div>
 
+      <!-- Reference font: upload a TTF/OTF to trace over (faint ghost behind the canvas) -->
+      <div class="panel-section">
+        <span class="panel-label">Reference font</span>
+        <div class="draw-ctrl-btns">
+          <button class="ctrl-btn" onclick="document.getElementById('ref-font-input').click()">＋ Add TTF</button>
+          <button class="ctrl-btn" id="ref-font-toggle" onclick="toggleRefFont()" style="display:none">Hide</button>
+          <button class="ctrl-btn" id="ref-font-remove" onclick="removeRefFont()" style="display:none">Remove</button>
+        </div>
+        <input type="file" id="ref-font-input" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf"
+               style="display:none" onchange="onRefFontUpload(this)">
+        <div id="ref-font-status" style="font-size:11px; color:#a89688; margin-top:7px;">No reference loaded — trace over any font.</div>
+        <div id="ref-font-opacity-row" class="size-row" style="display:none; margin-top:8px;">
+          <span>Fade</span>
+          <input type="range" min="0.04" max="0.45" step="0.01" value="0.13" id="ref-font-opacity" oninput="onRefOpacity(this.value)">
+          <span class="size-val" id="ref-font-opacity-val">13%</span>
+        </div>
+      </div>
+
       <!-- Submit -->
       <div id="draw-submit-status"></div>
       <button class="btn btn-primary" id="send-review-btn" onclick="sendToReview()">Send to Review →</button>
@@ -1468,6 +1486,7 @@ function renderCanvas() {
   ctx.clearRect(0, 0, DRAW_W, DRAW_H);
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, DRAW_W, DRAW_H);
+  drawGhost(ctx);
   drawGuidelines(ctx);
   drawCursiveGuides(ctx);
   const {currentChar: char, currentSlot: slot, currentForm: form, tool, toolSize, color} = drawState;
@@ -1713,6 +1732,115 @@ function drawGuidelines(ctx) {
     ctx.fillText(label, 4, y - 3);
   }
   ctx.restore();
+}
+
+// ── Reference font (uploaded TTF rendered as a faint ghost) ───
+// Lets the user drop in any TTF/OTF and trace the current character over a
+// faint reference — the same "ghost" idea as /create, but driven by a font
+// the user supplies instead of a baked-in serif.
+let refFontSeq = 0;
+const refFont = { family: null, name: null, enabled: true, opacity: 0.13, _sizes: null };
+
+// Render the active character in the uploaded font, scaled so its real cap
+// height (or x-height for lowercase) lands on our guides. We measure 'H' / 'x'
+// once per font and reuse that scale for every glyph, so ascenders and
+// descenders extend naturally past the guides instead of being squashed onto
+// them — matching how the finished handwriting font will sit.
+function refFontSizes(ctx) {
+  if (refFont._sizes) return refFont._sizes;
+  const probe = 200;
+  ctx.save();
+  ctx.font = `${probe}px '${refFont.family}'`;
+  ctx.textBaseline = 'alphabetic';
+  const ascH = ctx.measureText('H').actualBoundingBoxAscent || probe * 0.7;
+  const ascX = ctx.measureText('x').actualBoundingBoxAscent || probe * 0.5;
+  ctx.restore();
+  refFont._sizes = {
+    caps:  probe * ((GUIDELINES.baseline - GUIDELINES.cap)     / ascH),
+    lower: probe * ((GUIDELINES.baseline - GUIDELINES.xheight) / ascX),
+  };
+  return refFont._sizes;
+}
+
+function drawGhost(ctx) {
+  if (!refFont.family || !refFont.enabled) return;
+  const ch = drawState.currentChar;
+  if (!ch) return;
+  ctx.save();
+  // Keep the reference inside the cap→descender band so it never bleeds past
+  // the guides into the labels/margins.
+  ctx.beginPath();
+  ctx.rect(0, GUIDELINES.cap, DRAW_W, GUIDELINES.descender - GUIDELINES.cap);
+  ctx.clip();
+  const isLower = ch >= 'a' && ch <= 'z';
+  const sizes = refFontSizes(ctx);
+  ctx.font = `${isLower ? sizes.lower : sizes.caps}px '${refFont.family}'`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = `rgba(34,32,30,${refFont.opacity})`;
+  ctx.fillText(ch, DRAW_W / 2, GUIDELINES.baseline);
+  ctx.restore();
+}
+
+async function onRefFontUpload(input) {
+  const file = input.files && input.files[0];
+  input.value = '';  // reset so re-selecting the same file still fires onchange
+  if (!file) return;
+  const status = document.getElementById('ref-font-status');
+  status.textContent = 'Loading…';
+  try {
+    const buf = await file.arrayBuffer();
+    const family = 'RefGhost' + (++refFontSeq);
+    const ff = new FontFace(family, buf);
+    await ff.load();
+    document.fonts.add(ff);
+    refFont.family = family;
+    refFont.name = file.name;
+    refFont.enabled = true;
+    refFont._sizes = null;  // recompute scale for the new font
+    updateRefFontUI();
+    if (drawCtx) renderCanvas();
+  } catch (e) {
+    status.textContent = 'Could not load that file — is it a valid TTF/OTF?';
+  }
+}
+
+function toggleRefFont() {
+  refFont.enabled = !refFont.enabled;
+  updateRefFontUI();
+  if (drawCtx) renderCanvas();
+}
+
+function removeRefFont() {
+  refFont.family = null;
+  refFont.name = null;
+  refFont._sizes = null;
+  updateRefFontUI();
+  if (drawCtx) renderCanvas();
+}
+
+function onRefOpacity(v) {
+  refFont.opacity = parseFloat(v);
+  document.getElementById('ref-font-opacity-val').textContent = Math.round(refFont.opacity * 100) + '%';
+  if (drawCtx) renderCanvas();
+}
+
+function updateRefFontUI() {
+  const toggle = document.getElementById('ref-font-toggle');
+  const remove = document.getElementById('ref-font-remove');
+  const status = document.getElementById('ref-font-status');
+  const opRow  = document.getElementById('ref-font-opacity-row');
+  const loaded = !!refFont.family;
+  toggle.style.display = loaded ? '' : 'none';
+  remove.style.display = loaded ? '' : 'none';
+  opRow.style.display  = loaded ? '' : 'none';
+  if (loaded) {
+    toggle.textContent = refFont.enabled ? 'Hide' : 'Show';
+    toggle.classList.toggle('active-tool', refFont.enabled);
+    status.textContent = (refFont.enabled ? 'Showing: ' : 'Hidden: ') + (refFont.name || 'reference font');
+  } else {
+    status.textContent = 'No reference loaded — trace over any font.';
+  }
 }
 
 // ── Perfect-freehand polygon engine ──────────────────────────
