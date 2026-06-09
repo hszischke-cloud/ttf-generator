@@ -490,8 +490,10 @@ def compute_glyph_advance(g: "GlyphData", letter_spacing: int = 0) -> int:
     coord_scale = CELL_SCALE / g.upscale_factor if g.upscale_factor > 0 else CELL_SCALE
     if g.svg_width > 0:
         _, adv_extra = _bearing_offsets(g.form, coord_scale, g.svg_width, g.entry_x, g.exit_x)
-        return int(g.svg_width * coord_scale) + adv_extra + letter_spacing
-    return DEFAULT_ADVANCE_WIDTH + letter_spacing
+        # Clamp to 0: very tight (negative) tracking must never produce a
+        # negative advance, which is invalid in hmtx and reverses text flow.
+        return max(0, int(g.svg_width * coord_scale) + adv_extra + letter_spacing)
+    return max(0, DEFAULT_ADVANCE_WIDTH + letter_spacing)
 
 
 def build_otf(
@@ -600,7 +602,9 @@ def build_otf(
         if forced_advances is not None and g.glyph_name in forced_advances:
             final_advance = forced_advances[g.glyph_name]
         else:
-            final_advance = advance + letter_spacing
+            # Clamp to 0 so extreme negative tracking can't yield a negative
+            # advance width (invalid hmtx / reversed text).
+            final_advance = max(0, advance + letter_spacing)
         # Keep CFF charstring width consistent with hmtx.
         if cs.program and isinstance(cs.program[0], (int, float)):
             cs.program[0] = final_advance
