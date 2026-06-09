@@ -112,9 +112,20 @@ class JobStore:
     def upload_font_file(self, job_id: str, filename: str, data: bytes, content_type: str) -> str:
         """Upload a font binary. Returns the storage path (not the full URL)."""
         path = f"{job_id}/output/{filename}"
+        # cache-control "0" → the object is stored with `Cache-Control: max-age=0`
+        # so the storage CDN revalidates on every request. Font files are
+        # overwritten in place (upsert) on every rebuild — e.g. after a
+        # border/spacing edit — and the same {job_id}/output/{filename} path is
+        # reused. Without this, Supabase falls back to its default max-age=3600
+        # and the CDN keeps serving the pre-edit copy for up to an hour. The CDN
+        # keys its cache on the object PATH only and ignores query strings, so a
+        # `?v=<ts>` buster on the URL can't force a fresh fetch — the cache-control
+        # header is the only reliable way to guarantee a freshly built OTF (and
+        # its just-edited spacing/borders) is what actually gets downloaded.
         _retry(lambda: supabase.storage.from_(STORAGE_BUCKET).upload(
             path, data,
-            file_options={"content-type": content_type, "upsert": "true"},
+            file_options={"content-type": content_type, "upsert": "true",
+                          "cache-control": "0"},
         ))
         return path
 
