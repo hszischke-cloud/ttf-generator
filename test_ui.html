@@ -682,11 +682,11 @@
   <div class="spacing-controls" style="margin-top:24px;">
     <div class="slider-row" id="letter-spacing-row">
       <label>Letter spacing</label>
-      <span class="slider-hint">Adds space after every letter. 0 = default, positive = wider, negative = tighter.</span>
+      <span class="slider-hint">Space between every letter. 0 = letters touch (edges meet); higher = more room; -20 lets them overlap slightly.</span>
       <div class="slider-track">
-        <input type="range" id="letter-spacing" min="-200" max="200" step="5" value="0"
+        <input type="range" id="letter-spacing" min="-20" max="200" step="5" value="60"
           oninput="onSpacingChange()">
-        <span class="slider-val" id="ls-val">0 units</span>
+        <span class="slider-val" id="ls-val">60 units</span>
       </div>
     </div>
     <div class="slider-row">
@@ -747,7 +747,7 @@
     <div class="step-num">↔</div>
     <div>
       <h1>Adjust Letter Borders</h1>
-      <p class="sub" style="margin:0">Drag the <span style="color:#5d8485;font-weight:700">left</span> and <span style="color:#b06a35;font-weight:700">right</span> lines to set each letter's spacing. Pull them outward to give a cramped letter (like “i”) more room, inward to tighten a wide one (like “T”).</p>
+      <p class="sub" style="margin:0">The <span style="color:#5d8485;font-weight:700">left</span> and <span style="color:#b06a35;font-weight:700">right</span> lines sit on each letter's edges — where the next letter butts up against it. Drag a line <em>outward</em> to give a cramped letter (like “i”) more room, <em>inward</em> to tighten a wide one (like “T”). 0 = the line is right on the edge.</p>
     </div>
   </div>
 
@@ -762,14 +762,14 @@
 
   <div class="borders-readout">
     <div class="borders-field">
-      <label><span class="swatch-l">Left</span> bearing</label>
+      <label><span class="swatch-l">Left</span> edge space</label>
       <input type="number" id="borders-lsb" step="5" oninput="onBordersInput('lsb', this.value)">
     </div>
     <div class="borders-field">
-      <label><span class="swatch-r">Right</span> bearing</label>
+      <label><span class="swatch-r">Right</span> edge space</label>
       <input type="number" id="borders-rsb" step="5" oninput="onBordersInput('rsb', this.value)">
     </div>
-    <button class="btn btn-outline btn-sm" onclick="resetCurrentBearing()">Reset to auto</button>
+    <button class="btn btn-outline btn-sm" onclick="resetCurrentBearing()">Reset to edges</button>
   </div>
 
   <div class="borders-opts">
@@ -2344,8 +2344,9 @@ function startDrawMode(mode) {
   // Style is fixed for every font: pen tool, size 6, default ink colour.
   fontSettings = { tool: 'pen', toolSize: 6, color: [38, 32, 28] };
   // Fresh font: reset spacing sliders to defaults so a previous font's spacing
-  // doesn't leak into this one (finalize() reads these values directly).
-  document.getElementById('letter-spacing').value = 0;
+  // doesn't leak into this one (finalize() reads these values directly). 60 is
+  // a small comfortable gap; 0 would make letters touch (edges meet).
+  document.getElementById('letter-spacing').value = 60;
   document.getElementById('space-width').value = 600;
   onSpacingChange();
   Object.assign(drawState, {
@@ -2753,7 +2754,7 @@ async function openSavedFont(savedJobId) {
   // edit preserves it (finalize() reads these). Non-fatal if settings fail.
   try {
     const settings = await fetch(`${API}/process/${savedJobId}/settings`).then(r => r.json());
-    document.getElementById('letter-spacing').value = settings.letter_spacing ?? 0;
+    document.getElementById('letter-spacing').value = settings.letter_spacing ?? 60;
     document.getElementById('space-width').value = settings.space_width ?? 600;
     onSpacingChange();
   } catch { /* keep whatever the sliders currently show */ }
@@ -2823,7 +2824,7 @@ async function openBordersEditor(savedJobId, fontName) {
   fontSettings     = { tool: 'pen', toolSize: 6, color: [38, 32, 28] };
 
   // Keep the spacing sliders in sync so a later spacing tweak preserves them.
-  document.getElementById('letter-spacing').value = data.letter_spacing ?? 0;
+  document.getElementById('letter-spacing').value = data.letter_spacing ?? 60;
   document.getElementById('space-width').value   = data.space_width ?? 600;
 
   hideError('borders-error');
@@ -2861,7 +2862,7 @@ function selectBordersGlyph(i) {
   const label = g.slot > 0 ? `${g.char} (alternate ${g.slot})` : g.char;
   document.getElementById('borders-char').textContent = g.char;
   document.getElementById('borders-char-meta').textContent =
-    `${label} — advance ${Math.round(g.lsb + (g.svg_width - 2 * g.canvas_pad) * g.coord_scale + g.rsb)} units`;
+    `${label} — width ${Math.round(g.lsb + (g.svg_width - 2 * g.canvas_pad) * g.coord_scale + g.rsb)} units`;
   // Reflect active thumb without rebuilding the whole strip.
   document.querySelectorAll('#borders-strip .borders-thumb').forEach((el, idx) =>
     el.classList.toggle('active', idx === bordersIdx));
@@ -2891,15 +2892,14 @@ function renderBordersEditor() {
   const vbX = -pad, vbW = sw + pad * 2;
   svg.setAttribute('viewBox', `${vbX} 0 ${vbW} ${H}`);
 
-  const inkL = g.canvas_pad, inkR = sw - g.canvas_pad;
   const ox = bdOriginPx(g), ax = bdAdvancePx(g);
   const paths = (g.svg_paths || []).map(d =>
     `<path class="bd-ink" d="${d}"/>`).join('');
 
-  // Side-bearing gap shading (origin→inkL and inkR→advance).
-  const leftGap  = `<rect class="bd-gap" x="${ox}" y="0" width="${Math.max(0, inkL - ox)}" height="${H}"/>`;
-  const rightGap = `<rect class="bd-gap" x="${inkR}" y="0" width="${Math.max(0, ax - inkR)}" height="${H}"/>`;
-
+  // The two lines mark this letter's left/right edges (where the next letter
+  // butts up against it). By default they sit exactly on the ink extremes;
+  // drag them out to add space, in to tighten. No buffer is drawn — only the
+  // edges and the ink itself.
   const baseline = g.baseline_y || 288;
   const grip = (x, side, txt) =>
     `<g class="bd-grip ${side}" data-side="${side}">
@@ -2911,7 +2911,6 @@ function renderBordersEditor() {
      <line class="bd-hit" data-side="${side}" x1="${x}" y1="0" x2="${x}" y2="${H}"/>`;
 
   svg.innerHTML =
-    leftGap + rightGap +
     `<line class="bd-baseline" x1="${vbX}" y1="${baseline}" x2="${vbX + vbW}" y2="${baseline}"/>` +
     paths +
     line(ox, 'left') + line(ax, 'right') +
@@ -2955,7 +2954,7 @@ function setCurrentBearing(side, value) {
   }
   renderBordersEditor();
   document.getElementById('borders-char-meta').textContent =
-    `${g.slot > 0 ? `${g.char} (alternate ${g.slot})` : g.char} — advance ${Math.round(g.lsb + (g.svg_width - 2 * g.canvas_pad) * g.coord_scale + g.rsb)} units`;
+    `${g.slot > 0 ? `${g.char} (alternate ${g.slot})` : g.char} — width ${Math.round(g.lsb + (g.svg_width - 2 * g.canvas_pad) * g.coord_scale + g.rsb)} units`;
 }
 
 function onBordersInput(side, raw) {
@@ -3089,7 +3088,7 @@ async function openSavedFontSpacing(savedJobId, fontName, mode) {
   document.getElementById('font-name').value = currentFontName;
 
   // Restore the saved spacing onto the sliders + value labels.
-  document.getElementById('letter-spacing').value = settings.letter_spacing ?? 0;
+  document.getElementById('letter-spacing').value = settings.letter_spacing ?? 60;
   document.getElementById('space-width').value = settings.space_width ?? 600;
   onSpacingChange();
 
