@@ -463,6 +463,53 @@
     /* Drop zone less padding */
     #drop-zone { padding: 36px 20px; }
   }
+
+  /* ── Border (side-bearing) editor ─────────────────────────── */
+  .borders-stage {
+    margin-top: 18px; background: #fbf9f5;
+    border: 1px solid #e2d9cc; border-radius: 14px;
+    padding: 14px; text-align: center; overflow: hidden;
+  }
+  #borders-svg { width: 100%; max-width: 560px; height: auto; touch-action: none; user-select: none; }
+  .bd-ink { fill: #26201c; }
+  .bd-baseline { stroke: #c9bdab; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .bd-guide { stroke: #e4dccd; stroke-width: 1; stroke-dasharray: 4 5; vector-effect: non-scaling-stroke; }
+  .bd-gap { fill: rgba(122,158,159,0.12); }
+  .bd-line { stroke: #7a9e9f; stroke-width: 2; vector-effect: non-scaling-stroke; cursor: ew-resize; }
+  .bd-line.right { stroke: #c08552; }
+  .bd-hit { stroke: transparent; stroke-width: 22; cursor: ew-resize; }
+  .bd-grip { cursor: ew-resize; }
+  .bd-grip.left { fill: #7a9e9f; }
+  .bd-grip.right { fill: #c08552; }
+  .bd-grip-label { fill: #fff; font: 600 11px system-ui, sans-serif; pointer-events: none; text-anchor: middle; }
+
+  .borders-label-row { margin-top: 14px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .borders-char { font-size: 22px; font-weight: 700; color: #3d2b1f; }
+  .borders-char-meta { font-size: 12px; color: #a89688; }
+
+  .borders-readout { margin-top: 12px; display: flex; gap: 18px; align-items: flex-end; flex-wrap: wrap; }
+  .borders-field { display: flex; flex-direction: column; gap: 4px; }
+  .borders-field label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: #8c7b6b; }
+  .borders-field input { width: 92px; padding: 7px 9px; border: 1.5px solid #c4b5a5; border-radius: 7px; font-size: 14px; }
+  .borders-field input:focus { outline: none; border-color: #7a9e9f; }
+  .borders-readout .swatch-l { color: #5d8485; font-weight: 700; }
+  .borders-readout .swatch-r { color: #b06a35; font-weight: 700; }
+  .borders-opts { margin-top: 12px; display: flex; gap: 18px; align-items: center; flex-wrap: wrap; font-size: 13px; color: #5c4f43; }
+
+  .borders-strip { margin-top: 18px; display: flex; gap: 6px; overflow-x: auto; padding: 8px 2px; }
+  .borders-thumb {
+    flex: 0 0 auto; width: 54px; height: 60px; border: 1.5px solid #e2d9cc;
+    border-radius: 9px; background: #fff; cursor: pointer; display: flex;
+    flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    transition: border-color 0.15s, transform 0.1s;
+  }
+  .borders-thumb:hover { border-color: #c4b5a5; }
+  .borders-thumb.active { border-color: #7a9e9f; border-width: 2px; transform: translateY(-2px); }
+  .borders-thumb.edited { background: #f3f7f7; }
+  .borders-thumb img { width: 34px; height: 40px; object-fit: contain; }
+  .borders-thumb .bt-char { font-size: 10px; color: #8c7b6b; }
+  .borders-thumb .bt-dot { position: relative; }
+  .borders-thumb.edited .bt-char::after { content: ' •'; color: #7a9e9f; }
 </style>
 </head>
 <body>
@@ -659,6 +706,7 @@
   <div class="download-btns" style="margin-top:20px;">
     <button id="otf-btn" class="btn btn-primary" onclick="downloadFont('otf')">Download OTF</button>
     <button id="proof-btn" class="btn btn-teal" onclick="openProofSheet('dimensional')" style="margin-left:4px;">Proof sheet ↗</button>
+    <button id="borders-edit-btn" class="btn btn-teal" onclick="openBordersEditor(jobId, currentFontName)" style="margin-left:4px;">Adjust borders</button>
     <button id="save-font-btn" class="btn btn-teal" onclick="saveFont()" style="margin-left:4px;">Save to My Fonts</button>
     <span id="download-status" style="font-size:13px;color:#888;"></span>
   </div>
@@ -690,6 +738,53 @@
     ⚠ <strong>Contextual alternates could not be compiled</strong> — the font was saved without <code>calt</code>/<code>ss01</code>/<code>ss02</code> features, so glyph forms will not cycle.<br>
     <span id="fea-warning-detail" style="font-size:0.8rem;opacity:0.8;"></span>
   </div>
+</div>
+
+<!-- ── Border editor ─────────────────────────────────────────── -->
+<div class="page" id="page-borders">
+  <span class="back-link" onclick="goHome()">← Back to home</span>
+  <div class="step-header">
+    <div class="step-num">↔</div>
+    <div>
+      <h1>Adjust Letter Borders</h1>
+      <p class="sub" style="margin:0">Drag the <span style="color:#5d8485;font-weight:700">left</span> and <span style="color:#b06a35;font-weight:700">right</span> lines to set each letter's spacing. Pull them outward to give a cramped letter (like “i”) more room, inward to tighten a wide one (like “T”).</p>
+    </div>
+  </div>
+
+  <div class="borders-label-row">
+    <span class="borders-char" id="borders-char">A</span>
+    <span class="borders-char-meta" id="borders-char-meta"></span>
+  </div>
+
+  <div class="borders-stage">
+    <svg id="borders-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+
+  <div class="borders-readout">
+    <div class="borders-field">
+      <label><span class="swatch-l">Left</span> bearing</label>
+      <input type="number" id="borders-lsb" step="5" oninput="onBordersInput('lsb', this.value)">
+    </div>
+    <div class="borders-field">
+      <label><span class="swatch-r">Right</span> bearing</label>
+      <input type="number" id="borders-rsb" step="5" oninput="onBordersInput('rsb', this.value)">
+    </div>
+    <button class="btn btn-outline btn-sm" onclick="resetCurrentBearing()">Reset to auto</button>
+  </div>
+
+  <div class="borders-opts">
+    <label><input type="checkbox" id="borders-apply-all"> Apply changes to all alternates of this letter</label>
+  </div>
+
+  <div class="borders-strip" id="borders-strip"></div>
+
+  <div class="download-btns" style="margin-top:22px;">
+    <button class="btn btn-outline" onclick="bordersPrev()">‹ Prev</button>
+    <button class="btn btn-outline" onclick="bordersNext()">Next ›</button>
+    <button id="borders-apply-btn" class="btn btn-primary" style="margin-left:8px;" onclick="applyBorders()">Apply &amp; rebuild font</button>
+    <span id="borders-status" style="font-size:13px;color:#888;"></span>
+  </div>
+  <div class="error-banner" id="borders-error"></div>
 </div>
 
 <script>
@@ -896,6 +991,8 @@ async function showDownloadPage(feaWarning, cacheBust, lineInfo) {
   const isCursive = drawMode === 'cursive';
   document.getElementById('letter-spacing-row').style.display = isCursive ? 'none' : '';
   document.getElementById('cursive-spacing-note').style.display = isCursive ? 'block' : 'none';
+  // Per-glyph border editing only applies to print (iso) fonts.
+  document.getElementById('borders-edit-btn').style.display = isCursive ? 'none' : '';
   if (isCursive) {
     document.getElementById('letter-spacing').value = 0;
     const previewInput = document.getElementById('preview-input');
@@ -2509,6 +2606,7 @@ function renderSavedFonts(fonts) {
             <span class="saved-font-group-label">Edit</span>
             <div class="saved-font-group-btns">
               <button class="btn btn-teal btn-sm" onclick="openSavedFontSpacing('${f.job_id}','${escHtml(f.font_name)}','${f.mode}')" title="Adjust spacing and re-download without re-editing glyphs">Spacing</button>
+              ${f.mode === 'print' ? `<button class="btn btn-teal btn-sm" onclick="openBordersEditor('${f.job_id}','${escHtml(f.font_name)}')" title="Fine-tune each letter's left/right spacing">Borders</button>` : ''}
               <button class="btn btn-primary btn-sm" onclick="openSavedFont('${f.job_id}')" title="Edit the drawn glyphs">Glyphs</button>
             </div>
           </div>
@@ -2685,6 +2783,286 @@ async function openSavedFont(savedJobId) {
 // so the user can tweak spacing and re-download without touching glyphs. The
 // stored OTF was already built with the saved spacing, so we restore the
 // sliders from /settings and load that OTF for preview.
+
+// ── Border (side-bearing) editor ──────────────────────────
+// Lets the user drag a left + right line on each iso glyph to fine-tune its
+// side bearings (the whitespace around the letter). Works in canvas-pixel
+// space; bearings are stored/sent in font UPM units. coord_scale (UPM per px)
+// comes from the backend so the px↔UPM conversion always matches the builder.
+
+let bordersData  = null;   // full /bearings response
+let bordersList  = [];     // adjustable iso glyphs
+let bordersIdx   = 0;      // selected glyph
+let bordersDrag  = null;   // 'left' | 'right' while dragging
+
+async function openBordersEditor(savedJobId, fontName) {
+  let data;
+  try {
+    const res = await fetch(`${API}/process/${savedJobId}/bearings`);
+    if (!res.ok) throw new Error('Border data not found — the font may have expired.');
+    data = await res.json();
+  } catch (e) {
+    alert(e.message);
+    return;
+  }
+  if (!data.glyphs || !data.glyphs.length) {
+    alert('This font has no adjustable letters.');
+    return;
+  }
+
+  bordersData = data;
+  bordersList = data.glyphs;
+  bordersIdx  = 0;
+
+  // Wire up the job context so Apply → finalize → showDownloadPage all work.
+  jobId            = savedJobId;
+  currentFontName  = data.font_name || fontName;
+  fontSafeName     = currentFontName.replace(/\s+/g, '_');
+  approvedGlyphIds = data.approved_glyph_ids || bordersList.map(g => g.glyph_id);
+  drawMode         = 'print';
+  fontSettings     = { tool: 'pen', toolSize: 6, color: [38, 32, 28] };
+
+  // Keep the spacing sliders in sync so a later spacing tweak preserves them.
+  document.getElementById('letter-spacing').value = data.letter_spacing ?? 0;
+  document.getElementById('space-width').value   = data.space_width ?? 600;
+
+  hideError('borders-error');
+  document.getElementById('borders-status').textContent = '';
+  renderBordersStrip();
+  selectBordersGlyph(0);
+  goTo('page-borders');
+}
+
+function bordersCurrent() { return bordersList[bordersIdx]; }
+
+// Auto = the backend-computed defaults; used to flag "edited" glyphs.
+function bordersIsEdited(g) {
+  return Math.round(g.lsb) !== g.default_lsb || Math.round(g.rsb) !== g.default_rsb;
+}
+
+function renderBordersStrip() {
+  const strip = document.getElementById('borders-strip');
+  strip.innerHTML = '';
+  bordersList.forEach((g, i) => {
+    const el = document.createElement('div');
+    el.className = 'borders-thumb' + (i === bordersIdx ? ' active' : '') + (bordersIsEdited(g) ? ' edited' : '');
+    el.onclick = () => selectBordersGlyph(i);
+    const label = g.slot > 0 ? `${g.char}·${g.slot}` : g.char;
+    el.innerHTML =
+      (g.image_b64 ? `<img src="data:image/png;base64,${g.image_b64}" alt="">` : '<div style="height:40px"></div>') +
+      `<span class="bt-char">${escHtml(label)}</span>`;
+    strip.appendChild(el);
+  });
+}
+
+function selectBordersGlyph(i) {
+  bordersIdx = Math.max(0, Math.min(bordersList.length - 1, i));
+  const g = bordersCurrent();
+  const label = g.slot > 0 ? `${g.char} (alternate ${g.slot})` : g.char;
+  document.getElementById('borders-char').textContent = g.char;
+  document.getElementById('borders-char-meta').textContent =
+    `${label} — advance ${Math.round(g.lsb + (g.svg_width - 2 * g.canvas_pad) * g.coord_scale + g.rsb)} units`;
+  // Reflect active thumb without rebuilding the whole strip.
+  document.querySelectorAll('#borders-strip .borders-thumb').forEach((el, idx) =>
+    el.classList.toggle('active', idx === bordersIdx));
+  renderBordersEditor();
+  syncBordersInputs();
+}
+
+function syncBordersInputs() {
+  const g = bordersCurrent();
+  document.getElementById('borders-lsb').value = Math.round(g.lsb);
+  document.getElementById('borders-rsb').value = Math.round(g.rsb);
+}
+
+// Convert a side bearing (UPM) to a canvas-pixel x position, and back.
+// Ink occupies [PAD, svg_width-PAD] px. Left line sits lsb to the left of the
+// ink's left edge; right (advance) line sits rsb to the right of the ink's
+// right edge.
+function bdOriginPx(g) { return g.canvas_pad - g.lsb / g.coord_scale; }
+function bdAdvancePx(g) { return (g.svg_width - g.canvas_pad) + g.rsb / g.coord_scale; }
+
+function renderBordersEditor() {
+  const g = bordersCurrent();
+  const svg = document.getElementById('borders-svg');
+  const H = g.svg_height || 400;
+  const sw = g.svg_width;
+  const pad = 90;                       // viewBox breathing room each side (px)
+  const vbX = -pad, vbW = sw + pad * 2;
+  svg.setAttribute('viewBox', `${vbX} 0 ${vbW} ${H}`);
+
+  const inkL = g.canvas_pad, inkR = sw - g.canvas_pad;
+  const ox = bdOriginPx(g), ax = bdAdvancePx(g);
+  const paths = (g.svg_paths || []).map(d =>
+    `<path class="bd-ink" d="${d}"/>`).join('');
+
+  // Side-bearing gap shading (origin→inkL and inkR→advance).
+  const leftGap  = `<rect class="bd-gap" x="${ox}" y="0" width="${Math.max(0, inkL - ox)}" height="${H}"/>`;
+  const rightGap = `<rect class="bd-gap" x="${inkR}" y="0" width="${Math.max(0, ax - inkR)}" height="${H}"/>`;
+
+  const baseline = g.baseline_y || 288;
+  const grip = (x, side, txt) =>
+    `<g class="bd-grip ${side}" data-side="${side}">
+       <rect class="bd-grip" x="${x - 13}" y="2" width="26" height="22" rx="5"/>
+       <text class="bd-grip-label" x="${x}" y="18">${txt}</text>
+     </g>`;
+  const line = (x, side) =>
+    `<line class="bd-line ${side === 'right' ? 'right' : ''}" data-side="${side}" x1="${x}" y1="0" x2="${x}" y2="${H}"/>
+     <line class="bd-hit" data-side="${side}" x1="${x}" y1="0" x2="${x}" y2="${H}"/>`;
+
+  svg.innerHTML =
+    leftGap + rightGap +
+    `<line class="bd-baseline" x1="${vbX}" y1="${baseline}" x2="${vbX + vbW}" y2="${baseline}"/>` +
+    paths +
+    line(ox, 'left') + line(ax, 'right') +
+    grip(ox, 'left', 'L') + grip(ax, 'right', 'R');
+
+  // Tint ink to the chosen pen colour.
+  const [pr, pg, pb] = (fontSettings && fontSettings.color) || [38, 32, 28];
+  svg.querySelectorAll('.bd-ink').forEach(p => p.setAttribute('fill', `rgb(${pr},${pg},${pb})`));
+}
+
+// Map a pointer event to an x position in the SVG's viewBox coordinate space.
+function bordersEventX(evt) {
+  const svg = document.getElementById('borders-svg');
+  const pt = svg.createSVGPoint();
+  pt.x = evt.clientX; pt.y = evt.clientY;
+  const ctm = svg.getScreenCTM();
+  if (!ctm) return null;
+  return pt.matrixTransform(ctm.inverse()).x;
+}
+
+function clampBearing(v) { return Math.max(-200, Math.min(900, Math.round(v))); }
+
+function setCurrentBearing(side, value) {
+  const g = bordersCurrent();
+  const v = clampBearing(value);
+  if (side === 'left') g.lsb = v; else g.rsb = v;
+  // Optionally mirror onto sibling alternates of the same character.
+  if (document.getElementById('borders-apply-all').checked) {
+    for (const o of bordersList) {
+      if (o.char === g.char && o !== g) {
+        if (side === 'left') o.lsb = v; else o.rsb = v;
+      }
+    }
+    renderBordersStrip();
+    document.querySelectorAll('#borders-strip .borders-thumb').forEach((el, idx) =>
+      el.classList.toggle('active', idx === bordersIdx));
+  } else {
+    // Just refresh the current thumb's edited state.
+    const thumb = document.querySelectorAll('#borders-strip .borders-thumb')[bordersIdx];
+    if (thumb) thumb.classList.toggle('edited', bordersIsEdited(g));
+  }
+  renderBordersEditor();
+  document.getElementById('borders-char-meta').textContent =
+    `${g.slot > 0 ? `${g.char} (alternate ${g.slot})` : g.char} — advance ${Math.round(g.lsb + (g.svg_width - 2 * g.canvas_pad) * g.coord_scale + g.rsb)} units`;
+}
+
+function onBordersInput(side, raw) {
+  const v = parseInt(raw, 10);
+  if (Number.isNaN(v)) return;
+  setCurrentBearing(side, v);
+}
+
+function resetCurrentBearing() {
+  const g = bordersCurrent();
+  g.lsb = g.default_lsb;
+  g.rsb = g.default_rsb;
+  if (document.getElementById('borders-apply-all').checked) {
+    for (const o of bordersList) {
+      if (o.char === g.char) { o.lsb = o.default_lsb; o.rsb = o.default_rsb; }
+    }
+  }
+  renderBordersStrip();
+  selectBordersGlyph(bordersIdx);
+}
+
+function bordersPrev() { selectBordersGlyph(bordersIdx - 1); }
+function bordersNext() { selectBordersGlyph(bordersIdx + 1); }
+
+// Drag handling: pointerdown on a line/grip starts a drag; pointermove updates
+// the matching bearing live.
+document.addEventListener('pointerdown', (e) => {
+  const t = e.target.closest('[data-side]');
+  if (!t || !document.getElementById('page-borders').classList.contains('active')) return;
+  bordersDrag = t.getAttribute('data-side');
+  document.getElementById('borders-svg').setPointerCapture?.(e.pointerId);
+  e.preventDefault();
+});
+document.addEventListener('pointermove', (e) => {
+  if (!bordersDrag) return;
+  const x = bordersEventX(e);
+  if (x == null) return;
+  const g = bordersCurrent();
+  if (bordersDrag === 'left') {
+    // lsb grows as the line moves left of the ink's left edge.
+    setCurrentBearing('left', (g.canvas_pad - x) * g.coord_scale);
+  } else {
+    setCurrentBearing('right', (x - (g.svg_width - g.canvas_pad)) * g.coord_scale);
+  }
+  syncBordersInputs();
+});
+document.addEventListener('pointerup', () => { bordersDrag = null; });
+
+// Arrow keys step between glyphs (when not typing in a field).
+document.addEventListener('keydown', (e) => {
+  if (!document.getElementById('page-borders').classList.contains('active')) return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
+  if (e.key === 'ArrowLeft')  { bordersPrev(); e.preventDefault(); }
+  if (e.key === 'ArrowRight') { bordersNext(); e.preventDefault(); }
+});
+
+// Bake the adjusted bearings into the font and jump to the download page.
+async function applyBorders() {
+  const btn = document.getElementById('borders-apply-btn');
+  const status = document.getElementById('borders-status');
+  btn.disabled = true;
+  status.textContent = 'Rebuilding…';
+  hideError('borders-error');
+
+  const bearings = {};
+  for (const g of bordersList) {
+    bearings[g.glyph_id] = { lsb: Math.round(g.lsb), rsb: Math.round(g.rsb) };
+  }
+
+  try {
+    const res = await fetch(`${API}/process/${jobId}/finalize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        approved_glyph_ids: approvedGlyphIds,
+        font_name: currentFontName,
+        font_style: 'Regular',
+        letter_spacing: parseInt(document.getElementById('letter-spacing').value) || 0,
+        space_width: parseInt(document.getElementById('space-width').value) || 600,
+        glyph_bearings: bearings,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || 'Rebuild failed');
+    }
+    const final = await new Promise((resolve, reject) => {
+      const t = setInterval(async () => {
+        try {
+          const s = await fetch(`${API}/process/${jobId}/status`).then(r => r.json());
+          if (s.status === 'complete') { clearInterval(t); resolve(s); }
+          else if (s.status === 'error') { clearInterval(t); reject(new Error(s.error_message || 'Rebuild failed')); }
+        } catch (err) { clearInterval(t); reject(err); }
+      }, 1000);
+    });
+    status.textContent = '';
+    btn.disabled = false;
+    showDownloadPage(final.fea_warning, undefined, {
+      hasLineFont: !!final.has_line_font,
+      skipped: final.line_skipped_glyphs || [],
+    });
+  } catch (e) {
+    btn.disabled = false;
+    status.textContent = '';
+    showError('borders-error', e.message);
+  }
+}
 
 async function openSavedFontSpacing(savedJobId, fontName, mode) {
   let settings;

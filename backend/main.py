@@ -45,7 +45,8 @@ from models import (
 )
 from processing.font_builder import (
     GlyphData, build_otf, compute_glyph_advance,
-    char_to_glyph_name,
+    char_to_glyph_name, default_bearings_upm,
+    CELL_SCALE, CANVAS_PAD,
 )
 
 
@@ -226,8 +227,7 @@ async def finalize(job_id: str, req: FinalizeRequest, background_tasks: Backgrou
         raise HTTPException(409, "Job is not in review state")
 
     font_name = req.font_name.strip() or "MyHandwritingFont"
-    job_store.update_state(
-        job_id,
+    update_kwargs = dict(
         status="finalizing",
         approved_glyph_ids=req.approved_glyph_ids,
         font_name=font_name,
@@ -236,6 +236,14 @@ async def finalize(job_id: str, req: FinalizeRequest, background_tasks: Backgrou
         space_width=req.space_width,
         progress_pct=0,
     )
+    # Persist per-glyph border overrides only when provided, so a plain spacing
+    # re-finalize doesn't wipe out adjustments made in the border editor.
+    if req.glyph_bearings is not None:
+        update_kwargs["glyph_bearings"] = {
+            gid: {"lsb": int(b.lsb), "rsb": int(b.rsb)}
+            for gid, b in req.glyph_bearings.items()
+        }
+    job_store.update_state(job_id, **update_kwargs)
 
     background_tasks.add_task(run_in_threadpool, _build_font_job, job_id)
 
@@ -441,6 +449,72 @@ async def get_pen_paths(job_id: str):
     }
 
 
+@app.get("/process/{job_id}/bearings")
+async def get_bearings(job_id: str):
+    """
+    Return per-glyph side-bearing data for the border editor.
+
+    Only iso (print) glyphs are adjustable — cursive positional forms derive
+    their bearings from connection points. Each glyph carries its outline
+    paths, geometry, the px↔UPM scale, and the current (override or default)
+    lsb/rsb so the editor can render draggable left/right bearing lines.
+    """
+    _require_job(job_id)
+    state = job_store.get_state(job_id)
+    manifest = state.get("glyph_manifest", [])
+    overrides = state.get("glyph_bearings", {}) or {}
+    mode = (
+        "cursive"
+        if any((e.get("form") or "iso") != "iso" for e in manifest)
+        else "print"
+    )
+
+    glyphs = []
+    for entry in manifest:
+        if not entry.get("has_glyph"):
+            continue
+        if (entry.get("form") or "iso") != "iso":
+            continue  # only standalone forms are adjustable
+        gid = entry["glyph_id"]
+        svg_w = entry.get("svg_width", 300)
+        upf = entry.get("upscale_factor", 1.0) or 1.0
+        def_lsb, def_rsb = default_bearings_upm(svg_w, upf)
+        ov = overrides.get(gid)
+        png = job_store.download_glyph_png(job_id, gid)
+        img_b64 = base64.b64encode(png).decode() if png else None
+        glyphs.append({
+            "glyph_id":      gid,
+            "char":          entry["char"],
+            "slot":          entry["slot"],
+            "svg_paths":     entry.get("svg_paths") or [],
+            "svg_width":     svg_w,
+            "svg_height":    entry.get("svg_height", 400),
+            "baseline_y":    entry.get("baseline_y", 288),
+            "upscale_factor": upf,
+            "coord_scale":   (CELL_SCALE / upf if upf > 0 else CELL_SCALE),
+            "canvas_pad":    CANVAS_PAD,
+            "default_lsb":   def_lsb,
+            "default_rsb":   def_rsb,
+            "lsb":           int(ov["lsb"]) if ov else def_lsb,
+            "rsb":           int(ov["rsb"]) if ov else def_rsb,
+            "is_override":   bool(ov),
+            "image_b64":     img_b64,
+        })
+
+    return {
+        "job_id":         job_id,
+        "mode":           mode,
+        "font_name":      state.get("font_name", ""),
+        "cell_scale":     CELL_SCALE,
+        "canvas_pad":     CANVAS_PAD,
+        "letter_spacing": state.get("letter_spacing", 0),
+        "space_width":    state.get("space_width", 600),
+        "approved_glyph_ids": state.get("approved_glyph_ids", []),
+        "has_line_font":  state.get("has_line_font", False),
+        "glyphs":         glyphs,
+    }
+
+
 @app.get("/process/{job_id}/settings")
 async def get_job_settings(job_id: str):
     """Return font-build settings needed to re-finalize an existing job."""
@@ -477,6 +551,7 @@ def _build_font_job(job_id: str):
         letter_spacing = state.get("letter_spacing", 0)
         space_width = state.get("space_width", 600)
         manifest = state.get("glyph_manifest", [])
+        glyph_bearings = state.get("glyph_bearings", {}) or {}
 
         job_store.update_state(job_id, progress_pct=10)
 
@@ -539,6 +614,11 @@ def _build_font_job(job_id: str):
             entry_x = entry.get("entry_x")
             exit_x  = entry.get("exit_x")
 
+            # Manual side-bearing override for this glyph (iso/print only).
+            _bearing = glyph_bearings.get(glyph_id) if form == "iso" else None
+            lsb_upm = _bearing.get("lsb") if _bearing else None
+            rsb_upm = _bearing.get("rsb") if _bearing else None
+
             dimensional_glyphs.append(GlyphData(
                 char=char, slot=slot, glyph_name=glyph_name,
                 svg_paths=entry.get("svg_paths", []),
@@ -548,6 +628,7 @@ def _build_font_job(job_id: str):
                 upscale_factor=upscale_factor,
                 form=form,
                 entry_x=entry_x, exit_x=exit_x,
+                lsb_upm=lsb_upm, rsb_upm=rsb_upm,
             ))
 
             pen_paths = entry.get("pen_paths") or []
@@ -563,6 +644,7 @@ def _build_font_job(job_id: str):
                         upscale_factor=upscale_factor,
                         form=form,
                         entry_x=entry_x, exit_x=exit_x,
+                        lsb_upm=lsb_upm, rsb_upm=rsb_upm,
                     ))
                 else:
                     line_skipped.append(glyph_id)
