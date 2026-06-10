@@ -20,6 +20,7 @@ import io
 import os
 import traceback
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -201,19 +202,33 @@ async def get_glyphs(job_id: str):
         raise HTTPException(409, "Glyphs not ready yet")
 
     manifest = state.get("glyph_manifest", [])
-    glyph_infos = []
 
-    for entry in manifest:
-        png = job_store.download_glyph_png(job_id, entry["glyph_id"])
-        if png is None:
-            continue
-        glyph_infos.append(GlyphInfo(
+    # Download every glyph thumbnail concurrently. Each download is an
+    # independent, blocking Supabase Storage round-trip; doing them serially
+    # made this endpoint scale linearly with glyph count (130+ glyphs × storage
+    # latency = tens of seconds). Fanning out across a thread pool collapses
+    # that to roughly a single round-trip's latency. Order is preserved by
+    # mapping over the manifest.
+    def _fetch(entry):
+        return entry, job_store.download_glyph_png(job_id, entry["glyph_id"])
+
+    def _fetch_all():
+        with ThreadPoolExecutor(max_workers=16) as ex:
+            return list(ex.map(_fetch, manifest))
+
+    pngs = await run_in_threadpool(_fetch_all)
+
+    glyph_infos = [
+        GlyphInfo(
             glyph_id=entry["glyph_id"],
             char=entry["char"],
             slot=entry["slot"],
             image_b64=base64.b64encode(png).decode(),
             accepted=True,
-        ))
+        )
+        for entry, png in pngs
+        if png is not None
+    ]
 
     return GlyphsResponse(job_id=job_id, glyphs=glyph_infos, alignment_warnings=[])
 
@@ -290,7 +305,7 @@ async def proof_sheet(job_id: str, font: str = "line"):
         skipped = []
 
     otf_bytes = await run_in_threadpool(
-        job_store.download_font_file, job_id, filename
+        job_store.download_path, _resolve_font_path(state, job_id, filename)
     )
     if not otf_bytes:
         # No built file in storage. Distinguish "this font never had a line
@@ -312,6 +327,25 @@ async def proof_sheet(job_id: str, font: str = "line"):
     )
 
 
+def _resolve_font_path(state: dict, job_id: str, filename: str) -> str:
+    """
+    Map a requested font filename to its actual storage path.
+
+    The build records content-versioned paths in state["font_files"]
+    ({"otf": ".../<hash>/Name.otf", "otf_line": ...}). We resolve against that
+    so the served path always points at the current build's immutable, cacheable
+    object. Falls back to the legacy unversioned path for jobs built before
+    versioning existed.
+    """
+    clean_name = filename.split("?")[0]
+    font_files = state.get("font_files") or {}
+    kind = "otf_line" if clean_name.endswith("-Line.otf") else "otf"
+    path = font_files.get(kind)
+    if path:
+        return path
+    return f"{job_id}/output/{clean_name}"
+
+
 @app.get("/fonts/{job_id}/{filename}")
 async def serve_font(job_id: str, filename: str, request: Request):
     _require_job(job_id)
@@ -320,22 +354,14 @@ async def serve_font(job_id: str, filename: str, request: Request):
     if state.get("status") != "complete":
         raise HTTPException(202, "Font not ready yet")
 
-    # Strip cache-buster query param from filename (e.g. "MyFont.otf?v=123")
-    clean_name = filename.split("?")[0]
-    url = job_store.get_font_public_url(job_id, clean_name)
+    url = job_store.public_url(_resolve_font_path(state, job_id, filename))
 
-    # Forward the request's query string (the frontend's ?v=<ts> cache-buster)
-    # onto the storage URL. Font files are overwritten in place on every
-    # rebuild (upsert), so without a per-build query the CDN can serve a stale
-    # copy after spacing/border edits — the dimensional and line OTFs would
-    # then disagree with what was just built. A distinct query key per build
-    # forces a fresh fetch.
-    qs = request.url.query
-    if qs:
-        url = f"{url}{'&' if '?' in url else '?'}{qs}"
-
-    # 302 redirect → browser/fetch downloads directly from Supabase CDN.
-    # Cache-Control: no-store on the redirect itself; Supabase serves the file.
+    # 302 → the browser downloads directly from the Supabase CDN. The redirect
+    # itself is no-store (it's a cheap backend hop), but the storage object it
+    # points at is content-versioned and immutable, so re-previewing the same
+    # build is served from the browser/CDN cache with no re-download. A rebuild
+    # changes the resolved path, guaranteeing a fresh fetch — no query-string
+    # cache-buster needed (the CDN ignores those anyway).
     return RedirectResponse(url, status_code=302, headers={"Cache-Control": "no-store"})
 
 
@@ -723,8 +749,6 @@ def _build_font_job(job_id: str):
         # Build both OTFs in parallel — they share no state and each holds the
         # GIL only intermittently (fontTools spends most of its time in C
         # ext modules and I/O), so threading actually overlaps.
-        from concurrent.futures import ThreadPoolExecutor
-
         def _build_dim():
             return build_otf(
                 dimensional_glyphs, font_name, font_style, letter_spacing, space_width,
@@ -754,9 +778,18 @@ def _build_font_job(job_id: str):
 
         safe_name = font_name.replace(" ", "_")
 
-        # Upload OTF files to Supabase in parallel (2 threads max).
+        # Content-versioned upload: each file goes to a path keyed by a hash of
+        # its own bytes, with an immutable Cache-Control. Re-previewing the same
+        # build serves from cache (no re-download); a rebuild with different
+        # spacing/borders produces different bytes → a new path → a single fresh
+        # fetch. serve_font resolves the live path from font_files below.
+        import hashlib
+
         def _upload(filename, data):
-            return job_store.upload_font_file(job_id, filename, data, "font/otf")
+            version = hashlib.sha1(data).hexdigest()[:12]
+            return job_store.upload_font_file(
+                job_id, filename, data, "font/otf", version=version
+            )
 
         uploads = [(f"{safe_name}.otf", otf_bytes)]
         if line_otf_bytes:

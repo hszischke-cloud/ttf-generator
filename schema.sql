@@ -16,6 +16,18 @@ CREATE TABLE IF NOT EXISTS jobs (
 CREATE INDEX IF NOT EXISTS jobs_state_created_at
     ON jobs (((state->>'created_at')::double precision));
 
+-- Server-side shallow merge of a small patch into the job state blob.
+-- The job state JSONB carries every glyph's svg_paths + pen_paths, so a
+-- read-modify-write from the app (SELECT the whole blob, merge in Python,
+-- UPDATE the whole blob) round-trips several MB just to bump progress_pct.
+-- `state || p_patch` merges the changed top-level keys in the database, so a
+-- progress update only sends `{"progress_pct": 85}` over the wire. It is also
+-- atomic, so concurrent progress writes can't clobber each other.
+CREATE OR REPLACE FUNCTION patch_job_state(p_job_id TEXT, p_patch JSONB)
+RETURNS VOID LANGUAGE SQL AS $$
+    UPDATE jobs SET state = state || p_patch WHERE job_id = p_job_id;
+$$;
+
 -- Saved-fonts registry: fonts the user has explicitly kept.
 -- ON DELETE CASCADE: if a job row is hard-deleted the saved_fonts
 -- row disappears too; saved jobs are normally excluded from cleanup.

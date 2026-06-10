@@ -984,10 +984,14 @@ async function showAdjust(){
   onNameInput();
 }
 async function loadPreviewFont(){
-  // Unique family name per build to dodge the font cache.
+  // No ?v=<timestamp> cache-buster: the backend serves each build from a
+  // content-versioned, immutable URL, so re-previewing the same build is a
+  // cache hit (no re-download) while a genuine rebuild resolves to a fresh
+  // path automatically. The family name is still unique per load so the CSS
+  // engine doesn't paint with a stale decoded face.
   const fam='ClientFont_'+Date.now();
   previewFontFamily=fam;
-  const url=`${API}${otfUrl}?v=${Date.now()}`;
+  const url=`${API}${otfUrl}`;
   try{
     const ff=new FontFace(fam, `url(${url})`);
     await ff.load(); document.fonts.add(ff);
@@ -1040,7 +1044,7 @@ function downloadFont(){
   // for names with punctuation).
   const dl = (fontName.replace(/\s+/g,'_') || 'MyFont') + '.otf';
   const a=document.createElement('a');
-  a.href=`${API}${otfUrl}?v=${Date.now()}`;
+  a.href=`${API}${otfUrl}`;
   a.download=dl;
   document.body.appendChild(a); a.click(); a.remove();
 }
