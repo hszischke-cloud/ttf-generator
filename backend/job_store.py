@@ -81,8 +81,33 @@ class JobStore:
             return {}
         return res.data[0]["state"] or {}
 
+    # Whether the server-side `patch_job_state` RPC is available. None = not yet
+    # probed; True/False after the first call. Avoids re-attempting the RPC on
+    # every update once we've learned it isn't deployed.
+    _patch_rpc_ok: Optional[bool] = None
+
     def update_state(self, job_id: str, **kwargs) -> None:
-        """Merge kwargs into the job's JSONB state (top-level keys only)."""
+        """
+        Merge kwargs into the job's JSONB state (top-level keys only).
+
+        Prefers the server-side `patch_job_state` RPC, which merges only the
+        changed keys in the database — the job state blob carries every glyph's
+        svg_paths/pen_paths, so a Python-side read-modify-write round-trips
+        several MB just to bump progress_pct. Falls back to read-modify-write if
+        the RPC isn't deployed (e.g. schema.sql not re-run yet).
+        """
+        if JobStore._patch_rpc_ok is not False:
+            try:
+                supabase.rpc(
+                    "patch_job_state", {"p_job_id": job_id, "p_patch": kwargs}
+                ).execute()
+                JobStore._patch_rpc_ok = True
+                return
+            except Exception:
+                # Function missing (PGRST202) or other RPC failure: fall back
+                # and don't try the RPC again this process.
+                JobStore._patch_rpc_ok = False
+
         current = self.get_state(job_id)
         current.update(kwargs)
         supabase.table("jobs").update({"state": current}).eq("job_id", job_id).execute()
@@ -109,33 +134,56 @@ class JobStore:
     # Storage — font output files
     # ------------------------------------------------------------------
 
-    def upload_font_file(self, job_id: str, filename: str, data: bytes, content_type: str) -> str:
-        """Upload a font binary. Returns the storage path (not the full URL)."""
-        path = f"{job_id}/output/{filename}"
-        # cache-control "0" → the object is stored with `Cache-Control: max-age=0`
-        # so the storage CDN revalidates on every request. Font files are
-        # overwritten in place (upsert) on every rebuild — e.g. after a
-        # border/spacing edit — and the same {job_id}/output/{filename} path is
-        # reused. Without this, Supabase falls back to its default max-age=3600
-        # and the CDN keeps serving the pre-edit copy for up to an hour. The CDN
-        # keys its cache on the object PATH only and ignores query strings, so a
-        # `?v=<ts>` buster on the URL can't force a fresh fetch — the cache-control
-        # header is the only reliable way to guarantee a freshly built OTF (and
-        # its just-edited spacing/borders) is what actually gets downloaded.
+    def upload_font_file(
+        self,
+        job_id: str,
+        filename: str,
+        data: bytes,
+        content_type: str,
+        version: Optional[str] = None,
+    ) -> str:
+        """
+        Upload a font binary. Returns the storage path (not the full URL).
+
+        When *version* is given, the file is stored at a content-versioned path
+        ({job_id}/output/{version}/{filename}) with a long, immutable
+        Cache-Control. Because the path changes whenever the font bytes change
+        (the caller derives `version` from a hash of `data`), the browser/CDN
+        can cache each build forever and re-previewing the *same* build never
+        re-downloads. A genuinely new build lands on a fresh path and is fetched
+        once. This replaces the old in-place upsert + `cache-control: 0` scheme,
+        which forced a full re-download on every single preview.
+        """
+        if version:
+            path = f"{job_id}/output/{version}/{filename}"
+            cache_control = "public, max-age=31536000, immutable"
+        else:
+            # Legacy in-place path: the CDN keys on path only and ignores query
+            # strings, so cache-control "0" is the only way to avoid stale
+            # serving when the same path is overwritten on rebuild.
+            path = f"{job_id}/output/{filename}"
+            cache_control = "0"
         _retry(lambda: supabase.storage.from_(STORAGE_BUCKET).upload(
             path, data,
             file_options={"content-type": content_type, "upsert": "true",
-                          "cache-control": "0"},
+                          "cache-control": cache_control},
         ))
         return path
 
     def get_font_public_url(self, job_id: str, filename: str) -> str:
-        """Return the stable public URL for a font file."""
+        """Return the stable public URL for a legacy (unversioned) font file."""
         return _public_url(f"{job_id}/output/{filename}")
+
+    def public_url(self, path: str) -> str:
+        """Return the public Storage URL for an already-resolved storage path."""
+        return _public_url(path)
 
     def download_font_file(self, job_id: str, filename: str) -> Optional[bytes]:
         """Read a built font binary back from storage. Returns None if missing."""
-        path = f"{job_id}/output/{filename}"
+        return self.download_path(f"{job_id}/output/{filename}")
+
+    def download_path(self, path: str) -> Optional[bytes]:
+        """Read any storage object by its full path. Returns None if missing."""
         try:
             return supabase.storage.from_(STORAGE_BUCKET).download(path)
         except Exception:
@@ -145,13 +193,38 @@ class JobStore:
     # Cleanup
     # ------------------------------------------------------------------
 
+    def _list_files_recursive(self, prefix: str, depth: int = 3) -> list:
+        """
+        Return full paths of every object under *prefix*, descending into
+        subfolders. Font output now lives in content-versioned subfolders
+        ({job_id}/output/{version}/Name.otf), so a single non-recursive list of
+        {job_id}/output only yields folder placeholders and would leak the
+        actual objects on cleanup.
+        """
+        try:
+            entries = supabase.storage.from_(STORAGE_BUCKET).list(prefix)
+        except Exception:
+            return []
+        paths = []
+        for e in entries or []:
+            name = e.get("name")
+            if not name:
+                continue
+            child = f"{prefix}/{name}"
+            # Supabase marks real files with a populated `id`/`metadata`;
+            # folders come back with those unset. Recurse into folders.
+            if depth > 0 and e.get("id") is None and e.get("metadata") is None:
+                paths.extend(self._list_files_recursive(child, depth - 1))
+            else:
+                paths.append(child)
+        return paths
+
     def _delete_storage_files(self, job_id: str) -> None:
         """Remove all Storage objects for a job (best-effort)."""
         for prefix in [f"{job_id}/glyphs", f"{job_id}/output"]:
             try:
-                files = supabase.storage.from_(STORAGE_BUCKET).list(prefix)
-                if files:
-                    paths = [f"{prefix}/{f['name']}" for f in files]
+                paths = self._list_files_recursive(prefix)
+                if paths:
                     supabase.storage.from_(STORAGE_BUCKET).remove(paths)
             except Exception:
                 pass
