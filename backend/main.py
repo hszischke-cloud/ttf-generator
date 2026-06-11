@@ -23,7 +23,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
@@ -38,7 +38,7 @@ from font_registry import (
 )
 from job_store import job_store
 from models import (
-    DrawGlyphRequest,
+    DrawGlyphBatchRequest, DrawGlyphRequest,
     FinalizeRequest, FinalizeResponse,
     GlyphInfo, GlyphsResponse,
     JobStatus, JobStatusResponse,
@@ -140,22 +140,13 @@ async def draw_create():
     return {"job_id": job_id}
 
 
-@app.post("/draw/{job_id}/glyph")
-async def draw_submit_glyph(job_id: str, req: DrawGlyphRequest):
-    """Save one drawn glyph. Upserts on glyph_id."""
-    _require_job(job_id)
-    state = job_store.get_state(job_id)
-    if state.get("status") != "awaiting_review":
-        raise HTTPException(409, "Job is not in awaiting_review state")
-
-    job_store.upload_glyph_png(job_id, req.glyph_id, base64.b64decode(req.thumbnail_png_b64))
-
-    manifest = state.get("glyph_manifest", [])
-    entry = {
+def _manifest_entry(req: DrawGlyphRequest, thumb_path: Optional[str]) -> dict:
+    return {
         "glyph_id": req.glyph_id,
         "char": req.char,
         "slot": req.slot,
         "has_glyph": True,
+        "thumb_path": thumb_path,
         "svg_paths": req.svg_paths,
         "pen_paths": req.pen_paths,
         "svg_width": req.svg_width,
@@ -172,62 +163,103 @@ async def draw_submit_glyph(job_id: str, req: DrawGlyphRequest):
         "pen_size": req.pen_size,
         "pen_color": req.pen_color,
     }
-    manifest = [e for e in manifest if e["glyph_id"] != req.glyph_id]
-    manifest.append(entry)
+
+
+def _save_glyphs(job_id: str, glyphs: List[DrawGlyphRequest]) -> int:
+    """Upload thumbnails (in parallel) and merge entries into the manifest.
+
+    One state read + one state write regardless of how many glyphs arrive —
+    the manifest carries every glyph's svg/pen paths, so per-glyph
+    read-modify-write made submission O(n²) in transferred bytes.
+    """
+    state = job_store.get_state(job_id)
+    if not state:
+        raise HTTPException(404, "Job not found")
+    if state.get("status") != "awaiting_review":
+        raise HTTPException(409, "Job is not in awaiting_review state")
+
+    def _upload(g: DrawGlyphRequest) -> Tuple[str, Optional[str]]:
+        if not g.thumbnail_png_b64:
+            return g.glyph_id, None
+        path = job_store.upload_glyph_png(
+            job_id, g.glyph_id, base64.b64decode(g.thumbnail_png_b64))
+        return g.glyph_id, path
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        thumb_paths = dict(ex.map(_upload, glyphs))
+
+    new_ids = {g.glyph_id for g in glyphs}
+    manifest = [e for e in state.get("glyph_manifest", [])
+                if e["glyph_id"] not in new_ids]
+    manifest.extend(_manifest_entry(g, thumb_paths.get(g.glyph_id)) for g in glyphs)
     job_store.update_state(job_id, glyph_manifest=manifest)
+    return len(glyphs)
+
+
+@app.post("/draw/{job_id}/glyph")
+async def draw_submit_glyph(job_id: str, req: DrawGlyphRequest):
+    """Save one drawn glyph. Upserts on glyph_id. (Legacy — prefer the batch.)"""
+    await run_in_threadpool(_save_glyphs, job_id, [req])
     return {"ok": True}
+
+
+@app.post("/draw/{job_id}/glyphs/batch")
+async def draw_submit_glyphs_batch(job_id: str, req: DrawGlyphBatchRequest):
+    """Save many drawn glyphs in one round trip. Upserts on glyph_id."""
+    if not req.glyphs:
+        return {"ok": True, "count": 0}
+    count = await run_in_threadpool(_save_glyphs, job_id, req.glyphs)
+    return {"ok": True, "count": count}
 
 
 @app.get("/process/{job_id}/status", response_model=JobStatusResponse)
 async def get_status(job_id: str):
-    _require_job(job_id)
-    state = job_store.get_state(job_id)
+    # Polled every 1–2 s by the UIs: fetch only the status fields instead of
+    # the full state blob (which carries every glyph's svg/pen paths).
+    fields = await run_in_threadpool(
+        job_store.get_state_fields, job_id,
+        ["status", "progress_pct", "error_message", "fea_warning",
+         "line_skipped_glyphs", "has_line_font"],
+    )
+    if fields is None:
+        raise HTTPException(404, "Job not found")
     return JobStatusResponse(
         job_id=job_id,
-        status=JobStatus(state.get("status", "pending")),
-        progress_pct=state.get("progress_pct", 0),
-        error_message=state.get("error_message"),
-        fea_warning=state.get("fea_warning"),
-        line_skipped_glyphs=state.get("line_skipped_glyphs", []),
-        has_line_font=state.get("has_line_font", False),
+        status=JobStatus(fields.get("status") or "pending"),
+        progress_pct=fields.get("progress_pct") or 0,
+        error_message=fields.get("error_message"),
+        fea_warning=fields.get("fea_warning"),
+        line_skipped_glyphs=fields.get("line_skipped_glyphs") or [],
+        has_line_font=bool(fields.get("has_line_font")),
     )
+
+
+def _thumb_url(job_id: str, entry: dict) -> str:
+    """Public CDN URL for a glyph thumbnail (versioned path when available)."""
+    path = entry.get("thumb_path") or f"{job_id}/glyphs/{entry['glyph_id']}.png"
+    return job_store.public_url(path)
 
 
 @app.get("/process/{job_id}/glyphs", response_model=GlyphsResponse)
 async def get_glyphs(job_id: str):
-    _require_job(job_id)
-    state = job_store.get_state(job_id)
+    state = await run_in_threadpool(_get_state, job_id)
 
     if state.get("status") != "awaiting_review":
         raise HTTPException(409, "Glyphs not ready yet")
 
-    manifest = state.get("glyph_manifest", [])
-
-    # Download every glyph thumbnail concurrently. Each download is an
-    # independent, blocking Supabase Storage round-trip; doing them serially
-    # made this endpoint scale linearly with glyph count (130+ glyphs × storage
-    # latency = tens of seconds). Fanning out across a thread pool collapses
-    # that to roughly a single round-trip's latency. Order is preserved by
-    # mapping over the manifest.
-    def _fetch(entry):
-        return entry, job_store.download_glyph_png(job_id, entry["glyph_id"])
-
-    def _fetch_all():
-        with ThreadPoolExecutor(max_workers=16) as ex:
-            return list(ex.map(_fetch, manifest))
-
-    pngs = await run_in_threadpool(_fetch_all)
-
+    # Thumbnails are served as public CDN URLs — the browser fetches them in
+    # parallel (and caches them), so this endpoint no longer downloads and
+    # base64-proxies every PNG through the backend.
     glyph_infos = [
         GlyphInfo(
             glyph_id=entry["glyph_id"],
             char=entry["char"],
             slot=entry["slot"],
-            image_b64=base64.b64encode(png).decode(),
+            image_url=_thumb_url(job_id, entry),
             accepted=True,
         )
-        for entry, png in pngs
-        if png is not None
+        for entry in state.get("glyph_manifest", [])
+        if entry.get("has_glyph")
     ]
 
     return GlyphsResponse(job_id=job_id, glyphs=glyph_infos, alignment_warnings=[])
@@ -235,10 +267,12 @@ async def get_glyphs(job_id: str):
 
 @app.post("/process/{job_id}/finalize", response_model=FinalizeResponse)
 async def finalize(job_id: str, req: FinalizeRequest, background_tasks: BackgroundTasks):
-    _require_job(job_id)
-    state = job_store.get_state(job_id)
+    fields = await run_in_threadpool(
+        job_store.get_state_fields, job_id, ["status"])
+    if fields is None:
+        raise HTTPException(404, "Job not found")
 
-    if state.get("status") not in ("awaiting_review", "complete", "error"):
+    if fields.get("status") not in ("awaiting_review", "complete", "error"):
         raise HTTPException(409, "Job is not in review state")
 
     font_name = req.font_name.strip() or "MyHandwritingFont"
@@ -286,19 +320,23 @@ async def proof_sheet(job_id: str, font: str = "line"):
     while its last-built OTF is still on disk — the proof should still render
     it instead of failing with "Font not ready yet".
     """
-    _require_job(job_id)
-    state = job_store.get_state(job_id)
+    state = await run_in_threadpool(
+        job_store.get_state_fields, job_id,
+        ["font_name", "line_skipped_glyphs", "has_line_font", "status", "font_files"],
+    )
+    if state is None:
+        raise HTTPException(404, "Job not found")
 
     from processing.proof_sheet import render_proof_svg
 
-    font_name = state.get("font_name", "Font")
+    font_name = state.get("font_name") or "Font"
     safe_name = font_name.replace(" ", "_")
     is_line = font == "line"
 
     if is_line:
         filename = f"{safe_name}-Line.otf"
         title = f"{font_name} — Line (single-line proof)"
-        skipped = state.get("line_skipped_glyphs", [])
+        skipped = state.get("line_skipped_glyphs") or []
     else:
         filename = f"{safe_name}.otf"
         title = f"{font_name} — Regular (proof)"
@@ -348,8 +386,10 @@ def _resolve_font_path(state: dict, job_id: str, filename: str) -> str:
 
 @app.get("/fonts/{job_id}/{filename}")
 async def serve_font(job_id: str, filename: str, request: Request):
-    _require_job(job_id)
-    state = job_store.get_state(job_id)
+    state = await run_in_threadpool(
+        job_store.get_state_fields, job_id, ["status", "font_files"])
+    if state is None:
+        raise HTTPException(404, "Job not found")
 
     if state.get("status") != "complete":
         raise HTTPException(202, "Font not ready yet")
@@ -372,8 +412,7 @@ async def serve_font(job_id: str, filename: str, request: Request):
 @app.post("/fonts/save/{job_id}")
 async def save_font(job_id: str):
     """Add a completed font to the persistent saved-fonts registry."""
-    _require_job(job_id)
-    state = job_store.get_state(job_id)
+    state = await run_in_threadpool(_get_state, job_id)
     if state.get("status") != "complete":
         raise HTTPException(409, "Font must be complete before saving")
     manifest = state.get("glyph_manifest", [])
@@ -394,21 +433,21 @@ async def save_font(job_id: str):
 @app.get("/fonts/saved")
 async def list_saved_fonts():
     """Return all fonts the user has explicitly saved."""
-    fonts = registry_list_fonts()
-    # Annotate with whether the job directory still exists on disk, and whether
-    # a single-line OTF was built (so the UI can offer line proof/download).
-    annotated = []
-    for f in fonts:
-        exists = job_store.job_exists(f["job_id"])
-        has_line_font = False
-        if exists:
-            has_line_font = bool(
-                job_store.get_state(f["job_id"]).get("has_line_font", False)
-            )
-        annotated.append(
-            {**f, "job_exists": exists, "has_line_font": has_line_font}
-        )
-    return {"fonts": annotated}
+    def _annotate():
+        fonts = registry_list_fonts()
+        # Annotate with whether the job still exists, and whether a single-line
+        # OTF was built (so the UI can offer line proof/download). One small
+        # field-select per font — never the full multi-MB state blob.
+        annotated = []
+        for f in fonts:
+            fields = job_store.get_state_fields(f["job_id"], ["has_line_font"])
+            annotated.append({
+                **f,
+                "job_exists": fields is not None,
+                "has_line_font": bool(fields and fields.get("has_line_font")),
+            })
+        return annotated
+    return {"fonts": await run_in_threadpool(_annotate)}
 
 
 @app.delete("/fonts/saved/{job_id}")
@@ -423,13 +462,16 @@ async def remove_saved_font(job_id: str):
 @app.post("/process/{job_id}/reopen")
 async def reopen_job(job_id: str):
     """Re-open a completed job for editing (sets status back to awaiting_review)."""
-    _require_job(job_id)
-    state = job_store.get_state(job_id)
-    status = state.get("status")
+    fields = await run_in_threadpool(
+        job_store.get_state_fields, job_id, ["status"])
+    if fields is None:
+        raise HTTPException(404, "Job not found")
+    status = fields.get("status")
     if status not in ("complete", "error", "awaiting_review"):
         raise HTTPException(409, f"Cannot reopen job in state '{status}'")
     if status != "awaiting_review":
-        job_store.update_state(job_id, status="awaiting_review")
+        await run_in_threadpool(
+            lambda: job_store.update_state(job_id, status="awaiting_review"))
     return {"ok": True}
 
 
@@ -442,8 +484,7 @@ async def get_pen_paths(job_id: str):
     geometric metadata, and the base64 thumbnail PNG — so the frontend can
     re-submit unmodified glyphs exactly as they were built originally.
     """
-    _require_job(job_id)
-    state = job_store.get_state(job_id)
+    state = await run_in_threadpool(_get_state, job_id)
     manifest = state.get("glyph_manifest", [])
     mode = (
         "cursive"
@@ -454,8 +495,6 @@ async def get_pen_paths(job_id: str):
     for entry in manifest:
         if not entry.get("has_glyph"):
             continue
-        png = job_store.download_glyph_png(job_id, entry["glyph_id"])
-        img_b64 = base64.b64encode(png).decode() if png else None
         glyphs.append({
             "glyph_id":      entry["glyph_id"],
             "char":          entry["char"],
@@ -475,7 +514,9 @@ async def get_pen_paths(job_id: str):
             "pen_tool":      entry.get("pen_tool", "pen"),
             "pen_size":      entry.get("pen_size", 14),
             "pen_color":     entry.get("pen_color", [38, 32, 28]),
-            "image_b64":     img_b64,
+            # Thumbnails come from the public CDN now — no per-glyph storage
+            # download (this loop used to be serial and dominated load time).
+            "image_url":     _thumb_url(job_id, entry),
         })
     return {
         "job_id":    job_id,
@@ -495,8 +536,7 @@ async def get_bearings(job_id: str):
     paths, geometry, the px↔UPM scale, and the current (override or default)
     lsb/rsb so the editor can render draggable left/right bearing lines.
     """
-    _require_job(job_id)
-    state = job_store.get_state(job_id)
+    state = await run_in_threadpool(_get_state, job_id)
     manifest = state.get("glyph_manifest", [])
     overrides = state.get("glyph_bearings", {}) or {}
     mode = (
@@ -516,8 +556,6 @@ async def get_bearings(job_id: str):
         upf = entry.get("upscale_factor", 1.0) or 1.0
         def_lsb, def_rsb = default_bearings_upm(svg_w, upf)
         ov = overrides.get(gid)
-        png = job_store.download_glyph_png(job_id, gid)
-        img_b64 = base64.b64encode(png).decode() if png else None
         glyphs.append({
             "glyph_id":      gid,
             "char":          entry["char"],
@@ -534,7 +572,7 @@ async def get_bearings(job_id: str):
             "lsb":           int(ov["lsb"]) if ov else def_lsb,
             "rsb":           int(ov["rsb"]) if ov else def_rsb,
             "is_override":   bool(ov),
-            "image_b64":     img_b64,
+            "image_url":     _thumb_url(job_id, entry),
         })
 
     return {
@@ -551,18 +589,43 @@ async def get_bearings(job_id: str):
     }
 
 
+@app.get("/process/{job_id}/bearings/auto")
+async def get_auto_bearings(job_id: str, tightness: int = 0):
+    """
+    Suggest perceived-width-equalizing side bearings for every iso glyph.
+
+    Pure analysis of the stored outlines (HT-Letterspacer-style optical margin
+    measurement; see processing/autospace.py) — nothing is persisted. The
+    border editor presents these in its editable lsb/rsb fields and the user
+    decides whether to apply them via the normal finalize flow. `tightness`
+    biases every suggestion looser (+) or tighter (−), in UPM.
+    """
+    state = await run_in_threadpool(_get_state, job_id)
+    manifest = state.get("glyph_manifest", [])
+
+    from processing.autospace import compute_auto_bearings
+    bearings = await run_in_threadpool(
+        compute_auto_bearings, manifest, tightness)
+    return {"job_id": job_id, "bearings": bearings}
+
+
 @app.get("/process/{job_id}/settings")
 async def get_job_settings(job_id: str):
     """Return font-build settings needed to re-finalize an existing job."""
-    _require_job(job_id)
-    state = job_store.get_state(job_id)
+    fields = await run_in_threadpool(
+        job_store.get_state_fields, job_id,
+        ["font_name", "font_style", "approved_glyph_ids",
+         "letter_spacing", "space_width", "has_line_font"],
+    )
+    if fields is None:
+        raise HTTPException(404, "Job not found")
     return {
-        "font_name":          state.get("font_name", ""),
-        "font_style":         state.get("font_style", "Regular"),
-        "approved_glyph_ids": state.get("approved_glyph_ids", []),
-        "letter_spacing":     state.get("letter_spacing", 0),
-        "space_width":        state.get("space_width", 600),
-        "has_line_font":      state.get("has_line_font", False),
+        "font_name":          fields.get("font_name") or "",
+        "font_style":         fields.get("font_style") or "Regular",
+        "approved_glyph_ids": fields.get("approved_glyph_ids") or [],
+        "letter_spacing":     fields.get("letter_spacing") or 0,
+        "space_width":        fields.get("space_width") or 600,
+        "has_line_font":      bool(fields.get("has_line_font")),
     }
 
 
@@ -831,6 +894,14 @@ def _build_font_job(job_id: str):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _require_job(job_id: str):
-    if not job_store.job_exists(job_id):
+def _get_state(job_id: str) -> dict:
+    """Fetch the full job state, 404ing if the job doesn't exist.
+
+    One query instead of the old job_exists + get_state pair. Only for
+    endpoints that genuinely need the whole blob (glyph manifest access);
+    everything else should use job_store.get_state_fields.
+    """
+    state = job_store.get_state(job_id)
+    if not state:
         raise HTTPException(404, "Job not found")
+    return state
