@@ -1432,10 +1432,13 @@ async function downloadFont(fmt, line) {
 
 const DRAW_W = 300, DRAW_H = 400;
 const GUIDELINES = {
-  cap:       DRAW_H * 0.15,
-  xheight:   DRAW_H * 0.42,
-  baseline:  DRAW_H * 0.72,   // → baseline_y sent to backend
-  descender: DRAW_H * 0.90,
+  cap:       DRAW_H * 0.15,   // 60
+  xheight:   DRAW_H * 0.42,   // 168
+  baseline:  DRAW_H * 0.72,   // 288 → baseline_y sent to backend
+  // 380 — sits low so j/g/y tails get real room (92px below baseline).
+  // Must match GUIDELINE_BOTTOM_RATIO in font_builder.py: the font's
+  // vertical metrics are derived from it so descenders render unclipped.
+  descender: DRAW_H * 0.95,
 };
 
 // ── Drawing engine constants ──────────────────────────────────

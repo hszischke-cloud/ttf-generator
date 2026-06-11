@@ -22,19 +22,17 @@ from fontTools.ttLib import TTFont
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.boundsPen import ControlBoundsPen
 
-from processing.font_builder import CHAR_TO_GLYPH_NAME
+from processing.font_builder import (
+    ASCENDER, CAP_INK_UPM, CHAR_TO_GLYPH_NAME, DESCENDER, UPM, X_HEIGHT,
+)
 
 # glyph base name -> codepoint, so digit/punctuation names (e.g. "zero",
 # "period") can be categorised and ordered even when not present in cmap.
 _NAME_TO_CP: Dict[str, int] = {name: ord(ch) for ch, name in CHAR_TO_GLYPH_NAME.items()}
 
-# Vertical metrics (UPM space) — mirror font_builder so the guides line up with
-# how glyphs were actually placed.
-UPM = 1000
-ASCENDER = 800
-CAP_HEIGHT = 700
-X_HEIGHT = 368
-DESCENDER = -221
+# Cap guide for the proof: where cap-line ink actually lands (real canvas
+# mapping), not the nominal CAP_HEIGHT the scale is derived from.
+CAP_HEIGHT = CAP_INK_UPM
 
 # Cell geometry (px in the output SVG).
 SCALE = 0.14                      # px per font unit

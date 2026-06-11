@@ -153,7 +153,7 @@ Guideline ratios (fraction of cell height from top):
   CAP line:       0.15
   x-height:       0.42
   baseline:       0.72
-  descender:      0.90
+  descender:      0.95
 
 Guide gutter (left, excluded from extraction): 3.5 mm
 Registration markers: 8 mm diameter, 4 mm from page edge (4 corners)
@@ -195,8 +195,9 @@ Per cell: crop to CAP→descender lines, exclude 3.5 mm left gutter + 8px inset
 ### Font Builder (`font_builder.py`)
 **UPM = 1000.** Constants derived from TEMPLATE_SPEC ratios:
 ```
-ASCENDER = 800, CAP_HEIGHT = 700
-X_HEIGHT ≈ 368, DESCENDER ≈ -221
+ASCENDER = 1050, DESCENDER ≈ -450 (line box)
+CAP ink ≈ 991, X_HEIGHT ≈ 522 (real canvas mapping)
+usWinAscent/Descent = 1280/520 (clip-safe over the whole canvas)
 ```
 
 Coordinate transform (SVG → font space):
