@@ -51,7 +51,6 @@
     font-size: 20px; font-weight: 400; color: var(--brown); letter-spacing: 0.01em;
   }
   .site-nav .brand { cursor: pointer; }
-  .site-nav .nav-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
 
   /* signature "o" dot — coloured circle peeking through the counter */
   .odot{position:relative; display:inline-block; z-index:0;}
@@ -695,10 +694,6 @@
 
 <nav class="site-nav">
   <div class="brand" onclick="goHome()" title="Back to the dashboard">snailmail.ec<span class="odot odot--teal">o</span></div>
-  <div class="nav-actions">
-    <button class="btn btn-outline btn-sm" onclick="goHome()">My fonts</button>
-    <button class="btn btn-primary btn-sm" onclick="goNewFont()">＋ New font</button>
-  </div>
 </nav>
 
 <!-- ===================== DASHBOARD ===================== -->
@@ -3405,15 +3400,6 @@ function renderSavedFonts(fonts) {
 
 // ── Dashboard nav helpers ──────────────────────────────────
 
-// Topbar "+ New font": land on the dashboard and bring the create cards
-// into view (they're the first section, but the user may be mid-flow).
-function goNewFont() {
-  goHome();
-  setTimeout(() => {
-    document.getElementById('create-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, 80);
-}
-
 // Copy the guided-creator URL for sharing with clients. API is '' when the
 // page is served by the backend (same origin); in local dev it points at
 // the backend explicitly, so resolve against it rather than this page.
@@ -4223,6 +4209,19 @@ loadSavedFonts();
 // this page is served by the backend itself, so the relative href works).
 const _createLink = document.getElementById('open-create-link');
 if (_createLink) _createLink.href = createUrl();
+
+// /create is the client-facing entry point: skip the dashboard and land
+// straight on a fresh print-font canvas — or this device's unfinished
+// draft, so a client who closed the tab mid-drawing picks up where they
+// left off. (/ui keeps the dashboard as its home.)
+if (window.location.pathname.replace(/\/+$/, '').endsWith('/create')) {
+  const _draft = loadDraft();
+  if (_draft && draftGlyphCount(_draft)) {
+    resumeDraft();
+  } else {
+    startDrawMode('print');
+  }
+}
 </script>
 </body>
 </html>
