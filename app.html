@@ -4223,6 +4223,19 @@ loadSavedFonts();
 // this page is served by the backend itself, so the relative href works).
 const _createLink = document.getElementById('open-create-link');
 if (_createLink) _createLink.href = createUrl();
+
+// /create is the client-facing entry point: skip the dashboard and land
+// straight on a fresh print-font canvas — or this device's unfinished
+// draft, so a client who closed the tab mid-drawing picks up where they
+// left off. (/ui keeps the dashboard as its home.)
+if (window.location.pathname.replace(/\/+$/, '').endsWith('/create')) {
+  const _draft = loadDraft();
+  if (_draft && draftGlyphCount(_draft)) {
+    resumeDraft();
+  } else {
+    startDrawMode('print');
+  }
+}
 </script>
 </body>
 </html>
