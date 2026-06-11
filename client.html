@@ -243,7 +243,7 @@ input[type=range]::-moz-range-thumb{ width:24px; height:24px; border-radius:50%;
   <div class="prompt">
     <div class="glyph" id="prompt-glyph">A</div>
     <div class="name" id="prompt-name">capital A</div>
-    <div class="alt-chip" id="prompt-alt" style="display:none">Alternate: write it a little differently</div>
+    <div class="alt-chip" id="prompt-alt" style="display:none">Alternate</div>
   </div>
 
   <div class="canvas-stage">
@@ -420,9 +420,9 @@ function glyphIdFor(char, slot){
 // hints in particular fix the recurring em/en placement confusion.
 const HINTS = {
   '-': 'A short bar sitting on the <strong>middle line</strong>.',
-  '–': 'En dash: a little <strong>longer than a hyphen</strong>, centred on the <strong>middle line</strong>.',
-  '—': 'Em dash: the <strong>longest</strong> dash. Draw a wide bar on the <strong>middle line</strong>, nearly cell-width.',
-  '_': 'Underscore: a flat bar <strong>on the baseline</strong> (the solid line).',
+  '–': 'En dash. A little <strong>longer than a hyphen</strong>, centred on the <strong>middle line</strong>.',
+  '—': 'Em dash. The <strong>longest</strong> dash. Draw a wide bar on the <strong>middle line</strong>, nearly cell-width.',
+  '_': 'Underscore. A flat bar <strong>on the baseline</strong> (the solid line).',
   '.': 'A single dot resting <strong>on the baseline</strong>.',
   ',': 'A comma <strong>on the baseline</strong> with a small tail dipping below it.',
   ';': 'A dot on the baseline with a tail below, like a comma stacked under a dot.',
@@ -916,7 +916,7 @@ async function finishDrawing(){
     const chips=missingChars.map(ch=>`<span onclick="jumpTo('${ch.replace(/'/g,"\\'")}')">${ch==='<'?'&lt;':ch==='>'?'&gt;':ch}</span>`).join('');
     seqIndex=miss; renderPrompt();
     showBanner('draw-warn',
-      'A few required characters still need drawing. Tap one to jump to it:'+
+      'A few required characters still need drawing. Tap one to jump to it.'+
       '<div class="missing-list">'+chips+'</div>');
     return;
   }
