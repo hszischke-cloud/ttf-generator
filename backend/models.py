@@ -68,18 +68,19 @@ class FinalizeRequest(BaseModel):
     # overrides in job state are preserved (so a plain spacing re-finalize
     # doesn't wipe out border adjustments).
     glyph_bearings: Optional[Dict[str, GlyphBearing]] = None
-    # Pen rendering style for the dimensional OTF: "classic" (brush-outline
-    # polygons captured from the canvas, the original look) or "realistic"
-    # (re-strokes every glyph's pen_paths with the realistic-ink model —
-    # speed/pressure width dynamics, ink pooling, round caps, liquid Bézier
-    # edges). None preserves whatever the job already has, so spacing/border
-    # re-finalizes never silently flip the pen.
+    # Pen weight for the dimensional OTF. Every font is inked with the
+    # realistic-ink stroker (speed/pressure width dynamics, ink pooling,
+    # round caps, liquid Bézier edges); the style only picks the weight:
+    # "realistic" (fine, true to the drawn pen size) or "realistic-bold"
+    # (slightly thicker tip). Legacy values ("classic") are coerced to
+    # "realistic". None preserves whatever the job already has, so
+    # spacing/border re-finalizes never silently flip the weight.
     pen_style: Optional[str] = None
 
 
 class PenStyleRequest(BaseModel):
-    """Switch a built job's pen style and rebuild with its stored settings."""
-    pen_style: str  # "classic" | "realistic"
+    """Switch a built job's pen weight and rebuild with its stored settings."""
+    pen_style: str  # "realistic" | "realistic-bold"
 
 
 class FinalizeResponse(BaseModel):

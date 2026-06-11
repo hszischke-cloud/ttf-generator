@@ -5,25 +5,29 @@
 > `client.html`, Supabase-backed `job_store.py`, no photo upload). Trust the
 > code over this doc where they disagree.
 
-## Pen styles (dimensional OTF)
-Every glyph stores both `svg_paths` (classic canvas brush polygons) and
-`pen_paths` (raw centerline strokes, points `[x, y, pressure, t_ms]`; legacy
-`[x, y]` still supported). The job-state field `pen_style` picks how the
-dimensional OTF is inked at build time:
+## Pen weights (dimensional OTF)
+Every glyph stores `pen_paths` (raw centerline strokes, points
+`[x, y, pressure, t_ms]`; legacy `[x, y]` still supported) plus `svg_paths`
+(legacy canvas brush polygons, kept only as a fallback for glyphs whose
+pen_paths can't be stroked). At build time `processing/pen_realistic.py`
+ALWAYS re-strokes each glyph's `pen_paths` with an ink-dynamics model:
+speed/pressure width modulation, ink pooling at corners/dwell points, round
+tip caps, blob starts, flick tails, Bézier liquid edges with paper-fibre
+notches. The UPM-space perturb/divot pass is permanently off (the stroker
+owns the edge texture). Deterministic per glyph_id.
 
-- `classic` — uses stored `svg_paths` verbatim + UPM-space perturb/divots
-  (the original look, byte-identical to before the feature existed).
-- `realistic` — `processing/pen_realistic.py` re-strokes each glyph's
-  `pen_paths` with an ink-dynamics model: speed/pressure width modulation,
-  ink pooling at corners/dwell points, round tip caps, blob starts, flick
-  tails, Bézier liquid edges with paper-fibre notches. Perturb is disabled
-  (the stroker owns the edge texture). Deterministic per glyph_id.
+The job-state field `pen_style` picks only the WEIGHT:
+- `realistic` — fine, true to the drawn pen size (default).
+- `realistic-bold` — same model with the tip scaled by `BOLD_WIDTH_SCALE`
+  (1.35); the whole model scales so it pools/caps like a fatter pen.
+- legacy values (`classic`, missing) are coerced to `realistic` by
+  `_normalize_pen_style` in main.py.
 
 Switching is lossless both ways (`POST /process/{job_id}/pen-style`, rebuilds
-with stored settings; advances are identical across styles so layout never
-shifts). `FinalizeRequest.pen_style=None` preserves the job's current style.
-UIs: pen selector on the draw screens, toggle on the download page and per
-saved font.
+with stored settings; advances are identical across weights so layout never
+shifts). `FinalizeRequest.pen_style=None` preserves the job's current weight.
+UIs: Fine/Bold selector on the draw screens (canvas previews the full ink
+model live), toggle on the download page and per saved font.
 
 ## Project Overview
 Handwriting-to-font web app. User draws characters on a canvas, reviews

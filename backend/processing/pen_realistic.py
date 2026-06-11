@@ -91,6 +91,11 @@ OUTLINE_DP_EPSILON = 0.18     # px — simplification before Bézier fitting
 LINEARIZE_EPSILON = 0.1
 CAP_STEPS = 6                 # semicircular cap segments (30° each)
 
+# The "bold" pen weight: same ink model, slightly thicker tip. Applied as a
+# pen-size multiplier so every dynamic (pooling lengths, caps, texture
+# wavelengths) scales together like a genuinely fatter pen.
+BOLD_WIDTH_SCALE = 1.35
+
 
 # ── Deterministic 1D value noise ────────────────────────────────────────────
 
@@ -498,18 +503,23 @@ def realistic_glyph_outlines(
     pen_paths: Sequence[Sequence[Sequence[float]]],
     pen_size: float = 6.0,
     seed_key: str = "",
+    width_scale: float = 1.0,
 ) -> List[str]:
     """
     Convert one glyph's raw pen strokes into realistic-ink outline paths.
 
+    `width_scale` picks the pen weight (1.0 = fine, BOLD_WIDTH_SCALE = bold);
+    it scales the whole ink model, not just the offsets, so a bold stroke
+    pools, caps and textures like a genuinely thicker pen.
+
     Returns a list of closed SVG path strings (one per stroke) in the same
     canvas coordinate space as the stroke points. Returns [] when nothing
-    could be stroked — callers should fall back to the stored classic
+    could be stroked — callers should fall back to the stored legacy
     svg_paths in that case.
     """
     if not pen_paths:
         return []
-    pen_size = max(1.5, float(pen_size or 6.0))
+    pen_size = max(1.5, float(pen_size or 6.0) * float(width_scale or 1.0))
     base_seed = _seed_int(seed_key or "glyph")
     out: List[str] = []
     for idx, stroke in enumerate(pen_paths):

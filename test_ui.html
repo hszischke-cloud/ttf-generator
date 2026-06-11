@@ -659,14 +659,14 @@
         <div class="draw-slot-tabs" id="draw-slot-tabs"></div>
       </div>
 
-      <!-- Pen style: how the finished OTF is inked. Classic = original brush
-           outline; Realistic = backend re-strokes each pen track with ink
-           dynamics (pooling, round tips, tapered lifts, liquid edges). -->
+      <!-- Pen weight. Every font is inked with the realistic pen (speed/
+           pressure width dynamics, pooling, round tips, liquid edges);
+           this only picks fine vs slightly-thicker. -->
       <div class="panel-section">
         <span class="panel-label">Pen</span>
         <div class="tool-btns">
-          <button class="tool-btn" id="pen-style-classic-btn" onclick="setPenStyle('classic')" title="The original brush look — exactly the shape you draw">Classic</button>
-          <button class="tool-btn" id="pen-style-realistic-btn" onclick="setPenStyle('realistic')" title="Ultra-real ink: width follows your pen speed, ink pools at corners and stops, fast lifts leave thin flick tails">Realistic ink</button>
+          <button class="tool-btn" id="pen-style-fine-btn" onclick="setPenStyle('realistic')" title="Realistic ink, true to your drawn pen size">Fine</button>
+          <button class="tool-btn" id="pen-style-bold-btn" onclick="setPenStyle('realistic-bold')" title="Realistic ink with a slightly thicker tip">Bold</button>
         </div>
         <div id="pen-style-hint" style="font-size:11px;color:var(--ink-light);margin-top:2px;"></div>
       </div>
@@ -776,11 +776,11 @@
       Letter spacing is fixed to 0 in cursive — adjusting it would break the connections between letters.
     </div>
     <div class="slider-row" id="pen-style-dl-row">
-      <label>Pen style</label>
-      <span class="slider-hint">Realistic ink re-draws every letter with true pen dynamics — ink pooling at corners and stops, round tips, thin flick tails, liquid edges. Switching rebuilds the font and you can switch back anytime.</span>
+      <label>Pen weight</label>
+      <span class="slider-hint">Every letter is inked with the realistic pen — pooling at corners and stops, round tips, thin flick tails, liquid edges. Bold re-inks slightly thicker. Switching rebuilds the font and you can switch back anytime; spacing never shifts.</span>
       <div class="slider-track" style="gap:8px;">
-        <button class="tool-btn" id="pen-style-classic-dl" onclick="applyPenStyle('classic')">Classic</button>
-        <button class="tool-btn" id="pen-style-realistic-dl" onclick="applyPenStyle('realistic')">Realistic ink</button>
+        <button class="tool-btn" id="pen-style-fine-dl" onclick="applyPenStyle('realistic')">Fine</button>
+        <button class="tool-btn" id="pen-style-bold-dl" onclick="applyPenStyle('realistic-bold')">Bold</button>
       </div>
     </div>
   </div>
@@ -1071,7 +1071,7 @@ async function finalize() {
         // startDrawMode(), so a fresh font still builds at default spacing.
         letter_spacing: parseInt(document.getElementById('letter-spacing').value) || 0,
         space_width: parseInt(document.getElementById('space-width').value) || 600,
-        pen_style: fontSettings.penStyle || 'classic',
+        pen_style: fontSettings.penStyle || 'realistic',
       }),
     });
     if (!res.ok) {
@@ -1079,7 +1079,7 @@ async function finalize() {
       throw new Error(body.detail || 'Finalize failed');
     }
 
-    currentPenStyle = fontSettings.penStyle || 'classic';
+    currentPenStyle = fontSettings.penStyle || 'realistic';
     document.getElementById('generate-btn').textContent = 'Building your font…';
     pollTimer = setInterval(poll, 1200);
   } catch(e) {
@@ -1212,16 +1212,16 @@ function openProofSheet(which) {
 // re-downloading with untouched sliders used to silently rebuild both OTFs.
 let lastBuiltSpacing = null;
 
-// Pen style of the current job's last build — drives the download-page
+// Pen weight of the current job's last build — drives the download-page
 // toggle. Finalize/settings keep it in sync.
-let currentPenStyle = 'classic';
+let currentPenStyle = 'realistic';
 
 function updateDlPenButtons() {
-  const c = document.getElementById('pen-style-classic-dl');
-  const r = document.getElementById('pen-style-realistic-dl');
-  if (!c || !r) return;
-  c.classList.toggle('active-tool', currentPenStyle !== 'realistic');
-  r.classList.toggle('active-tool', currentPenStyle === 'realistic');
+  const f = document.getElementById('pen-style-fine-dl');
+  const b = document.getElementById('pen-style-bold-dl');
+  if (!f || !b) return;
+  f.classList.toggle('active-tool', currentPenStyle !== 'realistic-bold');
+  b.classList.toggle('active-tool', currentPenStyle === 'realistic-bold');
 }
 
 // Poll the current job until the build settles. Shared by the pen-style
@@ -1239,13 +1239,13 @@ function waitForJobComplete(id) {
   });
 }
 
-// Switch the current job's pen style (download page toggle) and rebuild.
-// Lossless both ways: classic rebuilds from the stored canvas outlines,
-// realistic re-strokes the stored pen tracks.
+// Switch the current job's pen weight (download page toggle) and rebuild.
+// Lossless both ways: every weight re-strokes the stored pen tracks, and
+// both weights share identical advances so layout never shifts.
 async function applyPenStyle(style) {
   if (style === currentPenStyle) return;
   const status = document.getElementById('download-status');
-  const btns = ['pen-style-classic-dl', 'pen-style-realistic-dl', 'otf-btn']
+  const btns = ['pen-style-fine-dl', 'pen-style-bold-dl', 'otf-btn']
     .map(id => document.getElementById(id)).filter(Boolean);
   btns.forEach(b => b.disabled = true);
   status.textContent = 'Re-inking every letter…';
@@ -1535,11 +1535,16 @@ const drawState = {
 
 // Font-level style settings — fixed pen tool, size and ink colour, sent with
 // every glyph. Kept on the request payload so saved fonts stay self-describing.
-// penStyle picks how the OTF outlines are rendered: 'classic' (canvas brush
-// polygons, the original look) or 'realistic' (backend re-strokes each pen
-// track with ink dynamics — pooling, round tips, tapered lifts, liquid
-// edges). New fonts default to realistic; existing fonts keep their style.
+// Every font is inked with the realistic pen (speed/pressure dynamics,
+// pooling, round tips, liquid edges); penStyle only picks the weight:
+// 'realistic' (fine) or 'realistic-bold' (slightly thicker tip).
 let fontSettings = { tool: 'pen', toolSize: 6, color: [38, 32, 28], penStyle: 'realistic' };
+
+// Map any stored pen style (including legacy 'classic') onto the two
+// supported weights — must match _normalize_pen_style on the backend.
+function normalizePenStyle(s) {
+  return (s === 'realistic-bold' || s === 'bold') ? 'realistic-bold' : 'realistic';
+}
 
 function _ensure(d, ...keys) {
   let cur = d;
@@ -1593,26 +1598,26 @@ function selectDrawForm(form) {
   drawState.currentForm = form;
   updateDrawUI();
 }
-// Font-wide pen style. Re-renders the canvas so every committed stroke
-// previews in the chosen ink immediately.
+// Font-wide pen weight. Re-renders the canvas so every committed stroke
+// previews in the chosen weight immediately.
 function setPenStyle(style) {
-  fontSettings.penStyle = style === 'realistic' ? 'realistic' : 'classic';
+  fontSettings.penStyle = normalizePenStyle(style);
   updatePenStyleButtons();
   if (drawCtx) renderCanvas();
 }
 
 function updatePenStyleButtons() {
-  const c = document.getElementById('pen-style-classic-btn');
-  const r = document.getElementById('pen-style-realistic-btn');
+  const f = document.getElementById('pen-style-fine-btn');
+  const b = document.getElementById('pen-style-bold-btn');
   const hint = document.getElementById('pen-style-hint');
-  if (!c || !r) return;
-  const realistic = fontSettings.penStyle === 'realistic';
-  c.classList.toggle('active-tool', !realistic);
-  r.classList.toggle('active-tool', realistic);
+  if (!f || !b) return;
+  const bold = fontSettings.penStyle === 'realistic-bold';
+  f.classList.toggle('active-tool', !bold);
+  b.classList.toggle('active-tool', bold);
   if (hint) {
-    hint.textContent = realistic
-      ? 'Width follows your pen speed; ink pools at corners and stops. You can switch later.'
-      : 'The original brush look — exactly the shape you draw. You can switch later.';
+    hint.textContent = bold
+      ? 'Realistic ink with a slightly thicker tip — great at small print sizes. You can switch later.'
+      : 'Realistic ink, true to your pen. Width follows your speed; ink pools at corners and stops. You can switch later.';
   }
 }
 
@@ -2177,47 +2182,77 @@ function updateRefFontUI() {
 
 // ── Perfect-freehand polygon engine ──────────────────────────
 
-// Realistic-ink preview dynamics: per-point width factors that mirror the
-// backend stroker (processing/pen_realistic.py) — width follows pen speed
-// (slow = wet and wide, fast = thin) and ink pools at sharp corners, so the
-// canvas shows roughly what the built OTF will look like. Returns an array
-// of factors with a `fastLift` flag for the exit-flick taper.
-function _realisticWidthFactors(points) {
+// The "bold" pen weight: same ink model, slightly thicker tip. Must match
+// BOLD_WIDTH_SCALE in processing/pen_realistic.py so the canvas previews
+// the exact weight the OTF will be built with.
+const PEN_BOLD_SCALE = 1.35;
+
+// Realistic-ink half-width profile — mirrors the backend stroker
+// (processing/pen_realistic.py) so the canvas draws what the built OTF
+// will look like:
+//   - width follows pressure and pen speed (slow = wet and wide, fast = thin)
+//   - ink pools at sharp corners (the pen decelerates through a turn)
+//   - terminals: ramp-in with a pen-down blob on slow starts; a fast lift
+//     earns a long thin flick tail, a slow lift a small ink pool.
+function _realisticHalfWidths(points, maxSize) {
   const n = points.length;
   const v = new Array(n).fill(0);
+  const arc = new Array(n).fill(0);
   for (let i = 1; i < n; i++) {
     const d = Math.hypot(points[i].x - points[i-1].x, points[i].y - points[i-1].y);
+    arc[i] = arc[i-1] + d;
     const dt = (points[i].t || 0) - (points[i-1].t || 0);
     v[i] = dt > 0 ? d / dt * 1000 : d * 60;  // px/s; no timestamps → spacing proxy
   }
   if (n > 1) v[0] = v[1];
-  const sm = v.slice();
-  for (let i = 1; i < n - 1; i++) sm[i] = (v[i-1] + v[i]*2 + v[i+1]) / 4;
-  const sorted = sm.filter(x => x > 0).sort((a, b) => a - b);
+  const sv = v.slice();
+  for (let i = 1; i < n - 1; i++) sv[i] = (v[i-1] + v[i]*2 + v[i+1]) / 4;
+  const sorted = sv.filter(x => x > 0).sort((a, b) => a - b);
   const vmed = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
 
-  const raw = new Array(n).fill(1);
+  const hws = new Array(n);
   for (let i = 0; i < n; i++) {
-    let f = 1;
+    let w = (maxSize / 2) * (0.78 + 0.42 * (points[i].p ?? 0.6));
     if (vmed > 0) {
-      const rel = Math.min(4, Math.max(0.25, sm[i] / vmed));
-      f *= Math.min(1.22, Math.max(0.78, Math.pow(rel, -0.22)));
+      const rel = Math.min(4, Math.max(0.25, sv[i] / vmed));
+      w *= Math.min(1.22, Math.max(0.78, Math.pow(rel, -0.22)));
     }
-    if (i >= 2 && i < n - 2) {  // corner pooling: pen decelerates into turns
+    if (i >= 2 && i < n - 2) {
       const v1x = points[i].x - points[i-2].x, v1y = points[i].y - points[i-2].y;
       const v2x = points[i+2].x - points[i].x, v2y = points[i+2].y - points[i].y;
       const n1 = Math.hypot(v1x, v1y), n2 = Math.hypot(v2x, v2y);
       if (n1 > 1e-6 && n2 > 1e-6) {
         const dot = Math.max(-1, Math.min(1, (v1x*v2x + v1y*v2y) / (n1*n2)));
         const ang = Math.acos(dot) * 180 / Math.PI;
-        f *= 1 + 0.30 * Math.max(0, Math.min(1, (ang - 28) / 72));
+        w *= 1 + 0.30 * Math.max(0, Math.min(1, (ang - 28) / 72));
       }
     }
-    raw[i] = f;
+    hws[i] = w;
   }
-  const out = raw.slice();
-  for (let i = 1; i < n - 1; i++) out[i] = (raw[i-1] + raw[i]*2 + raw[i+1]) / 4;
-  out.fastLift = vmed > 0 && sm[n-1] > 1.45 * vmed;
+
+  // Terminal envelopes, in arc length so they track real stroke distance.
+  const total = arc[n - 1] || 1;
+  const rampIn = maxSize, blobLen = maxSize * 1.8;
+  const flickLen = maxSize * 2.6, poolLen = maxSize;
+  const slowStart = vmed > 0 && sv[0] < 0.5 * vmed;
+  const fastLift = vmed > 0 && sv[n-1] > 1.45 * vmed;
+  for (let i = 0; i < n; i++) {
+    const s = arc[i], e = total - arc[i];
+    if (s < rampIn) {
+      const t = s / rampIn;
+      hws[i] *= 0.70 + 0.30 * (1 - (1 - t) * (1 - t));
+    }
+    if (slowStart && s < blobLen) {
+      hws[i] *= 1 + 0.20 * Math.pow(1 - s / blobLen, 1.5);
+    }
+    if (fastLift) {
+      if (e < flickLen) hws[i] *= 0.22 + 0.78 * Math.pow(e / flickLen, 1.6);
+    } else if (e < poolLen) {
+      hws[i] *= 1 + 0.16 * Math.pow(1 - e / poolLen, 1.5);
+    }
+  }
+  const out = hws.slice();
+  for (let i = 1; i < n - 1; i++) out[i] = (hws[i-1] + hws[i]*2 + hws[i+1]) / 4;
   return out;
 }
 
@@ -2226,18 +2261,17 @@ function strokeToPolygon(points, maxSize, tool, penStyle) {
   const prof = TOOL_PROFILES[tool] || TOOL_PROFILES.pen;
   const n = points.length;
 
-  // Realistic ink: speed/corner width dynamics on top of the base profile.
-  // Defaults to the font-wide setting so every render path (canvas, current
-  // stroke, thumbnails) follows the chosen pen; strokeToOutlineSVG passes
-  // 'classic' explicitly because submitted svg_paths are always classic
-  // (the backend re-strokes pen_paths for the realistic OTF).
-  const realistic = (penStyle ?? fontSettings.penStyle) === 'realistic';
-  const dyn = realistic ? _realisticWidthFactors(points) : null;
+  // Every live render path (canvas, current stroke, thumbnails) uses the
+  // realistic ink model at the font-wide weight. The 'classic' style only
+  // survives for strokeToOutlineSVG, which exports the legacy brush polygon
+  // as the svg_paths fallback (the backend re-strokes pen_paths for the
+  // real OTF outlines).
+  const style = penStyle ?? fontSettings.penStyle ?? 'realistic';
 
   // Average pressure across the stroke — passed to renderStrokePolygon for opacity
   const avgP = points.reduce((s, pt) => s + pt.p, 0) / n;
 
-  // Pass 1: tangents + raw half-widths
+  // Pass 1: tangents (+ legacy half-widths when exporting classic)
   const tangents = [], hws = [];
   for (let i = 0; i < n; i++) {
     const pt = points[i];
@@ -2247,22 +2281,20 @@ function strokeToPolygon(points, maxSize, tool, penStyle) {
     const len = Math.hypot(dx, dy) || 1;
     const tx = dx / len, ty = dy / len;
     tangents.push({nx: -ty, ny: tx});
+    if (style !== 'classic') continue;
 
-    // Asymmetric taper: easeOut at start (pen lands, expands fast),
-    // easeIn at end (pen lifts gradually then suddenly leaves paper).
-    // Floor stops the taper from converging to a point so tails stay visible
-    // at small render sizes.
+    // Legacy brush profile (svg_paths fallback only). Asymmetric taper:
+    // easeOut at start, easeIn at end, floored so tips stay visible.
     const st = easeOut(Math.min(i / Math.max(n * prof.startTaper, 1), 1));
     const et = easeIn(Math.min((n - 1 - i) / Math.max(n * prof.endTaper, 1), 1));
-    // Realistic: a fast lift earns a long thin flick tail (lower floor);
-    // otherwise keep ends a touch rounder than classic.
-    const floor = dyn ? (dyn.fastLift ? 0.22 : 0.5) : (prof.taperFloor ?? 0.0);
-    const taper = Math.max(floor, st * et);
-
+    const taper = Math.max(prof.taperFloor ?? 0.0, st * et);
     const pMod = (1 - prof.thinning) + prof.thinning * pt.p;
-    let hw = maxSize * prof.widthMult * pMod * taper / 2;
-    if (dyn) hw *= dyn[i];
-    hws.push(Math.max(0.05, hw));
+    hws.push(Math.max(0.05, maxSize * prof.widthMult * pMod * taper / 2));
+  }
+
+  if (style !== 'classic') {
+    const size = maxSize * (style === 'realistic-bold' ? PEN_BOLD_SCALE : 1);
+    for (const w of _realisticHalfWidths(points, size)) hws.push(Math.max(0.05, w));
   }
 
   // Pass 2: smooth width along the stroke — removes frame-burst jitter from
@@ -2633,8 +2665,8 @@ function startDrawMode(mode) {
   const startChar = drawMode === 'cursive' ? 'a' : 'A';
   const startForm = drawMode === 'cursive' ? 'medi' : 'iso';
   // Style is fixed for every font: pen tool, size 6, default ink colour.
-  // New fonts start on the realistic pen (the best-looking OTF); the user
-  // can flip to classic here or after building.
+  // New fonts start at the fine weight; the user can flip to bold here or
+  // after building.
   fontSettings = { tool: 'pen', toolSize: 6, color: [38, 32, 28], penStyle: 'realistic' };
   updatePenStyleButtons();
   // Fresh font: reset spacing sliders to defaults so a previous font's spacing
@@ -2689,10 +2721,9 @@ function getGlyphXBounds(char, slot, form) {
 }
 
 // xShift: subtract from every x coordinate to normalize glyph to x=0
-// Always renders the CLASSIC brush polygon: stored svg_paths are the
-// canonical classic outline, and the backend re-strokes pen_paths when the
-// font is built with the realistic pen — that's what makes switching a
-// saved font between pens (and back) lossless.
+// Always renders the legacy brush polygon: stored svg_paths are only a
+// FALLBACK for glyphs whose pen_paths can't be stroked — the backend
+// re-strokes pen_paths with the realistic pen for the real OTF outlines.
 function strokeToOutlineSVG(points, size, xShift = 0) {
   const polygon = strokeToPolygon(points, size, drawState.tool, 'classic');
   if (!polygon || polygon.length < 3) return null;
@@ -2930,10 +2961,10 @@ function renderSavedFonts(fonts) {
             </div>
           </div>
           <div class="saved-font-group">
-            <span class="saved-font-group-label">Pen</span>
+            <span class="saved-font-group-label">Pen weight</span>
             <div class="saved-font-group-btns">
-              <button class="btn ${f.pen_style !== 'realistic' ? 'btn-primary' : 'btn-outline'} btn-sm" ${f.pen_style !== 'realistic' ? 'disabled' : ''} onclick="setSavedPenStyle('${f.job_id}','classic',this)" title="Rebuild every letter with the classic pen — the exact brush shapes you drew">Classic</button>
-              <button class="btn ${f.pen_style === 'realistic' ? 'btn-primary' : 'btn-outline'} btn-sm" ${f.pen_style === 'realistic' ? 'disabled' : ''} onclick="setSavedPenStyle('${f.job_id}','realistic',this)" title="Rebuild every letter with realistic ink — pooling, round tips, flick tails, liquid edges">Realistic</button>
+              <button class="btn ${normalizePenStyle(f.pen_style) !== 'realistic-bold' ? 'btn-primary' : 'btn-outline'} btn-sm" ${normalizePenStyle(f.pen_style) !== 'realistic-bold' ? 'disabled' : ''} onclick="setSavedPenStyle('${f.job_id}','realistic',this)" title="Re-ink every letter at the fine weight (true to the drawn pen)">Fine</button>
+              <button class="btn ${normalizePenStyle(f.pen_style) === 'realistic-bold' ? 'btn-primary' : 'btn-outline'} btn-sm" ${normalizePenStyle(f.pen_style) === 'realistic-bold' ? 'disabled' : ''} onclick="setSavedPenStyle('${f.job_id}','realistic-bold',this)" title="Re-ink every letter slightly thicker">Bold</button>
             </div>
           </div>
           <div class="saved-font-group">
@@ -2956,7 +2987,7 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// Switch a saved font between the classic and realistic pen. Rebuilds both
+// Switch a saved font between the fine and bold pen weight. Rebuilds both
 // OTFs from the stored glyph data with all saved settings (spacing, borders)
 // intact — lossless in both directions, switch back anytime.
 async function setSavedPenStyle(savedJobId, style, btn) {
@@ -3105,9 +3136,9 @@ async function openSavedFont(savedJobId) {
   }
 
   // Style is fixed for every font: pen tool, size 6, default ink colour —
-  // saved pen_tool/pen_size/pen_color are ignored on restore. The pen STYLE
+  // saved pen_tool/pen_size/pen_color are ignored on restore. The pen WEIGHT
   // is restored from settings below so the canvas previews the saved ink.
-  fontSettings = { tool: 'pen', toolSize: 6, color: [38, 32, 28], penStyle: 'classic' };
+  fontSettings = { tool: 'pen', toolSize: 6, color: [38, 32, 28], penStyle: 'realistic' };
   Object.assign(drawState, {
     tool:     'pen',
     toolSize: 6,
@@ -3124,7 +3155,7 @@ async function openSavedFont(savedJobId) {
     document.getElementById('letter-spacing').value = settings.letter_spacing ?? 60;
     document.getElementById('space-width').value = settings.space_width ?? 600;
     onSpacingChange();
-    fontSettings.penStyle = settings.pen_style || 'classic';
+    fontSettings.penStyle = normalizePenStyle(settings.pen_style);
     currentPenStyle = fontSettings.penStyle;
   } catch { /* keep whatever the sliders currently show */ }
   updatePenStyleButtons();
@@ -3547,8 +3578,8 @@ async function openSavedFontSpacing(savedJobId, fontName, mode) {
   approvedGlyphIds = settings.approved_glyph_ids || [];
   drawMode = mode || 'print';
   fontSettings = { tool: 'pen', toolSize: 6, color: [38, 32, 28],
-                   penStyle: settings.pen_style || 'classic' };
-  currentPenStyle = settings.pen_style || 'classic';
+                   penStyle: normalizePenStyle(settings.pen_style) };
+  currentPenStyle = normalizePenStyle(settings.pen_style);
   document.getElementById('font-name').value = currentFontName;
 
   // Restore the saved spacing onto the sliders + value labels.
