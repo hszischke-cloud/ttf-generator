@@ -172,6 +172,27 @@ def test_reopen_and_resubmit(client):
     assert all(g.get("image_url") for g in pp["glyphs"])
 
 
+def test_pen_style_switch(client):
+    job_id = create_job(client)
+    client.post(f"/draw/{job_id}/glyphs/batch", json={"glyphs": make_glyphs()})
+    finalize(client, job_id)
+    wait_complete(client, job_id)
+
+    # switch to bold → rebuilds losslessly
+    r = client.post(f"/process/{job_id}/pen-style", json={"pen_style": "realistic-bold"})
+    assert r.status_code == 200 and r.json()["rebuilt"]
+    assert wait_complete(client, job_id)["status"] == "complete"
+    assert client.get(f"/process/{job_id}/settings").json()["pen_style"] == "realistic-bold"
+
+    # same weight again is a no-op (no rebuild)
+    r = client.post(f"/process/{job_id}/pen-style", json={"pen_style": "realistic-bold"})
+    assert r.status_code == 200 and r.json()["rebuilt"] is False
+
+    # unknown weights are rejected
+    assert client.post(f"/process/{job_id}/pen-style",
+                       json={"pen_style": "extra-bold"}).status_code == 422
+
+
 def test_app_routes_served(client):
     for route in ("/ui", "/create"):
         res = client.get(route)

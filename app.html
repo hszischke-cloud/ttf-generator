@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Create your font · snailmail.eco</title>
+<title>Your fonts · snailmail.eco</title>
 <meta name="description" content="Turn your handwriting into a real font — draw your letters, fine-tune the spacing, download an OTF.">
 <meta name="theme-color" content="#FAEDCD">
 <meta property="og:title" content="Create your handwriting font">
@@ -50,7 +50,8 @@
     font-family: var(--font-display);
     font-size: 20px; font-weight: 400; color: var(--brown); letter-spacing: 0.01em;
   }
-  .site-nav .brand span { opacity: 0.55; font-weight: 400; margin-left: 8px; font-size: 13px; font-family: var(--font-sans); }
+  .site-nav .brand { cursor: pointer; }
+  .site-nav .nav-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
 
   /* signature "o" dot — coloured circle peeking through the counter */
   .odot{position:relative; display:inline-block; z-index:0;}
@@ -233,26 +234,65 @@
   }
   .error-banner.show { display: block; }
 
-  /* ── Home page ── */
-  .home-hero { text-align: center; padding: 16px 0 36px; }
-  .home-hero h1 { font-size: clamp(34px, 7vw, 44px); margin-bottom: 10px; }
-  .home-hero p.sub { font-size: 19px; margin-bottom: 0; }
-  .mode-cards { display: flex; gap: 20px; margin-top: 36px; flex-wrap: wrap; }
-  .mode-card {
-    flex: 1; min-width: 220px; background: var(--input-bg); border: 1.5px solid var(--border-color);
-    border-radius: var(--radius-xl); padding: 32px 24px; cursor: pointer; text-align: center;
-    transition: all 0.2s; position: relative; overflow: hidden;
+  /* ── Dashboard ── */
+  #page-home { max-width: 1240px; }
+
+  /* Sidebar (create actions) + main (fonts) */
+  .dash-layout { display: flex; gap: 22px; align-items: flex-start; margin-top: 4px; }
+  .dash-side {
+    width: 212px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px;
+    position: sticky; top: 16px;
   }
-  .mode-card::before {
-    content: ''; position: absolute; inset: 0;
-    background: linear-gradient(135deg, rgba(107,199,193,0.10), transparent);
-    opacity: 0; transition: opacity 0.2s;
+  .side-group {
+    background: var(--input-bg); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: 14px;
+    display: flex; flex-direction: column; gap: 8px;
   }
-  .mode-card:hover { border-color: var(--teal); transform: translateY(-3px); box-shadow: 0 6px 20px rgba(91,65,52,0.12); }
-  .mode-card:hover::before { opacity: 1; }
-  .mode-card .mode-icon { font-size: 34px; margin-bottom: 14px; display: block; }
-  .mode-card h2 { font-size: 19px; margin-bottom: 8px; }
-  .mode-card p { font-size: 13.5px; color: var(--ink-light); line-height: 1.6; }
+  .side-label {
+    font-size: 9.5px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.1em; color: var(--ink-light);
+  }
+  .dash-side .btn { width: 100%; }
+  .dash-main { flex: 1; min-width: 0; }
+  .dash-section-head {
+    display: flex; align-items: baseline; gap: 12px;
+    margin: 0 0 14px; flex-wrap: wrap;
+  }
+  .dash-section-head h2 { margin-bottom: 0; font-size: 22px; }
+  .dash-section-head .count { font-size: 13px; color: var(--ink-light); }
+
+  /* Font cards grid */
+  .fonts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
+  .font-card {
+    position: relative; background: var(--input-bg); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: 16px 16px 14px;
+    display: flex; flex-direction: column; gap: 11px;
+  }
+  .font-card-name {
+    font-family: var(--font-serif); font-size: 21px; font-weight: 600;
+    color: var(--brown); line-height: 1.2; padding-right: 30px; word-break: break-word;
+  }
+  .font-card-meta {
+    font-size: 12px; color: var(--ink-light); margin-top: 5px;
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  }
+  .font-card .btn-delete { position: absolute; top: 12px; right: 10px; }
+  .font-card.expired { opacity: 0.6; }
+  .font-card.expired .font-card-name::after {
+    content: ' (expired)'; font-size: 12px; color: var(--coral);
+    font-family: var(--font-sans); font-weight: 400;
+  }
+  .fc-expired-note { font-size: 12.5px; color: var(--ink-light); font-style: italic; }
+  .fc-rows { display: flex; flex-direction: column; gap: 9px; }
+  .fc-row { display: flex; align-items: center; gap: 10px; }
+  .fc-label {
+    width: 76px; flex-shrink: 0; font-size: 9.5px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-light);
+  }
+  .fc-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+  /* Segmented choices (pen weight): the CURRENT option is rendered as a
+     disabled primary button — it should read as "selected", not greyed out. */
+  .fc-btns .btn-primary:disabled { opacity: 1; cursor: default; }
 
   /* ── Draw mode layout ── */
   .draw-layout { display: flex; gap: 18px; align-items: flex-start; }
@@ -381,49 +421,22 @@
     font-size: 11.5px; color: var(--ink-light); font-variant-numeric: tabular-nums; font-style: italic;
   }
 
-  /* ── Saved fonts list ── */
-  .saved-fonts-section { margin-top: 48px; }
+  /* ── Saved fonts (shared bits) ── */
   .saved-fonts-empty { font-size: 14px; color: var(--ink-light); font-style: italic; margin-top: 8px; }
-  .saved-font-item {
-    display: flex; align-items: center; justify-content: space-between;
-    background: var(--input-bg); border: 1px solid var(--border-color); border-radius: var(--radius-lg);
-    padding: 16px 20px; margin-bottom: 10px; gap: 16px; flex-wrap: wrap;
-  }
-  .saved-font-info { flex: 1; min-width: 0; }
-  .saved-font-name-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  .saved-font-name {
-    font-family: var(--font-serif); font-size: 19px; font-weight: 600;
-    color: var(--brown); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .rename-btn {
-    flex: 0 0 auto; background: none; border: none; color: var(--ink-light);
-    font-size: 14px; cursor: pointer; padding: 4px 6px; border-radius: 6px;
-    transition: color .15s, background .15s;
-  }
-  .rename-btn:hover { color: var(--brown); background: rgba(91,65,52,0.07); }
-  .saved-font-meta { font-size: 12px; color: var(--ink-light); margin-top: 3px; }
   .badge {
     display: inline-block; padding: 2px 9px; border-radius: 9999px;
     font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em;
-    margin-right: 6px;
   }
   .badge-print   { background: rgba(107,199,193,.22); color: var(--teal-deep); }
   .badge-cursive { background: rgba(217,87,60,.16); color: var(--orange-deep); }
-  .saved-font-actions { display: flex; gap: 14px; align-items: flex-end; flex-shrink: 0; flex-wrap: wrap; }
-  .saved-font-group { display: flex; flex-direction: column; gap: 4px; }
-  .saved-font-group-label { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-light); font-weight: 600; }
-  .saved-font-group-btns { display: flex; gap: 6px; }
+  .badge-fine    { background: rgba(91,65,52,.10);  color: var(--ink); }
+  .badge-bold    { background: rgba(91,65,52,.85);  color: var(--cream); }
   .btn-delete {
     background: none; border: none; color: var(--border-color); cursor: pointer;
     font-size: 18px; line-height: 1; padding: 6px; border-radius: 4px;
     transition: color 0.15s;
   }
   .btn-delete:hover { color: var(--coral); }
-  .saved-font-item.expired { opacity: 0.55; }
-  .saved-font-item.expired .saved-font-name::after {
-    content: ' (expired)'; font-size: 12px; color: var(--coral);
-    font-family: var(--font-sans); font-weight: 400;
-  }
 
   /* ── Line-font section ── */
   .line-section {
@@ -512,7 +525,7 @@
   .resume-card {
     display: flex; align-items: center; justify-content: space-between; gap: 14px;
     background: rgba(107,199,193,0.14); border: 1.5px solid var(--teal);
-    border-radius: var(--radius-lg); padding: 16px 20px; margin-bottom: 22px; flex-wrap: wrap;
+    border-radius: var(--radius-lg); padding: 14px 18px; margin-bottom: 16px; flex-wrap: wrap;
   }
   .resume-info { min-width: 0; }
   .resume-title { font-family: var(--font-display); font-size: 17px; color: var(--brown); }
@@ -533,6 +546,15 @@
   }
   .ink-swatch:hover { transform: scale(1.12); }
   .ink-swatch.active { box-shadow: 0 0 0 2.5px var(--brown); }
+
+  /* ── Rename (saved-font cards) ── */
+  .font-card-name-row { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+  .rename-btn {
+    flex: 0 0 auto; background: none; border: none; color: var(--ink-light);
+    font-size: 14px; cursor: pointer; padding: 3px 6px; border-radius: 6px;
+    transition: color .15s, background .15s;
+  }
+  .rename-btn:hover { color: var(--brown); background: rgba(91,65,52,0.07); }
 
   /* ── Install help ── */
   .install-help {
@@ -599,9 +621,14 @@
     #page-draw { padding: 12px 10px 48px; }
 
     h1 { font-size: 26px; }
-    .home-hero { padding: 10px 0 20px; }
-    .mode-cards { flex-direction: column; gap: 14px; }
-    .mode-card { padding: 24px 18px; }
+
+    /* Dashboard: sidebar collapses to a compact row above the fonts */
+    .dash-layout { flex-direction: column; gap: 12px; }
+    .dash-side { width: 100%; position: static; flex-direction: row; gap: 10px; }
+    .side-group { flex: 1; padding: 10px; }
+    .dash-side .btn { padding: 9px 10px; font-size: 13px; }
+    .fonts-grid { grid-template-columns: 1fr; }
+    .fc-label { width: 72px; }
 
     /* Draw: stack canvas above panel */
     .draw-layout { flex-direction: column; gap: 10px; }
@@ -643,17 +670,11 @@
     /* Spacing sliders full width */
     .slider-row { max-width: 100%; }
 
-    /* Saved fonts: the three action groups don't fit beside the name on a
-       phone (flex-shrink:0 made them overflow the card edge). Stack the card
-       vertically, let groups wrap inside the card, and pin the delete ✕ to
-       the top-right corner. */
-    .saved-font-item { position: relative; flex-direction: column; align-items: stretch; gap: 12px; padding: 14px 16px; }
-    .saved-font-info { padding-right: 32px; }  /* keep clear of the ✕ */
-    .saved-font-name { white-space: normal; }
-    .saved-font-actions { width: 100%; flex-shrink: 1; align-items: stretch; gap: 10px 14px; }
-    .saved-font-group { min-width: 0; }
-    .saved-font-group-btns { flex-wrap: wrap; }
-    .saved-font-actions .btn-delete { position: absolute; top: 10px; right: 10px; }
+    /* Topbar: keep brand + actions on one line */
+    .site-nav { gap: 8px; }
+
+    /* Draw page: the step header costs canvas space on a phone */
+    #draw-step-header { display: none; }
 
     /* Borders editor: stack controls, full-width primary actions */
     .borders-readout { gap: 10px; }
@@ -667,24 +688,21 @@
     /* Resume card stacks */
     .resume-card { flex-direction: column; align-items: stretch; }
     .resume-actions .btn { flex: 1 1 auto; }
-
-    /* Home hero scales down */
-    .home-hero h1 { font-size: clamp(38px, 12vw, 48px); line-height: 1.05; }
   }
 </style>
 </head>
 <body>
 
 <nav class="site-nav">
-  <div class="brand">Handwriting f<span class="odot odot--teal">o</span>nts <span>studio · snailmail.eco</span></div>
+  <div class="brand" onclick="goHome()" title="Back to the dashboard">snailmail.ec<span class="odot odot--teal">o</span></div>
+  <div class="nav-actions">
+    <button class="btn btn-outline btn-sm" onclick="goHome()">My fonts</button>
+    <button class="btn btn-primary btn-sm" onclick="goNewFont()">＋ New font</button>
+  </div>
 </nav>
 
-<!-- ===================== PAGE 0: HOME ===================== -->
+<!-- ===================== DASHBOARD ===================== -->
 <div class="page active" id="page-home">
-  <div class="home-hero">
-    <h1>Create<br>y<span class="odot odot--orange">o</span>ur f<span class="odot odot--orange">o</span>nt</h1>
-    <p class="sub">Turn your handwriting into a real font for cards and letters.</p>
-  </div>
 
   <!-- Resume-draft card (shown only when an autosaved draft exists) -->
   <div class="resume-card" id="resume-card" style="display:none">
@@ -698,31 +716,46 @@
     </div>
   </div>
 
-  <div class="mode-cards">
-    <div class="mode-card" onclick="startDrawMode('print')">
-      <h2>Print font</h2>
-      <p>Each letter drawn on its own. Letters don't connect — for clean, readable output.</p>
-      <p style="margin-top:10px;font-size:13px;color:var(--ink-light);">A–Z, a–z, digits &amp; punctuation</p>
-    </div>
-    <div class="mode-card" onclick="startDrawMode('cursive')">
-      <h2>Cursive font</h2>
-      <p>Letters connect with entry hooks and exit tails. Three forms per lowercase letter for word-position-aware joining.</p>
-      <p style="margin-top:10px;font-size:13px;color:var(--ink-light);">~150 cells (init / medi / fina forms)</p>
-    </div>
-  </div>
+  <div class="dash-layout">
 
-  <!-- Saved fonts list -->
-  <div class="saved-fonts-section">
-    <span class="section-label">My Saved Fonts</span>
-    <div id="saved-fonts-list">
-      <p class="saved-fonts-empty">Loading…</p>
-    </div>
+    <!-- Sidebar: every way to start a font -->
+    <aside class="dash-side" id="create-section">
+      <div class="side-group">
+        <span class="side-label">New font</span>
+        <button class="btn btn-primary" onclick="startDrawMode('print')">✍️ Print</button>
+        <button class="btn btn-outline" onclick="startDrawMode('cursive')">Cursive</button>
+      </div>
+      <div class="side-group">
+        <span class="side-label">Share with a client</span>
+        <a class="btn btn-teal" id="open-create-link" href="/create" target="_blank" rel="noopener">Open ↗</a>
+        <button class="btn btn-outline" onclick="copyCreateLink(this)">Copy link</button>
+      </div>
+    </aside>
+
+    <!-- Main: all saved fonts -->
+    <main class="dash-main">
+      <div class="dash-section-head">
+        <h2>My fonts</h2>
+        <span class="count" id="fonts-count"></span>
+      </div>
+      <div id="saved-fonts-list" class="fonts-grid">
+        <p class="saved-fonts-empty">Loading…</p>
+      </div>
+    </main>
+
   </div>
 </div>
 
 <!-- ===================== PAGE DRAW ===================== -->
 <div class="page" id="page-draw">
-  <span class="back-link" onclick="goHome()">← Back to home</span>
+  <span class="back-link" onclick="goHome()">← Dashboard</span>
+  <div class="step-header" id="draw-step-header">
+    <div class="step-num">1</div>
+    <div>
+      <h1 style="font-size:24px;">Draw your letters</h1>
+      <p class="sub" style="margin:0;font-size:15px;">Write naturally. The pen records your speed and inks the font like real handwriting.</p>
+    </div>
+  </div>
   <div class="draw-layout">
 
     <!-- Left: canvas area -->
@@ -773,6 +806,18 @@
         <div class="draw-slot-tabs" id="draw-slot-tabs"></div>
       </div>
 
+      <!-- Pen weight. Every font is inked with the realistic pen (speed/
+           pressure width dynamics, pooling, round tips, liquid edges);
+           this only picks fine vs slightly-thicker. -->
+      <div class="panel-section">
+        <span class="panel-label">Pen</span>
+        <div class="tool-btns">
+          <button class="tool-btn" id="pen-style-fine-btn" onclick="setPenStyle('realistic')" title="Realistic ink, true to your drawn pen size">Fine</button>
+          <button class="tool-btn" id="pen-style-bold-btn" onclick="setPenStyle('realistic-bold')" title="Realistic ink with a slightly thicker tip">Bold</button>
+        </div>
+        <div id="pen-style-hint" style="font-size:11px;color:var(--ink-light);margin-top:2px;"></div>
+      </div>
+
       <!-- Edit controls (Undo lives in the canvas header — see draw-header-undo) -->
       <div class="panel-section">
         <span class="panel-label">Edit</span>
@@ -789,7 +834,7 @@
         <div class="ink-swatches" id="ink-swatches"></div>
       </div>
 
-      <!-- Reference font: built-in guide letter, or upload a TTF/OTF to trace over -->
+      <!-- Guide letter: built-in serif ghost, or upload a TTF/OTF to trace over -->
       <div class="panel-section">
         <span class="panel-label">Guide letter</span>
         <div class="draw-ctrl-btns">
@@ -800,7 +845,7 @@
         </div>
         <input type="file" id="ref-font-input" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf"
                style="display:none" onchange="onRefFontUpload(this)">
-        <div id="ref-font-status" style="font-size:11px; color:var(--ink-light); margin-top:7px;">A faint guide letter shows size &amp; position — or trace over any font you upload.</div>
+        <div id="ref-font-status" style="font-size:11px; color:var(--ink-light); margin-top:7px;">A faint guide letter shows size &amp; position. Or trace over any font you upload.</div>
         <div id="ref-font-opacity-row" class="size-row" style="display:none; margin-top:8px;">
           <span>Fade</span>
           <input type="range" min="0.04" max="0.45" step="0.01" value="0.13" id="ref-font-opacity" oninput="onRefOpacity(this.value)">
@@ -818,11 +863,11 @@
 
 <!-- ===================== PAGE 3: REVIEW ===================== -->
 <div class="page" id="page-review">
-  <span class="back-link" onclick="goHome()">← Start over</span>
+  <span class="back-link" onclick="goHome()">← Dashboard</span>
   <div class="step-header">
-    <div class="step-num">3</div>
+    <div class="step-num">2</div>
     <div>
-      <h1>Review Glyphs</h1>
+      <h1>Review your letters</h1>
       <p class="sub" style="margin:0">Click any glyph to reject it. Green = included in font.</p>
     </div>
   </div>
@@ -847,12 +892,12 @@
 
 <!-- ===================== PAGE 4: DOWNLOAD ===================== -->
 <div class="page" id="page-download">
-  <span class="back-link" onclick="goHome()">← Make another font</span>
+  <span class="back-link" onclick="goHome()">← Dashboard</span>
   <div class="step-header">
-    <div class="step-num">4</div>
+    <div class="step-num">3</div>
     <div>
-      <h1>Your Font is Ready!</h1>
-      <p class="sub" style="margin:0">Adjust spacing, then click download — spacing is baked in automatically</p>
+      <h1>Your font is ready</h1>
+      <p class="sub" style="margin:0">Adjust the spacing, then download. Spacing is baked in automatically.</p>
     </div>
   </div>
 
@@ -882,7 +927,15 @@
       </div>
     </div>
     <div id="cursive-spacing-note" style="display:none;font-size:13px;color:var(--ink-light);font-style:italic;margin-top:6px;">
-      Letter spacing is fixed to 0 in cursive — adjusting it would break the connections between letters.
+      Letter spacing is fixed to 0 in cursive. Adjusting it would break the connections between letters.
+    </div>
+    <div class="slider-row" id="pen-style-dl-row">
+      <label>Pen weight</label>
+      <span class="slider-hint">Fine is true to your pen. Bold re-inks every letter slightly thicker. Switching rebuilds the font and never changes the spacing. You can switch back anytime.</span>
+      <div class="slider-track" style="gap:8px;">
+        <button class="tool-btn" id="pen-style-fine-dl" onclick="applyPenStyle('realistic')">Fine</button>
+        <button class="tool-btn" id="pen-style-bold-dl" onclick="applyPenStyle('realistic-bold')">Bold</button>
+      </div>
     </div>
   </div>
 
@@ -897,7 +950,7 @@
   <div id="line-section" class="line-section">
     <div class="ls-title">Single-line version (for pen plotters)</div>
     <p style="margin:0 0 12px 0;">
-      Each stroke is a centerline path — when you convert the OTF to SVG, the pen plotter
+      Each stroke is a centerline path, so when you convert the OTF to SVG the pen plotter
       draws each letter as one line instead of tracing both edges. Preview above shows the
       dimensional version; the line font may not render correctly in browsers.
     </p>
@@ -911,7 +964,7 @@
       check every single-line glyph rendered correctly (degenerate or missing glyphs are flagged).
     </p>
     <div id="line-unavailable" class="warn-note" style="display:none;margin-top:10px;">
-      The single-line font couldn't be built — none of your approved letters produced a usable centerline trace.
+      The single-line font couldn't be built. None of your approved letters produced a usable centerline trace.
       Try thicker, clearer pen strokes or accept more letters.
     </div>
   </div>
@@ -928,19 +981,19 @@
 
   <div class="error-banner" id="download-error"></div>
   <div id="fea-warning-banner" class="warn-banner">
-    ⚠ <strong>Contextual alternates could not be compiled</strong> — the font was saved without <code>calt</code>/<code>ss01</code>/<code>ss02</code> features, so glyph forms will not cycle.<br>
+    ⚠ <strong>Contextual alternates could not be compiled.</strong> The font was saved without <code>calt</code>/<code>ss01</code>/<code>ss02</code> features, so glyph forms will not cycle.<br>
     <span id="fea-warning-detail" style="font-size:0.8rem;opacity:0.8;"></span>
   </div>
 </div>
 
 <!-- ── Border editor ─────────────────────────────────────────── -->
 <div class="page" id="page-borders">
-  <span class="back-link" onclick="goHome()">← Back to home</span>
+  <span class="back-link" onclick="goHome()">← Dashboard</span>
   <div class="step-header">
     <div class="step-num">↔</div>
     <div>
-      <h1>Adjust Letter Borders</h1>
-      <p class="sub" style="margin:0">The <span class="swatch-l">left</span> and <span class="swatch-r">right</span> lines sit on each letter's edges — where the next letter butts up against it. Drag a line <em>outward</em> to give a cramped letter (like “i”) more room, <em>inward</em> to tighten a wide one (like “T”). 0 = the line is right on the edge.</p>
+      <h1>Adjust letter borders</h1>
+      <p class="sub" style="margin:0">The <span class="swatch-l">left</span> and <span class="swatch-r">right</span> lines sit where the next letter butts up against this one. Drag a line <em>outward</em> to give a cramped letter (like “i”) more room, <em>inward</em> to tighten a wide one (like “T”). 0 means the line is right on the edge.</p>
     </div>
   </div>
 
@@ -955,7 +1008,7 @@
         <span class="tightness-val" id="borders-tightness-val">0</span>
       </div>
     </div>
-    <p class="borders-auto-hint">Measures each letter's shape and sets the borders so every letter <em>feels</em> the same width — narrow letters (i, l) get more breathing room, letters with long arms (T, L) get tucked in. Your saved widths aren't touched until you hit “Apply &amp; rebuild”.</p>
+    <p class="borders-auto-hint">Measures each letter's shape and sets the borders so every letter <em>feels</em> the same width. Narrow letters (i, l) get more breathing room, letters with long arms (T, L) get tucked in. Nothing is saved until you hit “Apply &amp; rebuild”.</p>
   </div>
 
   <div class="borders-label-row">
@@ -1032,7 +1085,7 @@ let currentFontName = 'MyHandwritingFont';
 
 // ── Navigation ──────────────────────────────────────────────
 const PAGE_TITLES = {
-  'page-home':     'Create your font · snailmail.eco',
+  'page-home':     'Your fonts · snailmail.eco',
   'page-draw':     'Draw your letters · snailmail.eco',
   'page-review':   'Review your letters · snailmail.eco',
   'page-download': 'Your font is ready · snailmail.eco',
@@ -1049,7 +1102,7 @@ function goTo(pageId) {
 // One full-screen "building your font" state shared by every rebuild
 // (review → generate, spacing bake, border apply). Progress eases toward the
 // backend's reported pct and creeps gently between polls so it never stalls.
-const BUILD_MSGS = ['Tracing your letters…', 'Smoothing the curves…',
+const BUILD_MSGS = ['Tracing your letters…', 'Inking every stroke…',
                     'Spacing things out…', 'Building the font file…', 'Almost there…'];
 let buildTick = null, buildShown = 0, buildTarget = 0;
 
@@ -1289,6 +1342,7 @@ async function finalize() {
         // startDrawMode(), so a fresh font still builds at default spacing.
         letter_spacing: parseInt(document.getElementById('letter-spacing').value) || 0,
         space_width: parseInt(document.getElementById('space-width').value) || 600,
+        pen_style: fontSettings.penStyle || 'realistic',
       }),
     });
     if (!res.ok) {
@@ -1296,6 +1350,7 @@ async function finalize() {
       throw new Error(body.detail || 'Finalize failed');
     }
 
+    currentPenStyle = fontSettings.penStyle || 'realistic';
     document.getElementById('generate-btn').textContent = 'Building your font…';
     pollTimer = setInterval(poll, 1200);
   } catch(e) {
@@ -1330,6 +1385,7 @@ async function showDownloadPage(feaWarning, cacheBust, lineInfo) {
 
   document.getElementById('download-status').textContent = '';
   document.getElementById('otf-btn').disabled = false;
+  updateDlPenButtons();
 
   // Default the line buttons to enabled; override below if we have lineInfo
   // showing the line font wasn't actually built.
@@ -1338,7 +1394,7 @@ async function showDownloadPage(feaWarning, cacheBust, lineInfo) {
   document.getElementById('line-unavailable').style.display = hasLine ? 'none' : 'block';
   const skipNote = document.getElementById('line-skipped-note');
   if (lineInfo && lineInfo.skipped && lineInfo.skipped.length) {
-    skipNote.textContent = `(skipped in line font: ${lineInfo.skipped.join(', ')})`;
+    skipNote.textContent = `Skipped in the line font ${lineInfo.skipped.join(', ')}`;
   } else {
     skipNote.textContent = '';
   }
@@ -1428,6 +1484,69 @@ function openProofSheet(which) {
 // re-downloading with untouched sliders used to silently rebuild both OTFs.
 let lastBuiltSpacing = null;
 
+// Pen weight of the current job's last build — drives the download-page
+// toggle. Finalize/settings keep it in sync.
+let currentPenStyle = 'realistic';
+
+function updateDlPenButtons() {
+  const f = document.getElementById('pen-style-fine-dl');
+  const b = document.getElementById('pen-style-bold-dl');
+  if (!f || !b) return;
+  f.classList.toggle('active-tool', currentPenStyle !== 'realistic-bold');
+  b.classList.toggle('active-tool', currentPenStyle === 'realistic-bold');
+}
+
+// Poll the current job until the build settles. Shared by the pen-style
+// toggles (same loop buildWithCurrentSpacing uses inline).
+function waitForJobComplete(id) {
+  const target = id || jobId;
+  return new Promise((resolve, reject) => {
+    const t = setInterval(async () => {
+      try {
+        const s = await fetch(`${API}/process/${target}/status`).then(r => r.json());
+        if (s.status === 'complete') { clearInterval(t); resolve(s); }
+        else if (s.status === 'error') { clearInterval(t); reject(new Error(s.error_message || 'Build failed')); }
+      } catch(e) { clearInterval(t); reject(e); }
+    }, 1000);
+  });
+}
+
+// Switch the current job's pen weight (download page toggle) and rebuild.
+// Lossless both ways: every weight re-strokes the stored pen tracks, and
+// both weights share identical advances so layout never shifts.
+async function applyPenStyle(style) {
+  if (style === currentPenStyle) return;
+  const status = document.getElementById('download-status');
+  const btns = ['pen-style-fine-dl', 'pen-style-bold-dl', 'otf-btn']
+    .map(id => document.getElementById(id)).filter(Boolean);
+  btns.forEach(b => b.disabled = true);
+  status.textContent = 'Re-inking every letter…';
+  hideError('download-error');
+  try {
+    const res = await fetch(`${API}/process/${jobId}/pen-style`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pen_style: style }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || 'Pen switch failed');
+    }
+    const body = await res.json();
+    if (body.rebuilt) await waitForJobComplete();
+    currentPenStyle = style;
+    fontSettings.penStyle = style;
+    updateDlPenButtons();
+    status.textContent = '';
+    showDownloadPage(null, Date.now());
+  } catch (e) {
+    showError('download-error', e.message);
+    status.textContent = '';
+  } finally {
+    btns.forEach(b => b.disabled = false);
+  }
+}
+
 function currentSpacing() {
   return {
     ls: parseInt(document.getElementById('letter-spacing').value) || 0,
@@ -1455,7 +1574,7 @@ async function buildWithCurrentSpacing() {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || 'Build failed');
   }
-  buildOverlayShow('Baking your spacing into the font…');
+  buildOverlayShow('Baking your settings into the font…');
   try {
     const final = await waitForBuild();
     buildOverlayHide(true);
@@ -1510,7 +1629,7 @@ async function downloadFont(fmt, line) {
     const skipped = finalStatus.line_skipped_glyphs || [];
     const skipNote = document.getElementById('line-skipped-note');
     if (skipped.length) {
-      skipNote.textContent = `(skipped in line font: ${skipped.join(', ')})`;
+      skipNote.textContent = `Skipped in the line font ${skipped.join(', ')}`;
     } else {
       skipNote.textContent = '';
     }
@@ -1537,16 +1656,19 @@ async function downloadFont(fmt, line) {
 
 const DRAW_W = 300, DRAW_H = 400;
 const GUIDELINES = {
-  cap:       DRAW_H * 0.15,
-  xheight:   DRAW_H * 0.42,
-  baseline:  DRAW_H * 0.72,   // → baseline_y sent to backend
-  descender: DRAW_H * 0.90,
+  cap:       DRAW_H * 0.15,   // 60
+  xheight:   DRAW_H * 0.42,   // 168
+  baseline:  DRAW_H * 0.72,   // 288 → baseline_y sent to backend
+  // 380 — sits low so j/g/y tails get real room (92px below baseline).
+  // Must match GUIDELINE_BOTTOM_RATIO in font_builder.py: the font's
+  // vertical metrics are derived from it so descenders render unclipped.
+  descender: DRAW_H * 0.95,
 };
 
-// Renderable safe band, derived from what font_builder actually maps into the
-// em. Anything outside it would be clipped off the finished glyph — so every
-// captured point is HARD-CLAMPED into it. The user physically cannot draw
-// where the font won't render, which kills the "my letters got cut off" bug.
+// Renderable safe band. The font's win metrics cover the whole canvas, but
+// clamping keeps letters inside sensible margins (and the y band keeps
+// ascenders/descenders within the declared line box). Every captured point
+// is HARD-CLAMPED into it — the user can't draw where the font looks wrong.
 const SAFE = { top: 30, bottom: GUIDELINES.descender, left: 16, right: DRAW_W - 16 };
 // Dedicated centre line for dashes / math symbols.
 const DASH_Y = (GUIDELINES.xheight + GUIDELINES.baseline) / 2;
@@ -1600,49 +1722,6 @@ const SMOOTH_ALPHA = 0.62;   // input low-pass: 0=very smooth, 1=raw
 const TOOL_PROFILES = {
   pen:         {thinning: 0.35, startTaper: 0.06, endTaper: 0.08, widthMult: 1.0,  taperFloor: 0.62},
 };
-
-// Pen-mode ink variation — both dots and divots are placed on the polygon
-// OUTLINE, not the centerline. Dots are stroke-coloured bumps that sit
-// slightly inside the edge so they protrude a little; divots are paper-
-// white notches centred on the edge that get half-masked by the polygon
-// clip. Together they read as a high-frequency wavy edge instead of dots
-// floating inside the stroke.
-const INK_VARIATION = {
-  outlineNoiseFreq:  0.20,    // cycles per arc-length px (~5 px per cycle)
-  dotThreshold:      0.25,    // noise > +0.25 → dot (outward bump)
-  divotThreshold:    0.25,    // noise < -0.25 → divot (inward notch)
-  dotRadius:         [1.3, 2.4],
-  divotRadius:       [1.3, 2.4],
-  dotInsetFrac:      0.7,     // 0 = centred on edge, 1 = fully inside
-  dotAlpha:          0.85,
-  divotAlpha:        0.9,
-  pressureBias:      0.25,    // ±shift to the noise driver
-  // Faster strokes deposit less ink → the colour drifts slightly toward
-  // paper. Whitening is intentionally minimal even at the upper bound —
-  // the effect should read as natural ink density, not as a colour shift.
-  speedWhitenStart:  250,     // px/sec — below this, no whitening
-  speedWhitenFull:   1400,    // px/sec — at and above this, full whitening
-  speedWhitenMax:    0.35,    // max blend toward (255,255,255)
-};
-
-// Tiny 1D value noise — smoothstep-interpolated hash. Outputs in [-1, +1].
-function _inkHash(i) {
-  let h = (i | 0) >>> 0;
-  h = ((h ^ 61) ^ (h >>> 16)) >>> 0;
-  h = (h + (h << 3)) >>> 0;
-  h = (h ^ (h >>> 4)) >>> 0;
-  h = Math.imul(h, 0x27d4eb2d) >>> 0;
-  h = (h ^ (h >>> 15)) >>> 0;
-  return (h & 0xffff) / 32767.5 - 1.0;
-}
-function _inkNoise1d(x) {
-  const i = Math.floor(x);
-  const f = x - i;
-  const a = _inkHash(i);
-  const b = _inkHash(i + 1);
-  const t = f * f * (3 - 2 * f);   // smoothstep
-  return a + t * (b - a);
-}
 
 function easeInOut(t) {
   return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
@@ -1735,7 +1814,16 @@ const drawState = {
 
 // Font-level style settings — fixed pen tool, size and ink colour, sent with
 // every glyph. Kept on the request payload so saved fonts stay self-describing.
-let fontSettings = { tool: 'pen', toolSize: 6, color: [38, 32, 28] };
+// Every font is inked with the realistic pen (speed/pressure dynamics,
+// pooling, round tips, liquid edges); penStyle only picks the weight:
+// 'realistic' (fine) or 'realistic-bold' (slightly thicker tip).
+let fontSettings = { tool: 'pen', toolSize: 6, color: [38, 32, 28], penStyle: 'realistic' };
+
+// Map any stored pen style (including legacy 'classic') onto the two
+// supported weights — must match _normalize_pen_style on the backend.
+function normalizePenStyle(s) {
+  return (s === 'realistic-bold' || s === 'bold') ? 'realistic-bold' : 'realistic';
+}
 
 function _ensure(d, ...keys) {
   let cur = d;
@@ -1789,6 +1877,29 @@ function selectDrawForm(form) {
   drawState.currentForm = form;
   updateDrawUI();
 }
+// Font-wide pen weight. Re-renders the canvas so every committed stroke
+// previews in the chosen weight immediately.
+function setPenStyle(style) {
+  fontSettings.penStyle = normalizePenStyle(style);
+  updatePenStyleButtons();
+  if (drawCtx) renderCanvas();
+}
+
+function updatePenStyleButtons() {
+  const f = document.getElementById('pen-style-fine-btn');
+  const b = document.getElementById('pen-style-bold-btn');
+  const hint = document.getElementById('pen-style-hint');
+  if (!f || !b) return;
+  const bold = fontSettings.penStyle === 'realistic-bold';
+  f.classList.toggle('active-tool', !bold);
+  b.classList.toggle('active-tool', bold);
+  if (hint) {
+    hint.textContent = bold
+      ? 'Realistic ink with a slightly thicker tip. Great at small print sizes. You can switch later.'
+      : 'Realistic ink, true to your pen. Width follows your speed and ink pools where you slow down. You can switch later.';
+  }
+}
+
 function addAlt() {
   const char = drawState.currentChar;
   drawState.slotCounts[char] = getSlotCount(char) + 1;
@@ -1836,6 +1947,7 @@ function updateDrawProgress() {
   }
   fill.style.width = `${Math.round((drawn / Math.max(cells.length, 1)) * 100)}%`;
 }
+
 function renderSlotTabs() {
   const char = drawState.currentChar;
   const count = getSlotCount(char);
@@ -1913,7 +2025,7 @@ function initDrawCanvas() {
 
 // Hard-clamp a point into the renderable band. X is left unclamped for
 // cursive connecting forms, whose entry hooks / exit tails legitimately run
-// to the canvas edges; Y is always clamped (ascender/descender clipping).
+// to the canvas edges; Y is always clamped.
 function clampPt(x, y) {
   const freeX = drawMode === 'cursive' && drawState.currentForm !== 'iso';
   return {
@@ -2044,32 +2156,13 @@ function renderCanvas() {
   drawGuidelines(ctx);
   drawCursiveGuides(ctx);
   const {currentChar: char, currentSlot: slot, currentForm: form, tool, toolSize, color} = drawState;
-  // Pre-build every stroke's polygon so each render call can be given the
-  // OTHER strokes' polygons — used to suppress dots/divots whose anchor
-  // edge sits buried inside another stroke (otherwise they'd appear
-  // floating in the middle of a crossing region).
-  const committedStrokes = getStrokes(char, slot, form);
-  const allPolys = committedStrokes.map(s =>
-    strokeToPolygon(s, toolSize, s.tool || tool)
-  );
-  let currentPoly = null;
+  for (const stroke of getStrokes(char, slot, form)) {
+    renderStrokePolygon(ctx, strokeToPolygon(stroke, toolSize, stroke.tool || tool),
+                        stroke.tool || tool, stroke.color || color, stroke);
+  }
   if (drawState.currentStroke.length > 1) {
-    currentPoly = strokeToPolygon(drawState.currentStroke, toolSize, tool);
-  }
-
-  for (let i = 0; i < committedStrokes.length; i++) {
-    const stroke = committedStrokes[i];
-    const strokeTool = stroke.tool || tool;
-    const strokeColor = stroke.color || color;
-    const others = [];
-    for (let j = 0; j < allPolys.length; j++) {
-      if (j !== i) others.push(allPolys[j]);
-    }
-    if (currentPoly) others.push(currentPoly);
-    renderStrokePolygon(ctx, allPolys[i], strokeTool, strokeColor, stroke, others);
-  }
-  if (currentPoly) {
-    renderStrokePolygon(ctx, currentPoly, tool, color, drawState.currentStroke, allPolys);
+    renderStrokePolygon(ctx, strokeToPolygon(drawState.currentStroke, toolSize, tool),
+                        tool, color, drawState.currentStroke);
   }
 }
 
@@ -2417,7 +2510,7 @@ async function onRefFontUpload(input) {
     updateRefFontUI();
     if (drawCtx) renderCanvas();
   } catch (e) {
-    status.textContent = 'Could not load that file — is it a valid TTF/OTF?';
+    status.textContent = 'Could not load that file. Is it a valid TTF/OTF?';
   }
 }
 
@@ -2453,23 +2546,101 @@ function updateRefFontUI() {
   if (loaded) {
     toggle.textContent = refFont.enabled ? 'Hide' : 'Show';
     toggle.classList.toggle('active-tool', refFont.enabled);
-    status.textContent = (refFont.enabled ? 'Showing: ' : 'Hidden: ') + (refFont.name || 'reference font');
+    status.textContent = (refFont.enabled ? 'Showing ' : 'Hidden ') + (refFont.name || 'reference font');
   } else {
-    status.textContent = 'A faint guide letter shows size & position — or trace over any font you upload.';
+    status.textContent = 'No reference loaded. Add a TTF to trace over it.';
   }
 }
 
 // ── Perfect-freehand polygon engine ──────────────────────────
 
-function strokeToPolygon(points, maxSize, tool) {
+// The "bold" pen weight: same ink model, slightly thicker tip. Must match
+// BOLD_WIDTH_SCALE in processing/pen_realistic.py so the canvas previews
+// the exact weight the OTF will be built with.
+const PEN_BOLD_SCALE = 1.35;
+
+// Realistic-ink half-width profile — mirrors the backend stroker
+// (processing/pen_realistic.py) so the canvas draws what the built OTF
+// will look like:
+//   - width follows pressure and pen speed (slow = wet and wide, fast = thin)
+//   - ink pools at sharp corners (the pen decelerates through a turn)
+//   - terminals: ramp-in with a pen-down blob on slow starts; a fast lift
+//     earns a long thin flick tail, a slow lift a small ink pool.
+function _realisticHalfWidths(points, maxSize) {
+  const n = points.length;
+  const v = new Array(n).fill(0);
+  const arc = new Array(n).fill(0);
+  for (let i = 1; i < n; i++) {
+    const d = Math.hypot(points[i].x - points[i-1].x, points[i].y - points[i-1].y);
+    arc[i] = arc[i-1] + d;
+    const dt = (points[i].t || 0) - (points[i-1].t || 0);
+    v[i] = dt > 0 ? d / dt * 1000 : d * 60;  // px/s; no timestamps → spacing proxy
+  }
+  if (n > 1) v[0] = v[1];
+  const sv = v.slice();
+  for (let i = 1; i < n - 1; i++) sv[i] = (v[i-1] + v[i]*2 + v[i+1]) / 4;
+  const sorted = sv.filter(x => x > 0).sort((a, b) => a - b);
+  const vmed = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+
+  const hws = new Array(n);
+  for (let i = 0; i < n; i++) {
+    let w = (maxSize / 2) * (0.78 + 0.42 * (points[i].p ?? 0.6));
+    if (vmed > 0) {
+      const rel = Math.min(4, Math.max(0.25, sv[i] / vmed));
+      w *= Math.min(1.22, Math.max(0.78, Math.pow(rel, -0.22)));
+    }
+    if (i >= 2 && i < n - 2) {
+      const v1x = points[i].x - points[i-2].x, v1y = points[i].y - points[i-2].y;
+      const v2x = points[i+2].x - points[i].x, v2y = points[i+2].y - points[i].y;
+      const n1 = Math.hypot(v1x, v1y), n2 = Math.hypot(v2x, v2y);
+      if (n1 > 1e-6 && n2 > 1e-6) {
+        const dot = Math.max(-1, Math.min(1, (v1x*v2x + v1y*v2y) / (n1*n2)));
+        const ang = Math.acos(dot) * 180 / Math.PI;
+        w *= 1 + 0.30 * Math.max(0, Math.min(1, (ang - 28) / 72));
+      }
+    }
+    hws[i] = w;
+  }
+
+  // Terminal envelopes, in arc length so they track real stroke distance.
+  const total = arc[n - 1] || 1;
+  const rampIn = maxSize, blobLen = maxSize * 1.8;
+  const flickLen = maxSize * 2.6, poolLen = maxSize;
+  const slowStart = vmed > 0 && sv[0] < 0.5 * vmed;
+  const fastLift = vmed > 0 && sv[n-1] > 1.45 * vmed;
+  for (let i = 0; i < n; i++) {
+    const s = arc[i], e = total - arc[i];
+    if (s < rampIn) {
+      const t = s / rampIn;
+      hws[i] *= 0.70 + 0.30 * (1 - (1 - t) * (1 - t));
+    }
+    if (slowStart && s < blobLen) {
+      hws[i] *= 1 + 0.20 * Math.pow(1 - s / blobLen, 1.5);
+    }
+    if (fastLift) {
+      if (e < flickLen) hws[i] *= 0.22 + 0.78 * Math.pow(e / flickLen, 1.6);
+    } else if (e < poolLen) {
+      hws[i] *= 1 + 0.16 * Math.pow(1 - e / poolLen, 1.5);
+    }
+  }
+  const out = hws.slice();
+  for (let i = 1; i < n - 1; i++) out[i] = (hws[i-1] + hws[i]*2 + hws[i+1]) / 4;
+  return out;
+}
+
+function strokeToPolygon(points, maxSize, tool, penStyle) {
   if (points.length < 2) return [];
   const prof = TOOL_PROFILES[tool] || TOOL_PROFILES.pen;
   const n = points.length;
 
-  // Average pressure across the stroke — passed to renderStrokePolygon for opacity
-  const avgP = points.reduce((s, pt) => s + pt.p, 0) / n;
+  // Every live render path (canvas, current stroke, thumbnails) uses the
+  // realistic ink model at the font-wide weight. The 'classic' style only
+  // survives for strokeToOutlineSVG, which exports the legacy brush polygon
+  // as the svg_paths fallback (the backend re-strokes pen_paths for the
+  // real OTF outlines).
+  const style = penStyle ?? fontSettings.penStyle ?? 'realistic';
 
-  // Pass 1: tangents + raw half-widths
+  // Pass 1: tangents (+ legacy half-widths when exporting classic)
   const tangents = [], hws = [];
   for (let i = 0; i < n; i++) {
     const pt = points[i];
@@ -2479,18 +2650,20 @@ function strokeToPolygon(points, maxSize, tool) {
     const len = Math.hypot(dx, dy) || 1;
     const tx = dx / len, ty = dy / len;
     tangents.push({nx: -ty, ny: tx});
+    if (style !== 'classic') continue;
 
-    // Asymmetric taper: easeOut at start (pen lands, expands fast),
-    // easeIn at end (pen lifts gradually then suddenly leaves paper).
-    // Floor stops the taper from converging to a point so tails stay visible
-    // at small render sizes.
+    // Legacy brush profile (svg_paths fallback only). Asymmetric taper:
+    // easeOut at start, easeIn at end, floored so tips stay visible.
     const st = easeOut(Math.min(i / Math.max(n * prof.startTaper, 1), 1));
     const et = easeIn(Math.min((n - 1 - i) / Math.max(n * prof.endTaper, 1), 1));
     const taper = Math.max(prof.taperFloor ?? 0.0, st * et);
-
     const pMod = (1 - prof.thinning) + prof.thinning * pt.p;
-    const hw = maxSize * prof.widthMult * pMod * taper / 2;
-    hws.push(Math.max(0.05, hw));
+    hws.push(Math.max(0.05, maxSize * prof.widthMult * pMod * taper / 2));
+  }
+
+  if (style !== 'classic') {
+    const size = maxSize * (style === 'realistic-bold' ? PEN_BOLD_SCALE : 1);
+    for (const w of _realisticHalfWidths(points, size)) hws.push(Math.max(0.05, w));
   }
 
   // Pass 2: smooth width along the stroke — removes frame-burst jitter from
@@ -2509,263 +2682,37 @@ function strokeToPolygon(points, maxSize, tool) {
     right.push({x: pt.x - nx * hw, y: pt.y - ny * hw});
   }
 
-  const poly = [...left, ...right.reverse()];
-  poly.avgP = avgP;
-  return poly;
+  return [...left, ...right.reverse()];
 }
 
-// Paint a stroke polygon as a chain of small left[i]/left[i+1]/right[i+1]/right[i]
-// quads. polygonLen must equal 2*n where n is the centerline point count, with
-// the polygon laid out as [...left, ...right.reverse()] (the strokeToPolygon
-// output). Used by pen mode so a stroke that crosses itself doesn't punch a
-// winding-rule hole at the crossing.
-// Compute the average speed (px/sec) for centerline segment i → i+1, using
-// the point timestamps. Returns 0 when timestamps are missing or identical
-// (loaded strokes, single-frame ticks) so the colour stays at base.
-function _segmentSpeedPxPerSec(points, i) {
-  const a = points[i], b = points[i + 1];
-  const dt = (b.t || 0) - (a.t || 0);
-  if (dt <= 0) return 0;
-  const dist = Math.hypot(b.x - a.x, b.y - a.y);
-  return dist / dt * 1000;
-}
-
-// Map raw speed → blend factor in [0, speedWhitenMax]. Below speedWhitenStart
-// the factor is 0; above speedWhitenFull it saturates at the max.
-function _speedWhitenFactor(speed) {
-  const ink = INK_VARIATION;
-  if (speed <= ink.speedWhitenStart) return 0;
-  const t = Math.min(1, (speed - ink.speedWhitenStart) /
-                        (ink.speedWhitenFull - ink.speedWhitenStart));
-  return t * ink.speedWhitenMax;
-}
-
-// Per-segment-coloured quad fill. Same geometry as the plain quad chain,
-// but each quad's fill drifts slightly toward white as the pen accelerated
-// across that segment. Whitening is capped at speedWhitenMax so the effect
-// reads as natural ink density variation, not a colour shift.
-function fillStrokeAsQuadsWithSpeed(ctx, polygon, points, color, baseOpacity) {
-  const n = points.length;
-  if (n < 2 || polygon.length !== 2 * n) return;
-  const [r, g, b] = color;
-  const aStr = baseOpacity.toFixed(2);
-  for (let i = 0; i < n - 1; i++) {
-    const wf = _speedWhitenFactor(_segmentSpeedPxPerSec(points, i));
-    const cr = Math.round(r + (255 - r) * wf);
-    const cg = Math.round(g + (255 - g) * wf);
-    const cb = Math.round(b + (255 - b) * wf);
-    ctx.fillStyle = `rgba(${cr},${cg},${cb},${aStr})`;
-    const li  = polygon[i];
-    const li2 = polygon[i + 1];
-    const ri  = polygon[2 * n - 1 - i];
-    const ri2 = polygon[2 * n - 1 - (i + 1)];
-    ctx.beginPath();
-    ctx.moveTo(li.x,  li.y);
-    ctx.lineTo(li2.x, li2.y);
-    ctx.lineTo(ri2.x, ri2.y);
-    ctx.lineTo(ri.x,  ri.y);
-    ctx.closePath();
-    ctx.fill();
-  }
-}
-
-// Solid filled discs at the pen-down and pen-up centerline points, sized to
-// the local stroke half-width. Fills the tapered-tip area that perfect-
-// freehand carves at each end of a stroke — without these caps, two
-// strokes meeting at an angle leave a small white wedge where their
-// tapered tips both narrow toward the crossing.
-function paintEndpointCaps(ctx, polygon, points, color, opacity) {
-  const n = points.length;
-  if (n < 2 || polygon.length !== 2 * n) return;
-  const [r, g, b] = color;
-  ctx.fillStyle = `rgba(${r},${g},${b},${opacity.toFixed(2)})`;
-  for (const idx of [0, n - 1]) {
-    const leftPt  = polygon[idx];
-    const rightPt = polygon[2 * n - 1 - idx];
-    const hw = Math.hypot(leftPt.x - rightPt.x, leftPt.y - rightPt.y) / 2;
-    if (hw < 0.5) continue;
-    ctx.beginPath();
-    ctx.arc(points[idx].x, points[idx].y, hw, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
-
-function renderStrokePolygon(ctx, polygon, tool, color = [38, 32, 28], points = null, otherPolys = null) {
+/* Ink rendering: paint each stroke exactly as the built OTF will render it.
+   The OTF carries only filled vector outlines in one flat colour (no
+   transparency, texture, dots/divots or per-segment tone shifts), so the
+   canvas draws the same realistic outline geometry as a single flat
+   nonzero-winding fill (CFF's fill rule) plus round terminal caps that
+   match the backend stroker's tip caps. What you draw is what you get. */
+function renderStrokePolygon(ctx, polygon, tool, color = [38, 32, 28], points = null) {
   if (polygon.length < 3) return;
-
   const [r, g, b] = color;
-  // Slower strokes deposit more ink — opacity tracks average pressure
-  const avgP = polygon.avgP ?? 0.7;
-  const opacity = 0.78 + avgP * 0.17;  // 0.78 (fast) → 0.95 (slow)
-
   ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(polygon[0].x, polygon[0].y);
-  for (let i = 1; i < polygon.length - 1; i++) {
-    const mx = (polygon[i].x + polygon[i+1].x) / 2;
-    const my = (polygon[i].y + polygon[i+1].y) / 2;
-    ctx.quadraticCurveTo(polygon[i].x, polygon[i].y, mx, my);
-  }
-  ctx.closePath();
-
-  ctx.shadowBlur = 1.2;
-  ctx.shadowColor = `rgba(${r},${g},${b},0.25)`;
-  if (points && points.length >= 3 && polygon.length === 2 * points.length) {
-    // Endpoint caps go down first — they fill the tapered-tip area so
-    // two strokes meeting at an angle don't leave a white wedge at the
-    // crossing. Quads paint on top with the same alpha so the cap area
-    // ends up only slightly denser than the body (acceptable trade-off
-    // vs visible white gaps).
-    paintEndpointCaps(ctx, polygon, points, color, opacity);
-    // Chain of small quads (left[i], left[i+1], right[i+1], right[i]),
-    // each one filled at a colour drifted slightly toward white based
-    // on the pen's speed across that segment. Non-self-intersecting
-    // quads also avoid the winding-rule hole at stroke crossings.
-    fillStrokeAsQuadsWithSpeed(ctx, polygon, points, color, opacity);
-  } else {
-    ctx.fillStyle = `rgba(${r},${g},${b},${opacity.toFixed(2)})`;
-    ctx.fill();
-  }
-  ctx.shadowBlur = 0;
-  if (points && points.length >= 3) {
-    addPenInkVariation(ctx, polygon, points, color, opacity, otherPolys);
-  }
-  ctx.restore();
-}
-
-// Pen-mode outline-walking variation. Walks the stroke's left and right
-// edges separately and decides at each centerline index whether to drop
-// a dot (outward bump) or a divot (inward notch) based on 1D noise.
-// Divots are clipped to the polygon so the outside half disappears,
-// leaving a half-circle notch. Dots are drawn without clip and sit
-// mostly inside the polygon so only a small bump protrudes — the
-// alternation of bumps and notches reads as a high-frequency wavy edge.
-// Ray-casting point-in-polygon used to suppress overlay placement at edges
-// that are buried inside another stroke's body (avoids dots / divots
-// floating in the middle of a stroke crossing).
-function _pointInPolygon(x, y, poly) {
-  if (!poly || poly.length < 3) return false;
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const xi = poly[i].x, yi = poly[i].y;
-    const xj = poly[j].x, yj = poly[j].y;
-    if (((yi > y) !== (yj > y)) &&
-        (x < (xj - xi) * (y - yi) / ((yj - yi) || 1e-9) + xi)) {
-      inside = !inside;
-    }
-  }
-  return inside;
-}
-
-function _edgeBuriedInOther(x, y, otherPolys) {
-  if (!otherPolys || otherPolys.length === 0) return false;
-  for (let k = 0; k < otherPolys.length; k++) {
-    if (_pointInPolygon(x, y, otherPolys[k])) return true;
-  }
-  return false;
-}
-
-function addPenInkVariation(ctx, polygon, points, color, baseOpacity, otherPolys = null) {
-  const [r, g, b] = color;
-  const ink = INK_VARIATION;
-  const n = points.length;
-  if (n < 4 || polygon.length !== 2 * n) return;
-
-  // Cumulative arc length along the centerline — drives the noise phase
-  // so dot/divot spacing tracks real stroke length, not pointer-event
-  // sampling rate.
-  const arc = new Array(n);
-  arc[0] = 0;
-  for (let i = 1; i < n; i++) {
-    arc[i] = arc[i - 1] + Math.hypot(points[i].x - points[i - 1].x,
-                                     points[i].y - points[i - 1].y);
-  }
-  if (arc[n - 1] < 8) return;
-
-  // Per-stroke phase keeps successive strokes from sharing the same
-  // dark/light pattern. Each side gets its own offset on top.
-  const phase = Math.abs(points[0].x * 0.137 + points[0].y * 0.213) % 1024;
-
-  // ── Divots ─────────────────────────────────────────────────────────
-  // Polygon-clipped so the outer half of each notch is masked away.
-  // Centred exactly on the edge so the visible portion is a clean
-  // half-circle eating into the stroke.
-  ctx.save();
+  ctx.fillStyle = `rgb(${r},${g},${b})`;
   ctx.beginPath();
   ctx.moveTo(polygon[0].x, polygon[0].y);
   for (let i = 1; i < polygon.length; i++) ctx.lineTo(polygon[i].x, polygon[i].y);
   ctx.closePath();
-  ctx.clip();
-
-  for (let side = 0; side < 2; side++) {
-    const sidePhase = phase + (side === 0 ? 0.0 : 31.7);
-    for (let i = 1; i < n - 1; i++) {
-      const edgePt = side === 0 ? polygon[i] : polygon[2 * n - 1 - i];
-      // Skip if this outline point is buried inside another stroke — the
-      // notch would otherwise appear floating in the middle of a crossing
-      // where there's no real "edge" to bite into.
-      if (_edgeBuriedInOther(edgePt.x, edgePt.y, otherPolys)) continue;
-      const nz = _inkNoise1d(arc[i] * ink.outlineNoiseFreq + sidePhase);
-      const driven = nz + (0.5 - points[i].p) * ink.pressureBias;
-      if (driven < -ink.divotThreshold) {
-        const intensity = Math.min(1, (-driven - ink.divotThreshold) /
-                                       (1 - ink.divotThreshold));
-        const radius = ink.divotRadius[0]
-                     + intensity * (ink.divotRadius[1] - ink.divotRadius[0]);
-        ctx.fillStyle = `rgba(255,255,255,${ink.divotAlpha.toFixed(2)})`;
-        ctx.beginPath();
-        ctx.arc(edgePt.x, edgePt.y, radius, 0, Math.PI * 2);
-        ctx.fill();
-      }
+  ctx.fill();
+  const n = points ? points.length : 0;
+  if (points && n >= 2 && polygon.length === 2 * n) {
+    for (const idx of [0, n - 1]) {
+      const lp = polygon[idx], rp = polygon[2 * n - 1 - idx];
+      const hw = Math.hypot(lp.x - rp.x, lp.y - rp.y) / 2;
+      if (hw < 0.5) continue;
+      ctx.beginPath();
+      ctx.arc(points[idx].x, points[idx].y, hw, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
   ctx.restore();
-
-  // ── Dots (outward bumps) ───────────────────────────────────────────
-  // No polygon clip — dots are painted in the stroke colour with their
-  // centre pulled slightly *inside* the edge so the outer ~30 % of each
-  // disc extends past the polygon, reading as a tiny bump attached to
-  // the stroke. Dot colour also picks up the speed-based whitening so
-  // bumps blend into the local stroke tone rather than standing out.
-  for (let side = 0; side < 2; side++) {
-    const sidePhase = phase + (side === 0 ? 50.3 : 81.7);
-    for (let i = 1; i < n - 1; i++) {
-      const edgePt   = side === 0 ? polygon[i] : polygon[2 * n - 1 - i];
-      // Skip bumps whose edge anchor is inside another stroke — without
-      // this, dots from one stroke leak into the body of the other at
-      // crossings and read as floating spots in the overlap region.
-      if (_edgeBuriedInOther(edgePt.x, edgePt.y, otherPolys)) continue;
-      const centerPt = points[i];
-      const dx = centerPt.x - edgePt.x;
-      const dy = centerPt.y - edgePt.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist < 0.5) continue;
-      const ix = dx / dist, iy = dy / dist;   // unit inward vector
-
-      const nz = _inkNoise1d(arc[i] * ink.outlineNoiseFreq + sidePhase);
-      const driven = nz + (points[i].p - 0.5) * ink.pressureBias;
-      if (driven > ink.dotThreshold) {
-        const intensity = Math.min(1, (driven - ink.dotThreshold) /
-                                       (1 - ink.dotThreshold));
-        const radius = ink.dotRadius[0]
-                     + intensity * (ink.dotRadius[1] - ink.dotRadius[0]);
-        const cx = edgePt.x + ix * radius * ink.dotInsetFrac;
-        const cy = edgePt.y + iy * radius * ink.dotInsetFrac;
-        // Speed at this point — average of segment in / segment out so
-        // dots sitting at fast portions of the stroke also whiten.
-        const sIn  = i > 0      ? _segmentSpeedPxPerSec(points, i - 1) : 0;
-        const sOut = i < n - 1  ? _segmentSpeedPxPerSec(points, i)     : 0;
-        const wf = _speedWhitenFactor((sIn + sOut) / 2);
-        const cr = Math.round(r + (255 - r) * wf);
-        const cg = Math.round(g + (255 - g) * wf);
-        const cb = Math.round(b + (255 - b) * wf);
-        ctx.fillStyle = `rgba(${cr},${cg},${cb},${ink.dotAlpha.toFixed(2)})`;
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-  }
 }
 
 // ── Edit controls ─────────────────────────────────────────────
@@ -2863,7 +2810,10 @@ function startDrawMode(mode) {
   const startChar = drawMode === 'cursive' ? 'a' : 'A';
   const startForm = drawMode === 'cursive' ? 'medi' : 'iso';
   // Style is fixed for every font: pen tool, size 6, default ink colour.
-  fontSettings = { tool: 'pen', toolSize: 6, color: [38, 32, 28] };
+  // New fonts start at the fine weight; the user can flip to bold here or
+  // after building.
+  fontSettings = { tool: 'pen', toolSize: 6, color: [38, 32, 28], penStyle: 'realistic' };
+  updatePenStyleButtons();
   // Fresh font: reset spacing sliders to defaults so a previous font's spacing
   // doesn't leak into this one (finalize() reads these values directly). 60 is
   // a small comfortable gap; 0 would make letters touch (edges meet).
@@ -2969,8 +2919,8 @@ function selectInkColor(rgb) {
 // ── Draft autosave (localStorage) ─────────────────────────────
 // Drawing a full font takes ~10 minutes and used to live only in JS memory —
 // one accidental refresh lost everything. Strokes are saved (debounced) after
-// every edit and offered for resume on the home screen. Edit sessions of
-// saved fonts are NOT auto-saved (their source of truth is the server).
+// every edit and offered for resume on the dashboard. Edit sessions of saved
+// fonts are NOT auto-saved (their source of truth is the server).
 const DRAFT_KEY = 'hwfont_draft_v1';
 let draftTimer = null;
 
@@ -2989,15 +2939,21 @@ function saveDraft() {
         for (const [form, list] of Object.entries(forms)) {
           if (!list.length) continue;
           any = true;
+          // Keep pressure AND stroke-relative time — the realistic pen's ink
+          // dynamics need them, so a resumed draft inks identically.
           ((strokes[char] = strokes[char] || {})[slot] =
-            strokes[char][slot] || {})[form] = list.map(s => ({
-              c: s.color || fontSettings.color,
-              p: s.map(pt => [
-                Math.round(pt.x * 10) / 10,
-                Math.round(pt.y * 10) / 10,
-                Math.round((pt.p ?? 0.6) * 100) / 100,
-              ]),
-            }));
+            strokes[char][slot] || {})[form] = list.map(s => {
+              const t0 = s[0].t || 0;
+              return {
+                c: s.color || fontSettings.color,
+                p: s.map(pt => [
+                  Math.round(pt.x * 10) / 10,
+                  Math.round(pt.y * 10) / 10,
+                  Math.round((pt.p ?? 0.6) * 100) / 100,
+                  Math.max(0, Math.round((pt.t || 0) - t0)),
+                ]),
+              };
+            });
         }
       }
     }
@@ -3011,6 +2967,7 @@ function saveDraft() {
       cursiveLocked: drawState.cursiveLocked,
       cursiveX: drawState.cursiveX,
       color: fontSettings.color,
+      penStyle: fontSettings.penStyle,
       strokes,
     }));
   } catch (e) { /* quota exceeded / private mode — drafts just don't persist */ }
@@ -3063,6 +3020,8 @@ function resumeDraft() {
   if (!d) { updateResumeCard(); return; }
   startDrawMode(d.mode);
   fontSettings.color = d.color || [38, 32, 28];
+  fontSettings.penStyle = normalizePenStyle(d.penStyle);
+  updatePenStyleButtons();
   drawState.color = [...fontSettings.color];
   drawState.slotCounts = d.slotCounts || {};
   drawState.cursiveConnY = d.cursiveConnY ?? drawState.cursiveConnY;
@@ -3072,7 +3031,7 @@ function resumeDraft() {
     for (const [slot, forms] of Object.entries(slots)) {
       for (const [form, list] of Object.entries(forms)) {
         const restored = list.map(s => {
-          const pts = s.p.map(([x, y, p]) => ({x, y, p, t: 0}));
+          const pts = s.p.map(([x, y, p, t]) => ({x, y, p: p ?? 0.6, t: t || 0}));
           pts.color = s.c || fontSettings.color;
           pts.tool = 'pen';
           return pts;
@@ -3108,9 +3067,11 @@ function getGlyphXBounds(char, slot, form) {
 }
 
 // xShift: subtract from every x coordinate to normalize glyph to x=0
-// Uses the same strokeToPolygon algorithm as canvas rendering — font matches what you drew.
+// Always renders the legacy brush polygon: stored svg_paths are only a
+// FALLBACK for glyphs whose pen_paths can't be stroked — the backend
+// re-strokes pen_paths with the realistic pen for the real OTF outlines.
 function strokeToOutlineSVG(points, size, xShift = 0) {
-  const polygon = strokeToPolygon(points, size, drawState.tool);
+  const polygon = strokeToPolygon(points, size, drawState.tool, 'classic');
   if (!polygon || polygon.length < 3) return null;
   const pts = polygon.map(p => ({x: p.x - xShift, y: p.y}));
   return 'M ' + pts.map(p => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L ') + ' Z';
@@ -3123,12 +3084,23 @@ function glyphToSVGPaths(char, slot, xShift = 0, form) {
     .filter(Boolean);
 }
 
-// Raw centerline points per stroke (for the line-font Bezier fitter on the
-// backend). Format: [ [[x,y], [x,y], ...], ... ] — one inner list per stroke.
+// Raw centerline points per stroke (for the line-font Bezier fitter and the
+// realistic-ink stroker on the backend). Format: one inner list per stroke,
+// each point [x, y, pressure, t_ms] — pressure and stroke-relative time feed
+// the realistic pen's ink-dynamics model; legacy [x, y] data still works
+// (the backend falls back to sample spacing as a speed proxy).
 function glyphToPenPaths(char, slot, xShift = 0, form) {
   return getStrokes(char, slot, form)
     .filter(s => s.length > 1)
-    .map(s => s.map(pt => [pt.x - xShift, pt.y]));
+    .map(s => {
+      const t0 = s[0].t || 0;
+      return s.map(pt => [
+        Math.round((pt.x - xShift) * 100) / 100,
+        Math.round(pt.y * 100) / 100,
+        Math.round((pt.p ?? 0.6) * 1000) / 1000,
+        Math.max(0, Math.round((pt.t || 0) - t0)),
+      ]);
+    });
 }
 
 function glyphThumbnailB64(char, slot, form) {
@@ -3141,11 +3113,9 @@ function glyphThumbnailB64(char, slot, form) {
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, off.width, off.height);
   ctx.scale(SCALE, SCALE);
   const strokes = getStrokes(char, slot, form);
-  const polys = strokes.map(s => strokeToPolygon(s, drawState.toolSize, drawState.tool));
-  for (let i = 0; i < strokes.length; i++) {
-    const others = [];
-    for (let j = 0; j < polys.length; j++) if (j !== i) others.push(polys[j]);
-    renderStrokePolygon(ctx, polys[i], drawState.tool, drawState.color, strokes[i], others);
+  for (const s of strokes) {
+    renderStrokePolygon(ctx, strokeToPolygon(s, drawState.toolSize, drawState.tool),
+                        drawState.tool, drawState.color, s);
   }
   return off.toDataURL('image/png').split(',')[1];
 }
@@ -3207,7 +3177,7 @@ async function submitGlyphBatches(targetJobId, tasks) {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({glyphs: chunk}),
     });
-    if (!res.ok) throw new Error('Failed to save your letters — please try again.');
+    if (!res.ok) throw new Error('Failed to save your letters. Please try again.');
   }
   lastBuiltSpacing = null;  // glyphs changed → any stored OTF is stale
 }
@@ -3321,6 +3291,7 @@ async function loadSavedFonts() {
 // stored OTF (cached by the CDN, fetched only when the browser paints it).
 let savedFaceCss = null;
 function applySavedFontFace(jobId, fontName, nameEl) {
+  if (!nameEl) return;
   if (!savedFaceCss) {
     savedFaceCss = document.createElement('style');
     savedFaceCss.id = 'saved-faces';
@@ -3333,75 +3304,12 @@ function applySavedFontFace(jobId, fontName, nameEl) {
       `@font-face{font-family:'${family}';src:url('${API}/fonts/${jobId}/${encodeURIComponent(safe)}.otf') format('opentype');font-display:swap;}\n`;
   }
   nameEl.style.fontFamily = `'${family}', var(--font-serif)`;
-  nameEl.style.fontSize = '24px';
-}
-
-function renderSavedFonts(fonts) {
-  const container = document.getElementById('saved-fonts-list');
-  if (!fonts.length) {
-    container.innerHTML = '<p class="saved-fonts-empty">No saved fonts yet — build a font and click “Save to My Fonts.”</p>';
-    return;
-  }
-  container.innerHTML = '';
-  for (const f of fonts) {
-    const date = new Date(f.saved_at * 1000).toLocaleDateString(undefined, {
-      year: 'numeric', month: 'short', day: 'numeric',
-    });
-    const item = document.createElement('div');
-    item.className = 'saved-font-item' + (f.job_exists ? '' : ' expired');
-    item.innerHTML = `
-      <div class="saved-font-info">
-        <div class="saved-font-name-row">
-          <div class="saved-font-name">${escHtml(f.font_name)}</div>
-          ${f.job_exists ? `<button class="rename-btn" title="Rename this font" onclick="renameSavedFont('${f.job_id}', this)">✎</button>` : ''}
-        </div>
-        <div class="saved-font-meta">
-          <span class="badge badge-${f.mode}">${f.mode}</span>
-          ${f.glyph_count} glyph${f.glyph_count !== 1 ? 's' : ''} &middot; saved ${date}
-        </div>
-      </div>
-      <div class="saved-font-actions">
-        ${f.job_exists ? `
-          <div class="saved-font-group">
-            <span class="saved-font-group-label">Download</span>
-            <div class="saved-font-group-btns">
-              <button class="btn btn-outline btn-sm" onclick="downloadSavedFont('${f.job_id}','${escHtml(f.font_name)}',false)" title="Download the normal OTF">Normal</button>
-              ${f.has_line_font ? `<button class="btn btn-outline btn-sm" onclick="downloadSavedFont('${f.job_id}','${escHtml(f.font_name)}',true)" title="Download the single-line OTF (pen plotters)">Single-line</button>` : ''}
-            </div>
-          </div>
-          <div class="saved-font-group">
-            <span class="saved-font-group-label">Proof</span>
-            <div class="saved-font-group-btns">
-              <button class="btn btn-outline btn-sm" onclick="window.open('${API}/process/${f.job_id}/proof?font=dimensional','_blank')" title="Proof sheet for the normal OTF">Normal ↗</button>
-              ${f.has_line_font ? `<button class="btn btn-outline btn-sm" onclick="window.open('${API}/process/${f.job_id}/proof?font=line','_blank')" title="Proof sheet for the single-line OTF">Single-line ↗</button>` : ''}
-            </div>
-          </div>
-          <div class="saved-font-group">
-            <span class="saved-font-group-label">Edit</span>
-            <div class="saved-font-group-btns">
-              <button class="btn btn-teal btn-sm" onclick="openSavedFontSpacing('${f.job_id}','${escHtml(f.font_name)}','${f.mode}')" title="Adjust spacing and re-download without re-editing glyphs">Spacing</button>
-              ${f.mode === 'print' ? `<button class="btn btn-teal btn-sm" onclick="openBordersEditor('${f.job_id}','${escHtml(f.font_name)}')" title="Fine-tune each letter's left/right spacing">Borders</button>` : ''}
-              <button class="btn btn-primary btn-sm" onclick="openSavedFont('${f.job_id}')" title="Edit the drawn glyphs">Glyphs</button>
-            </div>
-          </div>
-        ` : '<span style="font-size:12px;color:var(--coral);">Expired</span>'}
-        <button class="btn-delete" title="Remove from list" onclick="deleteSavedFont('${f.job_id}', this)">&#x2715;</button>
-      </div>
-    `;
-    item.dataset.jobId = f.job_id;
-    item.dataset.fontName = f.font_name;
-    container.appendChild(item);
-    // Show the name in the font itself (lazy, CDN-cached; falls back to the
-    // serif while the OTF loads or if the job has expired).
-    if (f.job_exists) {
-      applySavedFontFace(f.job_id, f.font_name, item.querySelector('.saved-font-name'));
-    }
-  }
+  nameEl.style.fontSize = '26px';
 }
 
 async function renameSavedFont(jobId, btn) {
-  const item = btn.closest('.saved-font-item');
-  const current = item ? item.dataset.fontName : '';
+  const card = btn.closest('.font-card');
+  const current = card ? card.dataset.fontName : '';
   const name = prompt('New name for this font:', current);
   if (name == null) return;
   const trimmed = name.trim();
@@ -3421,8 +3329,137 @@ async function renameSavedFont(jobId, btn) {
   }
 }
 
+function renderSavedFonts(fonts) {
+  const container = document.getElementById('saved-fonts-list');
+  const count = document.getElementById('fonts-count');
+  if (count) count.textContent = fonts.length ? `${fonts.length} font${fonts.length !== 1 ? 's' : ''}` : '';
+  if (!fonts.length) {
+    container.innerHTML = '<p class="saved-fonts-empty">No fonts yet.</p>';
+    return;
+  }
+  container.innerHTML = '';
+  for (const f of fonts) {
+    const date = new Date(f.saved_at * 1000).toLocaleDateString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric',
+    });
+    const pen = normalizePenStyle(f.pen_style);
+    const bold = pen === 'realistic-bold';
+    const card = document.createElement('div');
+    card.className = 'font-card' + (f.job_exists ? '' : ' expired');
+    card.dataset.fontName = f.font_name;
+    card.innerHTML = `
+      <button class="btn-delete" title="Remove from this list" onclick="deleteSavedFont('${f.job_id}', this)">&#x2715;</button>
+      <div>
+        <div class="font-card-name-row">
+          <div class="font-card-name">${escHtml(f.font_name)}</div>
+          ${f.job_exists ? `<button class="rename-btn" title="Rename this font" onclick="renameSavedFont('${f.job_id}', this)">✎</button>` : ''}
+        </div>
+        <div class="font-card-meta">
+          <span class="badge badge-${f.mode}">${f.mode}</span>
+          <span class="badge ${bold ? 'badge-bold' : 'badge-fine'}">${bold ? 'bold' : 'fine'} pen</span>
+          <span>${f.glyph_count} glyph${f.glyph_count !== 1 ? 's' : ''} &middot; saved ${date}</span>
+        </div>
+      </div>
+      ${f.job_exists ? `
+      <div class="fc-rows">
+        <div class="fc-row">
+          <span class="fc-label">Download</span>
+          <div class="fc-btns">
+            <button class="btn btn-primary btn-sm" onclick="downloadSavedFont('${f.job_id}','${escHtml(f.font_name)}',false)" title="Download the normal OTF">OTF</button>
+            ${f.has_line_font ? `<button class="btn btn-outline btn-sm" onclick="downloadSavedFont('${f.job_id}','${escHtml(f.font_name)}',true)" title="Single-line OTF for pen plotters">Line OTF</button>` : ''}
+          </div>
+        </div>
+        <div class="fc-row">
+          <span class="fc-label">Edit</span>
+          <div class="fc-btns">
+            <button class="btn btn-teal btn-sm" onclick="openSavedFont('${f.job_id}')" title="Redraw or add letters on the canvas">Glyphs</button>
+            <button class="btn btn-teal btn-sm" onclick="openSavedFontSpacing('${f.job_id}','${escHtml(f.font_name)}','${f.mode}')" title="Adjust spacing with a live preview, then re-download">Spacing</button>
+            ${f.mode === 'print' ? `<button class="btn btn-teal btn-sm" onclick="openBordersEditor('${f.job_id}','${escHtml(f.font_name)}')" title="Fine-tune each letter's left/right borders">Borders</button>` : ''}
+          </div>
+        </div>
+        <div class="fc-row">
+          <span class="fc-label">Pen</span>
+          <div class="fc-btns">
+            <button class="btn ${!bold ? 'btn-primary' : 'btn-outline'} btn-sm" ${!bold ? 'disabled' : ''} onclick="setSavedPenStyle('${f.job_id}','realistic',this)" title="Re-ink every letter at the fine weight (true to the drawn pen)">Fine</button>
+            <button class="btn ${bold ? 'btn-primary' : 'btn-outline'} btn-sm" ${bold ? 'disabled' : ''} onclick="setSavedPenStyle('${f.job_id}','realistic-bold',this)" title="Re-ink every letter slightly thicker">Bold</button>
+          </div>
+        </div>
+        <div class="fc-row">
+          <span class="fc-label">Proof</span>
+          <div class="fc-btns">
+            <button class="btn btn-outline btn-sm" onclick="window.open('${API}/process/${f.job_id}/proof?font=dimensional','_blank')" title="Contact sheet rendered from the actual OTF">Normal ↗</button>
+            ${f.has_line_font ? `<button class="btn btn-outline btn-sm" onclick="window.open('${API}/process/${f.job_id}/proof?font=line','_blank')" title="Contact sheet for the single-line OTF">Line ↗</button>` : ''}
+          </div>
+        </div>
+      </div>` : `
+      <div class="fc-expired-note">Expired. The drawing data is gone, so this font can no longer be edited or downloaded.</div>`}
+    `;
+    container.appendChild(card);
+    // Show the name in the font itself (lazy, CDN-cached; falls back to the
+    // serif while the OTF loads or if the job has expired).
+    if (f.job_exists) {
+      applySavedFontFace(f.job_id, f.font_name, card.querySelector('.font-card-name'));
+    }
+  }
+}
+
+// ── Dashboard nav helpers ──────────────────────────────────
+
+// Topbar "+ New font": land on the dashboard and bring the create cards
+// into view (they're the first section, but the user may be mid-flow).
+function goNewFont() {
+  goHome();
+  setTimeout(() => {
+    document.getElementById('create-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 80);
+}
+
+// Copy the guided-creator URL for sharing with clients. API is '' when the
+// page is served by the backend (same origin); in local dev it points at
+// the backend explicitly, so resolve against it rather than this page.
+function createUrl() {
+  return (API || window.location.origin) + '/create';
+}
+async function copyCreateLink(btn) {
+  const url = createUrl();
+  try {
+    await navigator.clipboard.writeText(url);
+    btn.textContent = 'Copied!';
+  } catch {
+    window.prompt('Copy this link', url);
+  }
+  setTimeout(() => { btn.textContent = 'Copy link'; }, 1800);
+}
+
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Switch a saved font between the fine and bold pen weight. Rebuilds both
+// OTFs from the stored glyph data with all saved settings (spacing, borders)
+// intact — lossless in both directions, switch back anytime.
+async function setSavedPenStyle(savedJobId, style, btn) {
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Re-inking…';
+  try {
+    const res = await fetch(`${API}/process/${savedJobId}/pen-style`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pen_style: style }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || 'Pen switch failed');
+    }
+    const body = await res.json();
+    if (body.rebuilt) await waitForJobComplete(savedJobId);
+    await loadSavedFonts();
+  } catch (e) {
+    alert(e.message || 'Could not switch the pen. Please try again.');
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
 }
 
 async function deleteSavedFont(jobId, btn) {
@@ -3480,7 +3517,7 @@ async function openSavedFont(savedJobId) {
   let data;
   try {
     const res = await fetch(`${API}/process/${savedJobId}/pen-paths`);
-    if (!res.ok) throw new Error('Font data not found — it may have expired.');
+    if (!res.ok) throw new Error('Font data not found. It may have expired.');
     data = await res.json();
   } catch (e) {
     alert(e.message);
@@ -3519,8 +3556,13 @@ async function openSavedFont(savedJobId) {
       const xOffset = (g.x_shift != null && g.x_shift !== 0)
         ? g.x_shift
         : Math.max(0, Math.round((DRAW_W - ((g.svg_width || DRAW_W) - 24)) / 2)) - 12;
+      // Points may be legacy [x, y] or extended [x, y, p, t] — restore the
+      // pressure/timing so a realistic re-stroke keeps its ink dynamics.
       drawState.strokes[g.char][g.slot][g.form] = g.pen_paths.map(
-        stroke => stroke.map(pt => ({ x: pt[0] + xOffset, y: pt[1], p: 0.5, t: 0 }))
+        stroke => stroke.map(pt => ({
+          x: pt[0] + xOffset, y: pt[1],
+          p: pt[2] ?? 0.5, t: pt[3] ?? 0,
+        }))
       );
       // Restore cursive connector x positions with the same offset so handles
       // stay aligned with stroke entry/exit points.
@@ -3542,10 +3584,11 @@ async function openSavedFont(savedJobId) {
   }
 
   // Pen tool and size are fixed for every font; the ink colour is the font's
-  // own — restore it from the saved glyphs so edits keep the same ink.
+  // own — restore it from the saved glyphs so edits keep the same ink. The
+  // pen WEIGHT is restored from settings below.
   const savedColor = (data.glyphs.find(g => Array.isArray(g.pen_color)) || {}).pen_color
                      || [38, 32, 28];
-  fontSettings = { tool: 'pen', toolSize: 6, color: [...savedColor] };
+  fontSettings = { tool: 'pen', toolSize: 6, color: [...savedColor], penStyle: 'realistic' };
   Object.assign(drawState, {
     tool:     'pen',
     toolSize: 6,
@@ -3570,7 +3613,10 @@ async function openSavedFont(savedJobId) {
     document.getElementById('letter-spacing').value = settings.letter_spacing ?? 60;
     document.getElementById('space-width').value = settings.space_width ?? 600;
     onSpacingChange();
+    fontSettings.penStyle = normalizePenStyle(settings.pen_style);
+    currentPenStyle = fontSettings.penStyle;
   } catch { /* keep whatever the sliders currently show */ }
+  updatePenStyleButtons();
 
   // Reopen the job so it accepts new glyph submissions.
   try {
@@ -3610,7 +3656,7 @@ async function openBordersEditor(savedJobId, fontName) {
   let data;
   try {
     const res = await fetch(`${API}/process/${savedJobId}/bearings`);
-    if (!res.ok) throw new Error('Border data not found — the font may have expired.');
+    if (!res.ok) throw new Error('Border data not found. The font may have expired.');
     data = await res.json();
   } catch (e) {
     alert(e.message);
@@ -3686,7 +3732,7 @@ function selectBordersGlyph(i) {
   const label = g.slot > 0 ? `${g.char} (alternate ${g.slot})` : g.char;
   document.getElementById('borders-char').textContent = g.char;
   document.getElementById('borders-char-meta').textContent =
-    `${label} — width ${Math.round(g.lsb + (g.svg_width - 2 * g.canvas_pad) * g.coord_scale + g.rsb)} units`;
+    `${label} · width ${Math.round(g.lsb + (g.svg_width - 2 * g.canvas_pad) * g.coord_scale + g.rsb)} units`;
   // Reflect active thumb without rebuilding the whole strip.
   document.querySelectorAll('#borders-strip .borders-thumb').forEach((el, idx) =>
     el.classList.toggle('active', idx === bordersIdx));
@@ -3811,7 +3857,7 @@ function renderBordersPreview() {
   penX += 8;
 
   const baseline = (bordersList[0] && bordersList[0].baseline_y) || 288;
-  const yTop = 40, yH = 340;  // crop cap→descender band with a little air
+  const yTop = 40, yH = 350;  // crop cap→descender band with a little air
   svg.setAttribute('viewBox', `0 ${yTop} ${Math.max(penX, 60)} ${yH}`);
   svg.setAttribute('width', Math.max(penX, 60) * (92 / yH));
   svg.setAttribute('height', 92);
@@ -3853,7 +3899,7 @@ function setCurrentBearing(side, value) {
   renderBordersEditor();
   renderBordersPreview();
   document.getElementById('borders-char-meta').textContent =
-    `${g.slot > 0 ? `${g.char} (alternate ${g.slot})` : g.char} — width ${Math.round(g.lsb + (g.svg_width - 2 * g.canvas_pad) * g.coord_scale + g.rsb)} units`;
+    `${g.slot > 0 ? `${g.char} (alternate ${g.slot})` : g.char} · width ${Math.round(g.lsb + (g.svg_width - 2 * g.canvas_pad) * g.coord_scale + g.rsb)} units`;
 }
 
 function onBordersInput(side, raw) {
@@ -3899,7 +3945,7 @@ function bordersNext() { selectBordersGlyph(bordersIdx + 1); }
 async function fetchAutoBearings() {
   if (bordersAuto) return bordersAuto;
   const res = await fetch(`${API}/process/${jobId}/bearings/auto`);
-  if (!res.ok) throw new Error('Could not measure the letters — please try again.');
+  if (!res.ok) throw new Error('Could not measure the letters. Please try again.');
   bordersAuto = (await res.json()).bearings || {};
   return bordersAuto;
 }
@@ -3928,7 +3974,7 @@ async function autoAdjustBorders() {
     bordersAutoApplied = true;
     renderBordersStrip();
     selectBordersGlyph(bordersIdx);
-    status.textContent = `Auto-adjusted ${n} letters — review them, then “Apply & rebuild”.`;
+    status.textContent = `Auto-adjusted ${n} letters. Review them, then hit “Apply & rebuild”.`;
   } catch (e) {
     status.textContent = '';
     showError('borders-error', e.message);
@@ -4043,7 +4089,7 @@ async function openSavedFontSpacing(savedJobId, fontName, mode) {
   let settings;
   try {
     const res = await fetch(`${API}/process/${savedJobId}/settings`);
-    if (!res.ok) throw new Error('Font settings not found — it may have expired.');
+    if (!res.ok) throw new Error('Font settings not found. It may have expired.');
     settings = await res.json();
   } catch (e) {
     alert(e.message);
@@ -4061,7 +4107,9 @@ async function openSavedFontSpacing(savedJobId, fontName, mode) {
   fontSafeName = currentFontName.replace(/\s+/g, '_');
   approvedGlyphIds = settings.approved_glyph_ids || [];
   drawMode = mode || 'print';
-  fontSettings = { tool: 'pen', toolSize: 6, color: [38, 32, 28] };
+  fontSettings = { tool: 'pen', toolSize: 6, color: [38, 32, 28],
+                   penStyle: normalizePenStyle(settings.pen_style) };
+  currentPenStyle = normalizePenStyle(settings.pen_style);
   document.getElementById('font-name').value = currentFontName;
 
   // Restore the saved spacing onto the sliders + value labels.
@@ -4167,9 +4215,14 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 
-// ── Startup ────────────────────────────────────────────────
+// ── Page init ──────────────────────────────────────────────
+updatePenStyleButtons();
 updateResumeCard();
 loadSavedFonts();
+// Point the share-with-a-client link at the backend origin (API is '' when
+// this page is served by the backend itself, so the relative href works).
+const _createLink = document.getElementById('open-create-link');
+if (_createLink) _createLink.href = createUrl();
 </script>
 </body>
 </html>

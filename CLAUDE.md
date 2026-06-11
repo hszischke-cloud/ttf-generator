@@ -32,11 +32,44 @@ backend/
 ├── tests/                   — pytest suite (in-memory Supabase stub)
 └── processing/
     ├── font_builder.py      — glyph outlines → OTF (metrics, features, COLR)
+    ├── pen_realistic.py     — realistic-ink stroker (pen_paths → outlines)
     ├── autospace.py         — optical side-bearing suggestions
     ├── centerline.py        — pen_paths → single-line SVG for the line OTF
-    ├── perturb.py           — organic outline jitter
+    ├── perturb.py           — legacy outline jitter (permanently off)
     └── proof_sheet.py       — OTF → SVG proof sheet
 ```
+
+## Pen weights (dimensional OTF)
+Every glyph stores `pen_paths` (raw centerline strokes, points
+`[x, y, pressure, t_ms]`; legacy `[x, y]` still supported) plus `svg_paths`
+(legacy canvas brush polygons, kept only as a fallback for glyphs whose
+pen_paths can't be stroked). At build time `processing/pen_realistic.py`
+ALWAYS re-strokes each glyph's `pen_paths` with an ink-dynamics model:
+speed/pressure width modulation, ink pooling at corners/dwell points, round
+tip caps, blob starts, flick tails, Bézier liquid edges with paper-fibre
+notches. The UPM-space perturb/divot pass is permanently off (the stroker
+owns the edge texture). Deterministic per glyph_id.
+
+The job-state field `pen_style` picks only the WEIGHT:
+- `realistic` — fine, true to the drawn pen size (default).
+- `realistic-bold` — same model with the tip scaled by `BOLD_WIDTH_SCALE`
+  (1.35); the whole model scales so it pools/caps like a fatter pen.
+- legacy values (`classic`, missing) are coerced to `realistic` by
+  `_normalize_pen_style` in main.py.
+
+Switching is lossless both ways (`POST /process/{job_id}/pen-style`, rebuilds
+with stored settings; advances are identical across weights so layout never
+shifts). `FinalizeRequest.pen_style=None` preserves the job's current weight.
+UI: Fine/Bold selector on the draw page (canvas previews the full ink model
+live), toggle on the download page and per saved font card.
+
+## Auto-borders on first build
+A print job's FIRST build computes the optical margin-equalizing side
+bearings (`processing/autospace.py`) and persists them as `glyph_bearings`,
+so every glyph starts with perceived-width-equalized spacing and later
+rebuilds / the borders editor inherit the same values. Gated on "never built
++ no manual bearings + not cursive" so pre-existing fonts and user-adjusted
+borders are never silently re-spaced.
 
 ## Job lifecycle
 
@@ -68,10 +101,11 @@ kept forever.
 | GET  | `/process/{id}/status` | cheap field-select; polled every 1–2 s |
 | GET  | `/process/{id}/glyphs` | review list; thumbnails as public CDN URLs |
 | POST | `/process/{id}/finalize` | build OTF + line OTF (BackgroundTasks) |
+| POST | `/process/{id}/pen-style` | switch fine/bold weight + rebuild (lossless) |
 | GET  | `/process/{id}/bearings` | border-editor payload (iso glyphs only) |
 | GET  | `/process/{id}/bearings/auto?tightness=N` | optical lsb/rsb suggestions |
 | GET  | `/process/{id}/pen-paths` | full glyph data to re-open for editing |
-| GET  | `/process/{id}/settings` | spacing/name needed to re-finalize |
+| GET  | `/process/{id}/settings` | spacing/name/pen_style needed to re-finalize |
 | POST | `/process/{id}/reopen` | back to awaiting_review |
 | GET  | `/process/{id}/proof?font=line\|dimensional` | SVG proof sheet |
 | GET  | `/fonts/{id}/{filename}` | 302 → content-versioned public storage URL |
@@ -80,15 +114,17 @@ kept forever.
 ## Coordinate system & font metrics (font_builder.py)
 
 - Canvas: 300×400 logical px. Guidelines: cap y=60, x-height 168,
-  **baseline 288**, descender 360. Safe band: y 30–360, x 16–284 (the UI
-  hard-clamps strokes into it).
+  **baseline 288**, descender 380 (ratio 0.95 — must match
+  `GUIDELINE_BOTTOM_RATIO`). Safe band: y 30–380, x 16–284 (the UI
+  hard-clamps strokes into it; cursive connecting forms keep free x).
 - Glyphs are submitted post-xShift: ink starts at x = PAD (12 px);
   `svg_width` = ink width + 2·PAD.
-- `CELL_SCALE` ≈ 4.35 UPM/px (UPM 1000). Font y = −(canvas y)·scale +
-  baseline·scale. Caps reach ≈ 990 UPM; descenders ≈ −313.
-- `usWinAscent 1150 / usWinDescent 340` cover the full safe band so Windows
-  never clips; hhea/typo metrics stay at 800/−221 so line spacing is stable.
+- `CELL_SCALE` ≈ 4.35 UPM/px (UPM 1000). Real ink landmarks: cap ink
+  ≈ 991 UPM, x-height ≈ 522, descender ink ≈ −400.
   **Don't change CELL_SCALE** — it would resize every saved font.
+- Vertical metrics derive from the real canvas mapping: hhea/typo
+  ascent 1050 / descent ≈ −450; `usWinAscent 1280 / usWinDescent 520`
+  cover the whole drawable canvas so Windows never clips.
 - iso glyphs: advance = lsb + ink width + rsb; default bearings are 0/0
   (edges touch at letter_spacing 0). Per-glyph overrides live in state
   `glyph_bearings` and are preserved across spacing-only re-finalizes.
@@ -100,19 +136,23 @@ kept forever.
 HT-Letterspacer-style optical margins: scanlines across a per-case zone
 (x-height band for lowercase, cap band for caps/digits, own ink band for
 punctuation), depth-capped, target = median letter margin (self-calibrating),
-output clamped to [−150, 250] UPM. Suggestions only — nothing persists until
-the user applies (finalize with `glyph_bearings`).
+output clamped to [−150, 250] UPM. Applied automatically on a print job's
+first build (see above); afterwards suggestions only — the borders editor
+shows them as ghost ticks and nothing persists until the user applies.
 
 ## Frontend notes (app.html)
 
-- Single file: pages = home / draw / review / download / borders, toggled by
-  `goTo()`. `const API = 'http://localhost:8001'` is rewritten to '' when
-  served by the backend.
-- Drafts autosave to localStorage (`hwfont_draft_v1`) debounced after every
-  stroke; resume card on home. Edit sessions of saved fonts are NOT
+- Single file: pages = dashboard (home) / draw / review / download / borders,
+  toggled by `goTo()`. `const API = 'http://localhost:8001'` is rewritten to
+  '' when served by the backend.
+- Drafts autosave to localStorage (`hwfont_draft_v1`, points keep pressure +
+  time so a resumed draft re-inks identically) debounced after every stroke;
+  resume card on the dashboard. Edit sessions of saved fonts are NOT
   autosaved (server is source of truth) — they get a beforeunload guard.
 - Canvas uses a devicePixelRatio backing store; all logic stays in logical
-  300×400 coords.
+  300×400 coords. The canvas renders exactly what the OTF will be: realistic
+  ink half-width profile mirroring pen_realistic.py (`PEN_BOLD_SCALE` must
+  match `BOLD_WIDTH_SCALE`), flat single-colour nonzero fill + round caps.
 - Spacing preview: the previewed OTF has the last build's spacing BAKED IN;
   CSS letter/word-spacing applies only the *delta* from `lastBuiltSpacing`.
 - Builds show the full-screen overlay (`buildOverlayShow/Set/Hide` +
@@ -122,7 +162,8 @@ the user applies (finalize with `glyph_bearings`).
   bearings (no rebuild). Tightness slider re-applies cached suggestions
   client-side.
 - Glyph thumbnails are public CDN URLs (content-versioned), rendered at half
-  scale on upload.
+  scale on upload. Saved-font card names render in their own font via lazy
+  @font-face.
 
 ## Testing
 
