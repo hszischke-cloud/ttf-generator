@@ -927,9 +927,12 @@ async function submitAll(){
       });
       if(!res.ok) throw new Error('Could not save your letters. Please try again.');
     }
-    // Kick off the first build (placeholder name; real name applied at "All done").
-    // 60 = small comfortable gap; 0 would make letters touch (edges meet).
-    await runBuild('My Handwriting', 60, 600, /*onComplete*/ showAdjust);
+    // Kick off the first build (placeholder name; real name applied at "All
+    // done"). Built spacing-NEUTRAL (0 / 600): the adjust screen previews the
+    // sliders via CSS letter/word-spacing on top of this font, so anything
+    // baked in here would be double-counted and the first paint wouldn't
+    // match the slider values. The real spacing is baked by the final build.
+    await runBuild('My Handwriting', 0, 600, /*onComplete*/ showAdjust);
   }catch(e){
     showBanner('build-err', e.message || 'Something went wrong. Please try again.');
   }
@@ -1019,11 +1022,12 @@ function onAdjustSliders(){
   const sw=parseInt(document.getElementById('sw-range').value,10);
   document.getElementById('ls-val').textContent = ls===0?'touching':(ls>0?`+${ls}`:`${ls}`);
   document.getElementById('sw-val').textContent = sw;
-  // Live CSS approximation against the preview font (size ~1.9rem ≈ 30px).
+  // Live CSS approximation against the preview font. The preview build is
+  // spacing-neutral (0 / 600), so the slider values map 1:1 onto CSS em
+  // offsets (1000 UPM = 1em) — what the slider says is what you see.
   const pv=document.getElementById('adj-preview');
-  const fontPx=30;
-  pv.style.letterSpacing = `${(ls*fontPx/1000).toFixed(2)}px`;
-  pv.style.wordSpacing   = `${((sw-600)*fontPx/1000).toFixed(2)}px`;
+  pv.style.letterSpacing = `${(ls/1000).toFixed(4)}em`;
+  pv.style.wordSpacing   = `${((sw-600)/1000).toFixed(4)}em`;
 }
 async function confirmAdjust(){
   const name=document.getElementById('adj-name').value.trim() || 'My Handwriting';

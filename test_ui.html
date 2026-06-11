@@ -552,6 +552,18 @@
     /* Spacing sliders full width */
     .slider-row { max-width: 100%; }
 
+    /* Saved fonts: the three action groups don't fit beside the name on a
+       phone (flex-shrink:0 made them overflow the card edge). Stack the card
+       vertically, let groups wrap inside the card, and pin the delete ✕ to
+       the top-right corner. */
+    .saved-font-item { position: relative; flex-direction: column; align-items: stretch; gap: 12px; padding: 14px 16px; }
+    .saved-font-info { padding-right: 32px; }  /* keep clear of the ✕ */
+    .saved-font-name { white-space: normal; }
+    .saved-font-actions { width: 100%; flex-shrink: 1; align-items: stretch; gap: 10px 14px; }
+    .saved-font-group { min-width: 0; }
+    .saved-font-group-btns { flex-wrap: wrap; }
+    .saved-font-actions .btn-delete { position: absolute; top: 10px; right: 10px; }
+
     /* Borders editor: stack controls, full-width primary actions */
     .borders-readout { gap: 10px; }
     .borders-readout .btn { flex: 1 1 auto; }
@@ -1108,8 +1120,9 @@ async function showDownloadPage(feaWarning, cacheBust, lineInfo) {
   const bust = Date.now();
   const family = `HWFont_${bust}`;
   const previewEl = document.getElementById('preview-text');
-  previewEl.style.letterSpacing = '';
-  previewEl.style.wordSpacing = '';
+  // Sync the CSS spacing offsets to the loaded build (slider == baked → 0
+  // offset), so the very first paint matches the slider values exactly.
+  onSpacingChange();
   previewEl.style.fontFamily = 'serif'; // hold on fallback while loading
   previewEl.style.opacity = '0.4';      // dim to signal "loading"
   // Mirror the chosen pen colour as the CSS foreground colour. COLR-aware
@@ -1145,15 +1158,22 @@ function updatePreview() {
 }
 
 function onSpacingChange() {
-  const ls = parseInt(document.getElementById('letter-spacing').value);
-  const sw = parseInt(document.getElementById('space-width').value);
+  const ls = parseInt(document.getElementById('letter-spacing').value) || 0;
+  const sw = parseInt(document.getElementById('space-width').value) || 600;
   document.getElementById('ls-val').textContent = ls + ' units';
   document.getElementById('sw-val').textContent = sw + ' units';
   const previewEl = document.getElementById('preview-text');
-  // letter-spacing: UPM → em (1000 UPM = 1em)
-  previewEl.style.letterSpacing = (ls / 1000) + 'em';
-  // word-spacing: extra width beyond default 600 UPM space
-  previewEl.style.wordSpacing = ((sw - 600) / 1000) + 'em';
+  // The previewed OTF already has the last build's spacing BAKED IN, so the
+  // CSS adjustment must be the *delta* between the slider and that build —
+  // not the slider's absolute value (which double-counted and made the
+  // preview render the wrong spacing until things re-synced). When the
+  // slider sits exactly on the built value the offset is 0 and the preview
+  // is the font, verbatim. 1000 UPM = 1em.
+  const baked = lastBuiltSpacing || {ls, sw};
+  // Cursive: the letter-spacing slider is hidden/forced — never offset it.
+  const lsOffset = (drawMode === 'cursive') ? 0 : (ls - baked.ls);
+  previewEl.style.letterSpacing = (lsOffset / 1000) + 'em';
+  previewEl.style.wordSpacing = ((sw - baked.sw) / 1000) + 'em';
 }
 
 // Open the SVG proof sheet for the current job in a new tab. `which` is
@@ -3290,6 +3310,7 @@ async function openSavedFontSpacing(savedJobId, fontName, mode) {
   editingJobId = null;
   loadedGlyphData = {};
   touchedInEdit = new Set();
+  lastBuiltSpacing = null;  // unknown until we confirm this job's build below
 
   jobId = savedJobId;
   currentFontName = settings.font_name || fontName;
