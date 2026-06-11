@@ -44,7 +44,6 @@
     font-family: var(--font-display);
     font-size: 20px; font-weight: 400; color: var(--brown); letter-spacing: 0.01em;
   }
-  .site-nav .brand span { opacity: 0.55; font-weight: 400; margin-left: 8px; font-size: 13px; font-family: var(--font-sans); }
   .site-nav .brand { cursor: pointer; }
   .site-nav .nav-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
 
@@ -230,36 +229,38 @@
   .error-banner.show { display: block; }
 
   /* ── Dashboard ── */
-  #page-home { max-width: 1060px; }
-  .dash-head { padding: 6px 0 2px; }
-  .dash-head p.sub { margin-bottom: 0; }
+  #page-home { max-width: 1240px; }
+
+  /* Sidebar (create actions) + main (fonts) */
+  .dash-layout { display: flex; gap: 22px; align-items: flex-start; margin-top: 4px; }
+  .dash-side {
+    width: 212px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px;
+    position: sticky; top: 16px;
+  }
+  .side-group {
+    background: var(--input-bg); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: 14px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .side-label {
+    font-size: 9.5px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.1em; color: var(--ink-light);
+  }
+  .dash-side .btn { width: 100%; }
+  .dash-main { flex: 1; min-width: 0; }
   .dash-section-head {
     display: flex; align-items: baseline; gap: 12px;
-    margin: 36px 0 14px; flex-wrap: wrap;
+    margin: 0 0 14px; flex-wrap: wrap;
   }
   .dash-section-head h2 { margin-bottom: 0; font-size: 22px; }
   .dash-section-head .count { font-size: 13px; color: var(--ink-light); }
 
-  /* Create row — the two ways to make a font, side by side */
-  .create-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 14px; }
-  .create-card {
-    background: var(--input-bg); border: 1.5px solid var(--border-color);
-    border-radius: var(--radius-xl); padding: 22px 22px 18px;
-    display: flex; flex-direction: column; gap: 12px;
-    transition: border-color .2s ease, box-shadow .2s ease;
-  }
-  .create-card:hover { border-color: var(--teal); box-shadow: 0 6px 20px rgba(91,65,52,0.10); }
-  .create-card h2 { font-size: 19px; margin-bottom: 4px; }
-  .create-card p { font-size: 13.5px; color: var(--ink-light); line-height: 1.6; }
-  .cc-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: auto; }
-  .cc-hint { font-size: 11.5px; color: var(--ink-light); font-style: italic; margin-top: 2px; }
-
   /* Font cards grid */
-  .fonts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+  .fonts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
   .font-card {
     position: relative; background: var(--input-bg); border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg); padding: 18px 18px 16px;
-    display: flex; flex-direction: column; gap: 12px;
+    border-radius: var(--radius-lg); padding: 16px 16px 14px;
+    display: flex; flex-direction: column; gap: 11px;
   }
   .font-card-name {
     font-family: var(--font-serif); font-size: 21px; font-weight: 600;
@@ -528,10 +529,11 @@
 
     h1 { font-size: 26px; }
 
-    /* Dashboard: stack the create cards and the font cards */
-    .create-row { grid-template-columns: 1fr; gap: 12px; }
-    .create-card { padding: 18px 16px 14px; }
-    .cc-actions .btn { flex: 1 1 auto; }
+    /* Dashboard: sidebar collapses to a compact row above the fonts */
+    .dash-layout { flex-direction: column; gap: 12px; }
+    .dash-side { width: 100%; position: static; flex-direction: row; gap: 10px; }
+    .side-group { flex: 1; padding: 10px; }
+    .dash-side .btn { padding: 9px 10px; font-size: 13px; }
     .fonts-grid { grid-template-columns: 1fr; }
     .fc-label { width: 72px; }
 
@@ -577,7 +579,6 @@
 
     /* Topbar: keep brand + actions on one line */
     .site-nav { gap: 8px; }
-    .site-nav .brand span { display: none; }   /* hide the subtitle on phones */
 
     /* Draw page: the step header costs canvas space on a phone */
     #draw-step-header { display: none; }
@@ -595,7 +596,7 @@
 <body>
 
 <nav class="site-nav">
-  <div class="brand" onclick="goHome()" title="Back to the dashboard">Handwriting f<span class="odot odot--teal">o</span>nts <span>studio · snailmail.eco</span></div>
+  <div class="brand" onclick="goHome()" title="Back to the dashboard">snailmail.ec<span class="odot odot--teal">o</span></div>
   <div class="nav-actions">
     <button class="btn btn-outline btn-sm" onclick="goHome()">My fonts</button>
     <button class="btn btn-primary btn-sm" onclick="goNewFont()">＋ New font</button>
@@ -604,47 +605,33 @@
 
 <!-- ===================== DASHBOARD ===================== -->
 <div class="page active" id="page-home">
-  <div class="dash-head">
-    <h1>Font dashboard</h1>
-    <p class="sub">Every handwriting font in one place. Download, edit, re-ink, share.</p>
-  </div>
+  <div class="dash-layout">
 
-  <!-- The two ways to make a font -->
-  <div class="dash-section-head" id="create-section">
-    <h2>Make a new font</h2>
-  </div>
-  <div class="create-row">
-    <div class="create-card">
-      <div>
-        <h2>Design studio</h2>
-        <p>The full toolkit, right here: alternate letterforms, cursive joining, reference tracing, then spacing and border control after the build.</p>
+    <!-- Sidebar: every way to start a font -->
+    <aside class="dash-side" id="create-section">
+      <div class="side-group">
+        <span class="side-label">New font</span>
+        <button class="btn btn-primary" onclick="startDrawMode('print')">✍️ Print</button>
+        <button class="btn btn-outline" onclick="startDrawMode('cursive')">Cursive</button>
       </div>
-      <div class="cc-actions">
-        <button class="btn btn-primary" onclick="startDrawMode('print')">✍️ New print font</button>
-        <button class="btn btn-outline" onclick="startDrawMode('cursive')">New cursive font</button>
-      </div>
-      <p class="cc-hint">Print ≈ 52 letters · cursive ≈ 150 (init / medi / fina forms that join).</p>
-    </div>
-    <div class="create-card">
-      <div>
-        <h2>Guided creator</h2>
-        <p>The simple step-by-step flow for clients: one letter at a time with placement hints, nothing to configure. Finished fonts appear on this dashboard.</p>
-      </div>
-      <div class="cc-actions">
-        <a class="btn btn-teal" id="open-create-link" href="/create" target="_blank" rel="noopener">Open guided creator ↗</a>
+      <div class="side-group">
+        <span class="side-label">Guided creator</span>
+        <a class="btn btn-teal" id="open-create-link" href="/create" target="_blank" rel="noopener">Open ↗</a>
         <button class="btn btn-outline" onclick="copyCreateLink(this)">Copy link</button>
       </div>
-      <p class="cc-hint">Share the link with anyone whose handwriting you want as a font.</p>
-    </div>
-  </div>
+    </aside>
 
-  <!-- All saved fonts -->
-  <div class="dash-section-head">
-    <h2>My fonts</h2>
-    <span class="count" id="fonts-count"></span>
-  </div>
-  <div id="saved-fonts-list" class="fonts-grid">
-    <p class="saved-fonts-empty">Loading…</p>
+    <!-- Main: all saved fonts -->
+    <main class="dash-main">
+      <div class="dash-section-head">
+        <h2>My fonts</h2>
+        <span class="count" id="fonts-count"></span>
+      </div>
+      <div id="saved-fonts-list" class="fonts-grid">
+        <p class="saved-fonts-empty">Loading…</p>
+      </div>
+    </main>
+
   </div>
 </div>
 
@@ -843,7 +830,7 @@
   <div id="line-section" class="line-section">
     <div class="ls-title">Single-line version (for pen plotters)</div>
     <p style="margin:0 0 12px 0;">
-      Each stroke is a centerline path: when you convert the OTF to SVG, the pen plotter
+      Each stroke is a centerline path, so when you convert the OTF to SVG the pen plotter
       draws each letter as one line instead of tracing both edges. Preview above shows the
       dimensional version; the line font may not render correctly in browsers.
     </p>
@@ -891,7 +878,7 @@
         <span class="tightness-val" id="borders-tightness-val">0</span>
       </div>
     </div>
-    <p class="borders-auto-hint">Measures each letter's shape and sets the borders so every letter <em>feels</em> the same width: narrow letters (i, l) get more breathing room, letters with long arms (T, L) get tucked in. Nothing is saved until you hit “Apply &amp; rebuild”.</p>
+    <p class="borders-auto-hint">Measures each letter's shape and sets the borders so every letter <em>feels</em> the same width. Narrow letters (i, l) get more breathing room, letters with long arms (T, L) get tucked in. Nothing is saved until you hit “Apply &amp; rebuild”.</p>
   </div>
 
   <div class="borders-label-row">
@@ -1169,7 +1156,7 @@ async function showDownloadPage(feaWarning, cacheBust, lineInfo) {
   document.getElementById('line-unavailable').style.display = hasLine ? 'none' : 'block';
   const skipNote = document.getElementById('line-skipped-note');
   if (lineInfo && lineInfo.skipped && lineInfo.skipped.length) {
-    skipNote.textContent = `(skipped in line font: ${lineInfo.skipped.join(', ')})`;
+    skipNote.textContent = `Skipped in the line font ${lineInfo.skipped.join(', ')}`;
   } else {
     skipNote.textContent = '';
   }
@@ -1405,7 +1392,7 @@ async function downloadFont(fmt, line) {
     const skipped = finalStatus.line_skipped_glyphs || [];
     const skipNote = document.getElementById('line-skipped-note');
     if (skipped.length) {
-      skipNote.textContent = `(skipped in line font: ${skipped.join(', ')})`;
+      skipNote.textContent = `Skipped in the line font ${skipped.join(', ')}`;
     } else {
       skipNote.textContent = '';
     }
@@ -2162,7 +2149,7 @@ function updateRefFontUI() {
   if (loaded) {
     toggle.textContent = refFont.enabled ? 'Hide' : 'Show';
     toggle.classList.toggle('active-tool', refFont.enabled);
-    status.textContent = (refFont.enabled ? 'Showing: ' : 'Hidden: ') + (refFont.name || 'reference font');
+    status.textContent = (refFont.enabled ? 'Showing ' : 'Hidden ') + (refFont.name || 'reference font');
   } else {
     status.textContent = 'No reference loaded. Add a TTF to trace over it.';
   }
@@ -2685,7 +2672,7 @@ function renderSavedFonts(fonts) {
   const count = document.getElementById('fonts-count');
   if (count) count.textContent = fonts.length ? `${fonts.length} font${fonts.length !== 1 ? 's' : ''}` : '';
   if (!fonts.length) {
-    container.innerHTML = '<p class="saved-fonts-empty">No fonts yet. Start one in the studio above, or share the guided creator with someone whose handwriting you want.</p>';
+    container.innerHTML = '<p class="saved-fonts-empty">No fonts yet.</p>';
     return;
   }
   container.innerHTML = '';
@@ -2725,7 +2712,7 @@ function renderSavedFonts(fonts) {
           </div>
         </div>
         <div class="fc-row">
-          <span class="fc-label">Pen weight</span>
+          <span class="fc-label">Pen</span>
           <div class="fc-btns">
             <button class="btn ${!bold ? 'btn-primary' : 'btn-outline'} btn-sm" ${!bold ? 'disabled' : ''} onclick="setSavedPenStyle('${f.job_id}','realistic',this)" title="Re-ink every letter at the fine weight (true to the drawn pen)">Fine</button>
             <button class="btn ${bold ? 'btn-primary' : 'btn-outline'} btn-sm" ${bold ? 'disabled' : ''} onclick="setSavedPenStyle('${f.job_id}','realistic-bold',this)" title="Re-ink every letter slightly thicker">Bold</button>
@@ -2739,7 +2726,7 @@ function renderSavedFonts(fonts) {
           </div>
         </div>
       </div>` : `
-      <div class="fc-expired-note">The editable drawing data for this font has expired. It can no longer be downloaded or edited. Remove it, or recreate it in the studio.</div>`}
+      <div class="fc-expired-note">Expired. The drawing data is gone, so this font can no longer be edited or downloaded.</div>`}
     `;
     container.appendChild(card);
   }
@@ -2768,7 +2755,7 @@ async function copyCreateLink(btn) {
     await navigator.clipboard.writeText(url);
     btn.textContent = 'Copied!';
   } catch {
-    window.prompt('Copy this link:', url);
+    window.prompt('Copy this link', url);
   }
   setTimeout(() => { btn.textContent = 'Copy link'; }, 1800);
 }
