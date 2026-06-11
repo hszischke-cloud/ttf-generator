@@ -31,6 +31,13 @@ def delete_font(job_id: str) -> bool:
     return len(res.data) > 0
 
 
+def rename_font(job_id: str, font_name: str) -> bool:
+    res = (supabase.table("saved_fonts")
+           .update({"font_name": font_name})
+           .eq("job_id", job_id).execute())
+    return len(res.data) > 0
+
+
 def saved_job_ids() -> Set[str]:
     """Return the set of job_ids that must not be auto-deleted."""
     res = supabase.table("saved_fonts").select("job_id").execute()

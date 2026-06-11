@@ -3,7 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Handwriting Font Generator</title>
+<title>Your fonts · snailmail.eco</title>
+<meta name="description" content="Turn your handwriting into a real font — draw your letters, fine-tune the spacing, download an OTF.">
+<meta name="theme-color" content="#FAEDCD">
+<meta property="og:title" content="Create your handwriting font">
+<meta property="og:description" content="Draw your letters and get a real font file — print or cursive, with a single-line version for pen plotters.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23FAEDCD'/%3E%3Ctext x='46' y='74' font-size='66' text-anchor='middle' font-family='Georgia,serif' font-style='italic' fill='%235B4134'%3Ef%3C/text%3E%3Ccircle cx='72' cy='66' r='9' fill='%236BC7C1'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Inter:wght@300;400;500;600;700&family=Righteous&display=swap" rel="stylesheet">
@@ -511,6 +517,93 @@
 
   .borders-nav { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; align-items: center; }
 
+  /* ── Ghost button (quiet actions) ── */
+  .btn-ghost { background: transparent; color: var(--ink-light); border-color: transparent; }
+  .btn-ghost:not(:disabled):hover { color: var(--brown); box-shadow: none; transform: none; }
+
+  /* ── Resume-draft card ── */
+  .resume-card {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    background: rgba(107,199,193,0.14); border: 1.5px solid var(--teal);
+    border-radius: var(--radius-lg); padding: 14px 18px; margin-bottom: 16px; flex-wrap: wrap;
+  }
+  .resume-info { min-width: 0; }
+  .resume-title { font-family: var(--font-display); font-size: 17px; color: var(--brown); }
+  .resume-meta { font-size: 13px; color: var(--ink-light); margin-top: 2px; }
+  .resume-actions { display: flex; gap: 8px; align-items: center; }
+
+  /* ── Draw page extras ── */
+  .draw-progress-track { height: 6px; border-radius: 9999px; background: var(--beige); overflow: hidden; margin-bottom: 12px; }
+  .draw-progress-fill { height: 100%; width: 0%; background: var(--sage); border-radius: 9999px; transition: width .3s ease; }
+  .draw-hint { font-size: 12.5px; color: var(--ink-light); text-align: center; margin: 10px auto 2px; max-width: 420px; min-height: 18px; line-height: 1.45; }
+  .draw-hint strong { color: var(--ink); font-weight: 600; }
+
+  .ink-swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+  .ink-swatch {
+    width: 28px; height: 28px; border-radius: 50%; cursor: pointer;
+    border: 2px solid var(--paper); box-shadow: 0 0 0 1.5px var(--border-color);
+    transition: transform .12s, box-shadow .12s; padding: 0;
+  }
+  .ink-swatch:hover { transform: scale(1.12); }
+  .ink-swatch.active { box-shadow: 0 0 0 2.5px var(--brown); }
+
+  /* ── Rename (saved-font cards) ── */
+  .font-card-name-row { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+  .rename-btn {
+    flex: 0 0 auto; background: none; border: none; color: var(--ink-light);
+    font-size: 14px; cursor: pointer; padding: 3px 6px; border-radius: 6px;
+    transition: color .15s, background .15s;
+  }
+  .rename-btn:hover { color: var(--brown); background: rgba(91,65,52,0.07); }
+
+  /* ── Install help ── */
+  .install-help {
+    margin-top: 8px; background: var(--input-bg); border: 1px solid var(--border-color);
+    border-radius: var(--radius); padding: 14px 18px;
+  }
+  .install-help summary { cursor: pointer; font-weight: 600; color: var(--brown); font-size: 14px; }
+  .install-help-body { margin-top: 12px; font-size: 13.5px; color: var(--ink); line-height: 1.6; }
+  .install-help-body p { margin: 0 0 8px; }
+  .install-help-body code { background: var(--beige); border-radius: 4px; padding: 1px 5px; font-size: 12.5px; }
+
+  /* ── Borders live word preview ── */
+  .borders-preview {
+    margin-top: 12px; background: #fff; border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: 12px 14px;
+  }
+  .borders-preview-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  .borders-preview-top input {
+    width: 200px; padding: 6px 10px; border: 2px solid var(--border-color); border-radius: var(--radius-sm);
+    font-size: 14px; background: var(--input-bg); color: var(--ink);
+  }
+  .borders-preview-top input:focus { outline: none; border-color: var(--teal); }
+  .borders-preview-stage { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  #borders-preview-svg { height: 92px; display: block; margin: 0 auto; }
+  .bp-ink { fill: #26201c; }
+  .bp-ink.current { fill: var(--sage-hover); }
+  .bp-baseline { stroke: var(--border-color); stroke-width: 1; vector-effect: non-scaling-stroke; }
+
+  /* auto-suggestion ghost ticks in the main editor */
+  .bd-auto-line { stroke-width: 1.5; stroke-dasharray: 3 5; vector-effect: non-scaling-stroke; opacity: .55; pointer-events: none; }
+  .bd-auto-line.left { stroke: var(--sage-hover); }
+  .bd-auto-line.right { stroke: var(--orange); }
+
+  /* ── Build overlay ── */
+  .build-overlay {
+    position: fixed; inset: 0; z-index: 60; display: none;
+    background: var(--paper); align-items: center; justify-content: center;
+    animation: fade .25s ease both; padding: 24px;
+  }
+  .build-overlay.show { display: flex; }
+  .build-overlay-inner { text-align: center; max-width: 420px; width: 100%; }
+  .snail { font-size: 3rem; display: inline-block; animation: crawl 20s ease-in-out infinite; }
+  @keyframes crawl { 0%{transform:translateX(-30px);} 50%{transform:translateX(30px);} 100%{transform:translateX(-30px);} }
+  .build-msg { font-family: var(--font-serif); font-size: 1.5rem; margin: 24px 0 8px; min-height: 38px; color: var(--brown); }
+  .build-sub { color: var(--ink-light); font-size: .95rem; margin-bottom: 28px; }
+  .build-track { width: 100%; max-width: 360px; height: 10px; border-radius: 9999px; background: var(--beige); overflow: hidden; margin: 0 auto; }
+  .build-fill { height: 100%; background: var(--sage); border-radius: 9999px; transition: width .4s ease; width: 0%; }
+  .build-pct { margin-top: 10px; font-size: .85rem; color: var(--ink-light); }
+
   /* ── Touch ergonomics ── */
   @media (pointer: coarse) {
     .bd-hit { stroke-width: 38; }   /* fatter invisible drag target for fingers */
@@ -590,6 +683,11 @@
     .tightness-wrap { min-width: 100%; }
     .borders-nav { flex-direction: column; align-items: stretch; }
     .borders-nav .btn { width: 100%; margin-left: 0 !important; }
+    .borders-preview-top input { width: 100%; }
+
+    /* Resume card stacks */
+    .resume-card { flex-direction: column; align-items: stretch; }
+    .resume-actions .btn { flex: 1 1 auto; }
   }
 </style>
 </head>
@@ -605,6 +703,19 @@
 
 <!-- ===================== DASHBOARD ===================== -->
 <div class="page active" id="page-home">
+
+  <!-- Resume-draft card (shown only when an autosaved draft exists) -->
+  <div class="resume-card" id="resume-card" style="display:none">
+    <div class="resume-info">
+      <div class="resume-title">Continue your draft</div>
+      <div class="resume-meta" id="resume-meta"></div>
+    </div>
+    <div class="resume-actions">
+      <button class="btn btn-primary" onclick="resumeDraft()">Resume</button>
+      <button class="btn btn-ghost btn-sm" onclick="discardDraft()">Discard</button>
+    </div>
+  </div>
+
   <div class="dash-layout">
 
     <!-- Sidebar: every way to start a font -->
@@ -615,7 +726,7 @@
         <button class="btn btn-outline" onclick="startDrawMode('cursive')">Cursive</button>
       </div>
       <div class="side-group">
-        <span class="side-label">Guided creator</span>
+        <span class="side-label">Share with a client</span>
         <a class="btn btn-teal" id="open-create-link" href="/create" target="_blank" rel="noopener">Open ↗</a>
         <button class="btn btn-outline" onclick="copyCreateLink(this)">Copy link</button>
       </div>
@@ -649,6 +760,7 @@
 
     <!-- Left: canvas area -->
     <div class="draw-canvas-area">
+      <div class="draw-progress-track"><div class="draw-progress-fill" id="draw-progress-fill"></div></div>
       <div class="draw-header">
         <div class="draw-char-display" id="draw-char-display">A</div>
         <div class="draw-char-name" id="draw-char-name">capital A</div>
@@ -665,6 +777,7 @@
         <div class="conn-handle conn-exit"  id="conn-handle-exit"  title="Drag left/right to fine-tune the exit-tail x position for this letter."></div>
         <canvas id="draw-canvas" width="300" height="400"></canvas>
       </div>
+      <div class="draw-hint" id="draw-hint"></div>
       <div class="draw-nav-row">
         <button id="prev-char-btn" class="ctrl-btn" onclick="navChar(-1)">← Prev</button>
         <span id="draw-progress-label">1 / 78</span>
@@ -715,17 +828,24 @@
         </div>
       </div>
 
-      <!-- Reference font: upload a TTF/OTF to trace over (faint ghost behind the canvas) -->
+      <!-- Ink colour (font-level — every letter uses the same ink) -->
       <div class="panel-section">
-        <span class="panel-label">Reference font</span>
+        <span class="panel-label">Ink colour</span>
+        <div class="ink-swatches" id="ink-swatches"></div>
+      </div>
+
+      <!-- Guide letter: built-in serif ghost, or upload a TTF/OTF to trace over -->
+      <div class="panel-section">
+        <span class="panel-label">Guide letter</span>
         <div class="draw-ctrl-btns">
-          <button class="ctrl-btn" onclick="document.getElementById('ref-font-input').click()">＋ Add TTF</button>
+          <button class="ctrl-btn active-tool" id="builtin-ghost-btn" onclick="toggleBuiltinGhost()">Guide on</button>
+          <button class="ctrl-btn" onclick="document.getElementById('ref-font-input').click()">＋ Trace a TTF</button>
           <button class="ctrl-btn" id="ref-font-toggle" onclick="toggleRefFont()" style="display:none">Hide</button>
           <button class="ctrl-btn" id="ref-font-remove" onclick="removeRefFont()" style="display:none">Remove</button>
         </div>
         <input type="file" id="ref-font-input" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf"
                style="display:none" onchange="onRefFontUpload(this)">
-        <div id="ref-font-status" style="font-size:11px; color:var(--ink-light); margin-top:7px;">No reference loaded. Add a TTF to trace over it.</div>
+        <div id="ref-font-status" style="font-size:11px; color:var(--ink-light); margin-top:7px;">A faint guide letter shows size &amp; position. Or trace over any font you upload.</div>
         <div id="ref-font-opacity-row" class="size-row" style="display:none; margin-top:8px;">
           <span>Fade</span>
           <input type="range" min="0.04" max="0.45" step="0.01" value="0.13" id="ref-font-opacity" oninput="onRefOpacity(this.value)">
@@ -849,6 +969,16 @@
     </div>
   </div>
 
+  <details class="install-help">
+    <summary>How do I install my font?</summary>
+    <div class="install-help-body">
+      <p><strong>Mac:</strong> double-click the downloaded <code>.otf</code> → click <em>Install Font</em>. It appears in every app's font menu.</p>
+      <p><strong>Windows:</strong> right-click the <code>.otf</code> → <em>Install</em> (or <em>Install for all users</em>).</p>
+      <p><strong>iPhone / iPad:</strong> install a font manager like <em>iFont</em> from the App Store, open the <code>.otf</code> with it, then allow the profile in Settings.</p>
+      <p><strong>In documents:</strong> after installing, pick the font by the name you gave it. Alternates cycle automatically in apps that support contextual alternates (Pages, Word, browsers).</p>
+    </div>
+  </details>
+
   <div class="error-banner" id="download-error"></div>
   <div id="fea-warning-banner" class="warn-banner">
     ⚠ <strong>Contextual alternates could not be compiled.</strong> The font was saved without <code>calt</code>/<code>ss01</code>/<code>ss02</code> features, so glyph forms will not cycle.<br>
@@ -890,6 +1020,19 @@
     <svg id="borders-svg" xmlns="http://www.w3.org/2000/svg"></svg>
   </div>
 
+  <!-- Live word preview composed from the real outlines + CURRENT bearings —
+       see the letter sitting between neighbours without rebuilding. -->
+  <div class="borders-preview">
+    <div class="borders-preview-top">
+      <span class="panel-label" style="margin:0">Live preview — updates as you drag</span>
+      <input type="text" id="borders-sample" value="" placeholder="type a word…"
+             maxlength="24" oninput="bordersSampleDirty = this.value.length > 0; renderBordersPreview()">
+    </div>
+    <div class="borders-preview-stage">
+      <svg id="borders-preview-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+  </div>
+
   <div class="borders-readout">
     <div class="borders-field">
       <label><span class="swatch-l">Left</span> edge space</label>
@@ -918,6 +1061,19 @@
   <div class="error-banner" id="borders-error"></div>
 </div>
 
+<!-- ===================== BUILD OVERLAY ===================== -->
+<!-- Full-screen "building your font" state shared by every rebuild
+     (review → generate, spacing bake, border apply). -->
+<div class="build-overlay" id="build-overlay">
+  <div class="build-overlay-inner">
+    <div class="snail">🐌</div>
+    <div class="build-msg" id="build-overlay-msg">Tracing your letters…</div>
+    <div class="build-sub" id="build-overlay-sub">This usually takes under a minute. Keep this page open.</div>
+    <div class="build-track"><div class="build-fill" id="build-overlay-fill"></div></div>
+    <div class="build-pct" id="build-overlay-pct">0%</div>
+  </div>
+</div>
+
 <script>
 const API = 'http://localhost:8001';
 let jobId = null;
@@ -928,10 +1084,78 @@ let approvedGlyphIds = [];
 let currentFontName = 'MyHandwritingFont';
 
 // ── Navigation ──────────────────────────────────────────────
+const PAGE_TITLES = {
+  'page-home':     'Your fonts · snailmail.eco',
+  'page-draw':     'Draw your letters · snailmail.eco',
+  'page-review':   'Review your letters · snailmail.eco',
+  'page-download': 'Your font is ready · snailmail.eco',
+  'page-borders':  'Adjust letter borders · snailmail.eco',
+};
 function goTo(pageId) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById(pageId).classList.add('active');
+  document.title = PAGE_TITLES[pageId] || PAGE_TITLES['page-home'];
   window.scrollTo(0, 0);
+}
+
+// ── Build overlay ────────────────────────────────────────────
+// One full-screen "building your font" state shared by every rebuild
+// (review → generate, spacing bake, border apply). Progress eases toward the
+// backend's reported pct and creeps gently between polls so it never stalls.
+const BUILD_MSGS = ['Tracing your letters…', 'Inking every stroke…',
+                    'Spacing things out…', 'Building the font file…', 'Almost there…'];
+let buildTick = null, buildShown = 0, buildTarget = 0;
+
+function buildOverlayShow(sub) {
+  buildShown = 0; buildTarget = 6;
+  document.getElementById('build-overlay-msg').textContent = BUILD_MSGS[0];
+  document.getElementById('build-overlay-sub').textContent =
+    sub || 'This usually takes under a minute. Keep this page open.';
+  document.getElementById('build-overlay').classList.add('show');
+  clearInterval(buildTick);
+  buildTick = setInterval(() => {
+    buildTarget = Math.min(buildTarget + 0.12, 97);          // gentle creep
+    buildShown += Math.max(0.15, (buildTarget - buildShown) * 0.14);
+    buildShown = Math.min(buildShown, buildTarget);
+    document.getElementById('build-overlay-fill').style.width = buildShown + '%';
+    document.getElementById('build-overlay-pct').textContent = Math.round(buildShown) + '%';
+    const idx = Math.min(BUILD_MSGS.length - 1, Math.floor(buildShown / 22));
+    document.getElementById('build-overlay-msg').textContent = BUILD_MSGS[idx];
+  }, 150);
+}
+
+function buildOverlaySet(pct) {
+  buildTarget = Math.max(buildTarget, Math.min(pct, 97));
+}
+
+function buildOverlayHide(success) {
+  clearInterval(buildTick); buildTick = null;
+  if (success) {
+    document.getElementById('build-overlay-fill').style.width = '100%';
+    document.getElementById('build-overlay-pct').textContent = '100%';
+    document.getElementById('build-overlay-msg').textContent = 'Done!';
+    setTimeout(() => document.getElementById('build-overlay').classList.remove('show'), 350);
+  } else {
+    document.getElementById('build-overlay').classList.remove('show');
+  }
+}
+
+// Poll the job until the build completes; feeds the overlay. Transient
+// network errors keep polling rather than failing the build.
+async function waitForBuild(intervalMs = 1000) {
+  return new Promise((resolve, reject) => {
+    const t = setInterval(async () => {
+      try {
+        const s = await fetch(`${API}/process/${jobId}/status`).then(r => r.json());
+        buildOverlaySet(8 + (s.progress_pct || 0) * 0.9);
+        if (s.status === 'complete') { clearInterval(t); resolve(s); }
+        else if (s.status === 'error') {
+          clearInterval(t);
+          reject(new Error(s.error_message || 'The font failed to build — please try again.'));
+        }
+      } catch (e) { /* network hiccup — keep polling */ }
+    }, intervalMs);
+  });
 }
 
 // ── Polling (used by finalize to wait for the build to complete) ────────
@@ -947,16 +1171,25 @@ async function poll() {
     if (data.status === 'awaiting_review') {
       clearInterval(pollTimer);
       await loadGlyphs();
+    } else if (data.status === 'finalizing' || data.status === 'processing') {
+      buildOverlaySet(8 + (data.progress_pct || 0) * 0.9);
     } else if (data.status === 'complete') {
       clearInterval(pollTimer);
       lastBuiltSpacing = currentSpacing();  // build used the slider values
+      buildOverlayHide(true);
+      if (!editingJobId) clearDraft();      // the font exists — draft fulfilled
+      updateResumeCard();
       showDownloadPage(data.fea_warning, undefined, {
         hasLineFont: !!data.has_line_font,
         skipped: data.line_skipped_glyphs || [],
       });
     } else if (data.status === 'error') {
       clearInterval(pollTimer);
+      buildOverlayHide(false);
       showError('review-error', data.error_message || 'Build failed');
+      const btn = document.getElementById('generate-btn');
+      btn.disabled = false;
+      btn.textContent = 'Generate Font →';
     }
   } catch(e) {
     // network hiccup — keep polling
@@ -977,6 +1210,9 @@ async function loadGlyphs() {
   const res = await fetch(`${API}/process/${jobId}/glyphs`);
   const data = await res.json();
   glyphs = (data.glyphs || []).filter(g => g.image_url || g.image_b64);
+  const genBtn = document.getElementById('generate-btn');
+  genBtn.disabled = false;
+  genBtn.textContent = 'Generate Font →';
 
   renderGlyphs();
   goTo('page-review');
@@ -1091,6 +1327,7 @@ async function finalize() {
   document.getElementById('generate-btn').disabled = true;
   document.getElementById('generate-btn').textContent = 'Generating…';
   hideError('review-error');
+  buildOverlayShow();
 
   try {
     const res = await fetch(`${API}/process/${jobId}/finalize`, {
@@ -1117,6 +1354,7 @@ async function finalize() {
     document.getElementById('generate-btn').textContent = 'Building your font…';
     pollTimer = setInterval(poll, 1200);
   } catch(e) {
+    buildOverlayHide(false);
     showError('review-error', e.message);
     document.getElementById('generate-btn').disabled = false;
     document.getElementById('generate-btn').textContent = 'Generate Font →';
@@ -1336,17 +1574,16 @@ async function buildWithCurrentSpacing() {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || 'Build failed');
   }
-  const final = await new Promise((resolve, reject) => {
-    const t = setInterval(async () => {
-      try {
-        const s = await fetch(`${API}/process/${jobId}/status`).then(r => r.json());
-        if (s.status === 'complete') { clearInterval(t); resolve(s); }
-        else if (s.status === 'error') { clearInterval(t); reject(new Error(s.error_message || 'Build failed')); }
-      } catch(e) { clearInterval(t); reject(e); }
-    }, 1000);
-  });
-  lastBuiltSpacing = {ls, sw};
-  return final;
+  buildOverlayShow('Baking your settings into the font…');
+  try {
+    const final = await waitForBuild();
+    buildOverlayHide(true);
+    lastBuiltSpacing = {ls, sw};
+    return final;
+  } catch (e) {
+    buildOverlayHide(false);
+    throw e;
+  }
 }
 
 // Build only if the sliders changed since the last successful build; otherwise
@@ -1427,6 +1664,54 @@ const GUIDELINES = {
   // vertical metrics are derived from it so descenders render unclipped.
   descender: DRAW_H * 0.95,
 };
+
+// Renderable safe band. The font's win metrics cover the whole canvas, but
+// clamping keeps letters inside sensible margins (and the y band keeps
+// ascenders/descenders within the declared line box). Every captured point
+// is HARD-CLAMPED into it — the user can't draw where the font looks wrong.
+const SAFE = { top: 30, bottom: GUIDELINES.descender, left: 16, right: DRAW_W - 16 };
+// Dedicated centre line for dashes / math symbols.
+const DASH_Y = (GUIDELINES.xheight + GUIDELINES.baseline) / 2;
+const DASH_GUIDE_CHARS = ['-', '–', '—', '~', '+', '=', '<', '>'];
+
+// Placement hints — the dash hints in particular fix the recurring em/en
+// placement confusion.
+const HINTS = {
+  '-': 'A short bar sitting on the <strong>middle line</strong>.',
+  '–': 'En dash — a little <strong>longer than a hyphen</strong>, centred on the <strong>middle line</strong>.',
+  '—': 'Em dash — the <strong>longest</strong> dash. A wide bar on the <strong>middle line</strong>.',
+  '_': 'Underscore — sits <strong>on the baseline</strong> (the bottom solid line).',
+  '.': 'A single dot resting <strong>on the baseline</strong>.',
+  ',': 'A comma <strong>on the baseline</strong> with a small tail dipping below it.',
+  ';': 'A dot on the baseline with a tail below — a comma stacked under a dot.',
+  ':': 'Two dots stacked between the <strong>baseline and the middle</strong>.',
+  "'": 'An apostrophe hangs <strong>up near the top</strong> line.',
+  '"': 'Two marks hanging <strong>up near the top</strong> line.',
+  '*': 'An asterisk sits <strong>high</strong>, near the top line.',
+  '^': 'A caret sits <strong>high</strong>, near the top line.',
+  '`': 'A backtick hangs <strong>up near the top</strong> line.',
+  '~': 'A tilde wave centred on the <strong>middle line</strong>.',
+  '0': 'A zero sits <strong>like a capital</strong> on the baseline — a tall, narrow oval.',
+};
+function hintFor(char) {
+  if (HINTS[char]) return HINTS[char];
+  if (char >= 'A' && char <= 'Z') return 'Fill from the <strong>top dashed line</strong> down to the <strong>baseline</strong>.';
+  if (char >= 'a' && char <= 'z') return 'Small letters reach the <strong>middle line</strong>. Tails (g, j, p, q, y) drop below the baseline.';
+  if (char >= '0' && char <= '9') return 'Numbers sit <strong>like capitals</strong> — top line down to the <strong>baseline</strong>, never below it.';
+  return 'Follow the faint grey guide for size and position.';
+}
+
+// Ink colours — font-level: every letter in a font uses the same ink. The
+// chosen colour rides each glyph payload (pen_color) into the COLR/CPAL
+// tables, so the installed font really renders in this colour.
+const INK_COLORS = [
+  {name: 'Graphite', rgb: [38, 32, 28]},
+  {name: 'Ink blue', rgb: [42, 58, 118]},
+  {name: 'Sepia',    rgb: [107, 74, 47]},
+  {name: 'Forest',   rgb: [47, 93, 70]},
+  {name: 'Brick',    rgb: [150, 54, 40]},
+  {name: 'Plum',     rgb: [92, 58, 114]},
+];
 
 // ── Drawing engine constants ──────────────────────────────────
 const SMOOTH_ALPHA = 0.62;   // input low-pass: 0=very smooth, 1=raw
@@ -1634,12 +1919,35 @@ function updateDrawUI() {
   document.getElementById('draw-slot-display').textContent = label;
   document.querySelectorAll('.draw-char-cell').forEach(el =>
     el.classList.toggle('active', el.dataset.char === char));
+  const hintEl = document.getElementById('draw-hint');
+  if (hintEl) {
+    hintEl.innerHTML = (slot > 0)
+      ? `Draw <strong>${escHtml(char)}</strong> a little differently — alternates give your font natural variety.`
+      : hintFor(char);
+  }
+  updateDrawProgress();
   renderSlotTabs();
   renderFormTabs();
   updateNavButtons();
   renderCanvas();
   positionConnectorHandles();
 }
+
+// Thin progress bar above the canvas — fraction of cells with ink in them.
+function updateDrawProgress() {
+  const fill = document.getElementById('draw-progress-fill');
+  if (!fill) return;
+  const cells = drawCells();
+  let drawn = 0;
+  for (const c of cells) {
+    const slots = drawState.strokes[c.char] || {};
+    for (const forms of Object.values(slots)) {
+      if ((forms[c.form] || []).length > 0) { drawn++; break; }
+    }
+  }
+  fill.style.width = `${Math.round((drawn / Math.max(cells.length, 1)) * 100)}%`;
+}
+
 function renderSlotTabs() {
   const char = drawState.currentChar;
   const count = getSlotCount(char);
@@ -1699,6 +2007,13 @@ let drawCanvas, drawCtx;
 function initDrawCanvas() {
   drawCanvas = document.getElementById('draw-canvas');
   drawCtx = drawCanvas.getContext('2d');
+  // High-DPI backing store: without this the 300×400 canvas is stretched by
+  // CSS and every stroke/guide renders blurry on phones and retina displays.
+  // All drawing code keeps using logical 300×400 coordinates via the transform.
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  drawCanvas.width = DRAW_W * dpr;
+  drawCanvas.height = DRAW_H * dpr;
+  drawCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawCanvas.addEventListener('pointerdown', onPointerDown);
   drawCanvas.addEventListener('pointermove', onPointerMove);
   drawCanvas.addEventListener('pointerup', onPointerUp);
@@ -1708,16 +2023,30 @@ function initDrawCanvas() {
   positionConnectorHandles();
 }
 
+// Hard-clamp a point into the renderable band. X is left unclamped for
+// cursive connecting forms, whose entry hooks / exit tails legitimately run
+// to the canvas edges; Y is always clamped.
+function clampPt(x, y) {
+  const freeX = drawMode === 'cursive' && drawState.currentForm !== 'iso';
+  return {
+    x: freeX ? Math.max(0, Math.min(DRAW_W, x))
+             : Math.max(SAFE.left, Math.min(SAFE.right, x)),
+    y: Math.max(SAFE.top, Math.min(SAFE.bottom, y)),
+  };
+}
+
 function toCanvasPoint(e) {
   const rect = drawCanvas.getBoundingClientRect();
   let x = (e.clientX - rect.left) * (DRAW_W / rect.width);
   let y = (e.clientY - rect.top)  * (DRAW_H / rect.height);
+  ({x, y} = clampPt(x, y));
 
   // Low-pass smoothing — removes jitter while maintaining responsiveness
   if (drawState.smoothedPoint) {
     x = x * SMOOTH_ALPHA + drawState.smoothedPoint.x * (1 - SMOOTH_ALPHA);
     y = y * SMOOTH_ALPHA + drawState.smoothedPoint.y * (1 - SMOOTH_ALPHA);
   }
+  ({x, y} = clampPt(x, y));
   drawState.smoothedPoint = {x, y};
 
   const p = computePressure(e.pressure, x, y, e.timeStamp, e.pointerType);
@@ -1782,6 +2111,8 @@ function onPointerUp(e) {
     if (editingJobId) {
       touchedInEdit.add(drawCharKey(char, slot, form));
     }
+    updateDrawProgress();
+    scheduleDraftSave();
   }
   drawState.currentStroke = [];
   renderCanvas();
@@ -1806,6 +2137,9 @@ function eraseStrokeAt(x, y) {
     const [removed] = strokes.splice(bestIdx, 1);
     getRedoStack(char, slot).push(removed);
     updateCharCellStatus(char);
+    if (editingJobId) touchedInEdit.add(drawCharKey(char, slot, drawState.currentForm));
+    updateDrawProgress();
+    scheduleDraftSave();
     renderCanvas();
   }
 }
@@ -1817,6 +2151,7 @@ function renderCanvas() {
   ctx.clearRect(0, 0, DRAW_W, DRAW_H);
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, DRAW_W, DRAW_H);
+  drawMasks(ctx);
   drawGhost(ctx);
   drawGuidelines(ctx);
   drawCursiveGuides(ctx);
@@ -2043,6 +2378,34 @@ function drawGuidelines(ctx) {
     ctx.font = '9px system-ui';
     ctx.fillText(label, 4, y - 3);
   }
+  // Dash centre line — only for dash/tilde/math glyphs, so it doesn't
+  // clutter letters.
+  if (DASH_GUIDE_CHARS.includes(drawState.currentChar)) {
+    ctx.setLineDash([2, 4]);
+    ctx.strokeStyle = 'rgba(217,87,60,0.65)';
+    ctx.beginPath(); ctx.moveTo(SAFE.left, DASH_Y); ctx.lineTo(SAFE.right, DASH_Y); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Shade everything outside the renderable band and outline the band itself,
+// so it's obvious where drawing is allowed (points are clamped into it too).
+function drawMasks(ctx) {
+  ctx.save();
+  const freeX = drawMode === 'cursive' && drawState.currentForm !== 'iso';
+  const left = freeX ? 0 : SAFE.left;
+  const right = freeX ? DRAW_W : SAFE.right;
+  ctx.fillStyle = 'rgba(91,65,52,0.07)';
+  ctx.fillRect(0, 0, DRAW_W, SAFE.top);                          // top
+  ctx.fillRect(0, SAFE.bottom, DRAW_W, DRAW_H - SAFE.bottom);    // bottom
+  if (!freeX) {
+    ctx.fillRect(0, SAFE.top, left, SAFE.bottom - SAFE.top);                 // left
+    ctx.fillRect(right, SAFE.top, DRAW_W - right, SAFE.bottom - SAFE.top);   // right
+  }
+  ctx.strokeStyle = 'rgba(107,199,193,0.55)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([5, 4]);
+  ctx.strokeRect(left + 0.5, SAFE.top + 0.5, right - left - 1, SAFE.bottom - SAFE.top - 1);
   ctx.restore();
 }
 
@@ -2074,22 +2437,56 @@ function refFontSizes(ctx) {
   return refFont._sizes;
 }
 
+// Built-in guide letter — a faint serif reference showing ideal size and
+// position, on by default. An uploaded reference TTF takes precedence.
+let builtinGhost = true;
+let ghostFontReady = false;
+document.fonts.ready.then(() => { ghostFontReady = true; if (drawCtx) renderCanvas(); });
+if (document.fonts && document.fonts.load) {
+  document.fonts.load('300 100px "Cormorant Garamond"')
+    .then(() => { ghostFontReady = true; if (drawCtx) renderCanvas(); })
+    .catch(() => {});
+}
+
+function toggleBuiltinGhost() {
+  builtinGhost = !builtinGhost;
+  const btn = document.getElementById('builtin-ghost-btn');
+  if (btn) {
+    btn.textContent = builtinGhost ? 'Guide on' : 'Guide off';
+    btn.classList.toggle('active-tool', builtinGhost);
+  }
+  if (drawCtx) renderCanvas();
+}
+
 function drawGhost(ctx) {
-  if (!refFont.family || !refFont.enabled) return;
   const ch = drawState.currentChar;
   if (!ch) return;
+  const useCustom = refFont.family && refFont.enabled;
+  if (!useCustom && !builtinGhost) return;
   ctx.save();
-  // Keep the reference inside the cap→descender band so it never bleeds past
-  // the guides into the labels/margins.
+  // Keep the reference inside the safe band so it never bleeds past the
+  // guides into the labels/margins.
   ctx.beginPath();
-  ctx.rect(0, GUIDELINES.cap, DRAW_W, GUIDELINES.descender - GUIDELINES.cap);
+  ctx.rect(SAFE.left, SAFE.top, SAFE.right - SAFE.left, SAFE.bottom - SAFE.top);
   ctx.clip();
   const isLower = ch >= 'a' && ch <= 'z';
-  const sizes = refFontSizes(ctx);
-  ctx.font = `${isLower ? sizes.lower : sizes.caps}px '${refFont.family}'`;
+  const isDigit = ch >= '0' && ch <= '9';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = `rgba(34,32,30,${refFont.opacity})`;
+  if (useCustom) {
+    const sizes = refFontSizes(ctx);
+    ctx.font = `${isLower ? sizes.lower : sizes.caps}px '${refFont.family}'`;
+    ctx.fillStyle = `rgba(34,32,30,${refFont.opacity})`;
+  } else {
+    // Built-in serif ghost. Digits use a lining-figure sans so the reference
+    // sits like a capital ON the baseline (old-style figures dip below it
+    // and their 0 reads like an O — a wrong guide).
+    const size = isLower ? 232 : 300;
+    const fam = isDigit ? "'Arial','Helvetica Neue',sans-serif"
+                        : (ghostFontReady ? "'Cormorant Garamond',serif" : 'Georgia,serif');
+    ctx.font = `${isDigit ? 500 : 300} ${size}px ${fam}`;
+    ctx.fillStyle = 'rgba(34,32,30,0.10)';
+  }
   ctx.fillText(ch, DRAW_W / 2, GUIDELINES.baseline);
   ctx.restore();
 }
@@ -2320,25 +2717,27 @@ function renderStrokePolygon(ctx, polygon, tool, color = [38, 32, 28], points = 
 
 // ── Edit controls ─────────────────────────────────────────────
 function undoStroke() {
-  const {currentChar: c, currentSlot: s} = drawState;
+  const {currentChar: c, currentSlot: s, currentForm: f} = drawState;
   const strokes = getStrokes(c, s);
   if (!strokes.length) return;
   getRedoStack(c, s).push(strokes.pop());
-  updateCharCellStatus(c); renderCanvas();
+  if (editingJobId) touchedInEdit.add(drawCharKey(c, s, f));
+  updateCharCellStatus(c); updateDrawProgress(); scheduleDraftSave(); renderCanvas();
 }
 function redoStroke() {
-  const {currentChar: c, currentSlot: s} = drawState;
+  const {currentChar: c, currentSlot: s, currentForm: f} = drawState;
   const redo = getRedoStack(c, s);
   if (!redo.length) return;
   getStrokes(c, s).push(redo.pop());
-  updateCharCellStatus(c); renderCanvas();
+  if (editingJobId) touchedInEdit.add(drawCharKey(c, s, f));
+  updateCharCellStatus(c); updateDrawProgress(); scheduleDraftSave(); renderCanvas();
 }
 function clearCurrent() {
   const {currentChar: c, currentSlot: s, currentForm: f} = drawState;
   const strokes = getStrokes(c, s);
   if (!strokes.length) return;
   getRedoStack(c, s).push(...strokes.splice(0));
-  updateCharCellStatus(c); renderCanvas();
+  updateCharCellStatus(c); updateDrawProgress(); scheduleDraftSave(); renderCanvas();
   if (editingJobId) touchedInEdit.add(drawCharKey(c, s, f));
 }
 function toggleEraser() {
@@ -2431,6 +2830,7 @@ function startDrawMode(mode) {
     cursiveX: {},
   });
   buildCharGrid();
+  buildInkSwatches();
   goTo('page-draw');
   setTimeout(() => { initDrawCanvas(); updateDrawUI(); }, 50);
 }
@@ -2449,6 +2849,206 @@ function buildCharGrid() {
     cell.onclick = () => selectDrawChar(char);
     grid.appendChild(cell);
   }
+}
+
+// Re-sync the green "drawn" dots on every char cell from current stroke data
+// (used after restoring a draft or opening a saved font).
+function refreshDrawnDots() {
+  for (const cell of document.querySelectorAll('.draw-char-cell')) {
+    const char = cell.dataset.char;
+    const slots = drawState.strokes[char] || {};
+    const has = Object.values(slots).some(forms =>
+      Object.values(forms).some(list => list.length > 0));
+    cell.classList.toggle('drawn', has);
+  }
+}
+
+// ── Ink colour (font-level) ───────────────────────────────────
+function buildInkSwatches() {
+  const wrap = document.getElementById('ink-swatches');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  for (const c of INK_COLORS) {
+    const btn = document.createElement('button');
+    btn.className = 'ink-swatch';
+    btn.title = c.name;
+    btn.style.background = `rgb(${c.rgb[0]},${c.rgb[1]},${c.rgb[2]})`;
+    btn.onclick = () => selectInkColor(c.rgb);
+    wrap.appendChild(btn);
+  }
+  syncInkSwatchUI();
+}
+
+function syncInkSwatchUI() {
+  const cur = fontSettings.color || [38, 32, 28];
+  document.querySelectorAll('.ink-swatch').forEach((el, i) => {
+    const c = INK_COLORS[i];
+    el.classList.toggle('active',
+      !!c && c.rgb[0] === cur[0] && c.rgb[1] === cur[1] && c.rgb[2] === cur[2]);
+  });
+}
+
+function selectInkColor(rgb) {
+  fontSettings.color = [...rgb];
+  drawState.color = [...rgb];
+  // Ink is font-level: recolour every stroke already drawn so the whole font
+  // stays one colour.
+  for (const slots of Object.values(drawState.strokes)) {
+    for (const forms of Object.values(slots)) {
+      for (const list of Object.values(forms)) {
+        for (const strk of list) strk.color = [...rgb];
+      }
+    }
+  }
+  // In edit mode a colour change touches every glyph — mark them all so the
+  // batch resubmit carries the new pen_color into the manifest.
+  if (editingJobId) {
+    for (const [char, slots] of Object.entries(drawState.strokes)) {
+      for (const [slot, forms] of Object.entries(slots)) {
+        for (const [form, list] of Object.entries(forms)) {
+          if (list.length) touchedInEdit.add(drawCharKey(char, parseInt(slot, 10), form));
+        }
+      }
+    }
+  }
+  syncInkSwatchUI();
+  if (drawCtx) renderCanvas();
+  scheduleDraftSave();
+}
+
+// ── Draft autosave (localStorage) ─────────────────────────────
+// Drawing a full font takes ~10 minutes and used to live only in JS memory —
+// one accidental refresh lost everything. Strokes are saved (debounced) after
+// every edit and offered for resume on the dashboard. Edit sessions of saved
+// fonts are NOT auto-saved (their source of truth is the server).
+const DRAFT_KEY = 'hwfont_draft_v1';
+let draftTimer = null;
+
+function scheduleDraftSave() {
+  if (editingJobId) return;
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(saveDraft, 700);
+}
+
+function saveDraft() {
+  try {
+    const strokes = {};
+    let any = false;
+    for (const [char, slots] of Object.entries(drawState.strokes)) {
+      for (const [slot, forms] of Object.entries(slots)) {
+        for (const [form, list] of Object.entries(forms)) {
+          if (!list.length) continue;
+          any = true;
+          // Keep pressure AND stroke-relative time — the realistic pen's ink
+          // dynamics need them, so a resumed draft inks identically.
+          ((strokes[char] = strokes[char] || {})[slot] =
+            strokes[char][slot] || {})[form] = list.map(s => {
+              const t0 = s[0].t || 0;
+              return {
+                c: s.color || fontSettings.color,
+                p: s.map(pt => [
+                  Math.round(pt.x * 10) / 10,
+                  Math.round(pt.y * 10) / 10,
+                  Math.round((pt.p ?? 0.6) * 100) / 100,
+                  Math.max(0, Math.round((pt.t || 0) - t0)),
+                ]),
+              };
+            });
+        }
+      }
+    }
+    if (!any) { localStorage.removeItem(DRAFT_KEY); return; }
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({
+      v: 1,
+      mode: drawMode,
+      savedAt: Date.now(),
+      slotCounts: drawState.slotCounts,
+      cursiveConnY: drawState.cursiveConnY,
+      cursiveLocked: drawState.cursiveLocked,
+      cursiveX: drawState.cursiveX,
+      color: fontSettings.color,
+      penStyle: fontSettings.penStyle,
+      strokes,
+    }));
+  } catch (e) { /* quota exceeded / private mode — drafts just don't persist */ }
+}
+
+function loadDraft() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_KEY); } catch {}
+}
+
+function draftGlyphCount(d) {
+  let n = 0;
+  for (const slots of Object.values(d.strokes || {})) {
+    for (const forms of Object.values(slots)) {
+      for (const list of Object.values(forms)) if (list.length) n++;
+    }
+  }
+  return n;
+}
+
+function timeAgo(ts) {
+  const m = Math.round((Date.now() - ts) / 60000);
+  if (m < 2) return 'just now';
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} hour${h > 1 ? 's' : ''} ago`;
+  const dd = Math.round(h / 24);
+  return `${dd} day${dd > 1 ? 's' : ''} ago`;
+}
+
+function updateResumeCard() {
+  const card = document.getElementById('resume-card');
+  if (!card) return;
+  const d = loadDraft();
+  const n = d ? draftGlyphCount(d) : 0;
+  if (!d || !n) { card.style.display = 'none'; return; }
+  document.getElementById('resume-meta').textContent =
+    `${d.mode === 'cursive' ? 'Cursive' : 'Print'} font · ${n} letter${n !== 1 ? 's' : ''} drawn · ${timeAgo(d.savedAt)}`;
+  card.style.display = 'flex';
+}
+
+function resumeDraft() {
+  const d = loadDraft();
+  if (!d) { updateResumeCard(); return; }
+  startDrawMode(d.mode);
+  fontSettings.color = d.color || [38, 32, 28];
+  fontSettings.penStyle = normalizePenStyle(d.penStyle);
+  updatePenStyleButtons();
+  drawState.color = [...fontSettings.color];
+  drawState.slotCounts = d.slotCounts || {};
+  drawState.cursiveConnY = d.cursiveConnY ?? drawState.cursiveConnY;
+  drawState.cursiveLocked = !!d.cursiveLocked;
+  drawState.cursiveX = d.cursiveX || {};
+  for (const [char, slots] of Object.entries(d.strokes || {})) {
+    for (const [slot, forms] of Object.entries(slots)) {
+      for (const [form, list] of Object.entries(forms)) {
+        const restored = list.map(s => {
+          const pts = s.p.map(([x, y, p, t]) => ({x, y, p: p ?? 0.6, t: t || 0}));
+          pts.color = s.c || fontSettings.color;
+          pts.tool = 'pen';
+          return pts;
+        });
+        ((drawState.strokes[char] = drawState.strokes[char] || {})[slot] =
+          drawState.strokes[char][slot] || {})[form] = restored;
+      }
+    }
+  }
+  // startDrawMode defers canvas init by 50 ms — refresh after it lands.
+  setTimeout(() => { syncInkSwatchUI(); refreshDrawnDots(); updateDrawUI(); }, 80);
+}
+
+function discardDraft() {
+  if (!confirm('Discard this draft? The letters you drew will be gone.')) return;
+  clearDraft();
+  updateResumeCard();
 }
 
 // ── SVG outline path generation ───────────────────────────────
@@ -2586,13 +3186,19 @@ async function sendToReview() {
   const sendBtn = document.getElementById('send-review-btn');
   sendBtn.disabled = true;
   sendBtn.textContent = 'Submitting…';
-  document.getElementById('draw-submit-status').textContent = '';
+  const statusEl = document.getElementById('draw-submit-status');
+  statusEl.textContent = '';
   hideError('draw-error');
+  // First server hit of the session may have to wake a sleeping instance.
+  const wakeTimer = setTimeout(() => {
+    statusEl.textContent = 'Waking up the server — this can take ~30 seconds…';
+  }, 2500);
 
   try {
     // Create draw job
     const createRes = await fetch(`${API}/draw/create`, {method: 'POST'});
-    if (!createRes.ok) throw new Error('Failed to create job');
+    clearTimeout(wakeTimer);
+    if (!createRes.ok) throw new Error('Could not reach the server — please try again.');
     const {job_id} = await createRes.json();
     jobId = job_id;
 
@@ -2614,8 +3220,11 @@ async function sendToReview() {
 
     document.getElementById('draw-submit-status').textContent = '';
     await loadGlyphs();
+    sendBtn.disabled = false;
+    sendBtn.textContent = 'Send to Review →';
 
   } catch(e) {
+    clearTimeout(wakeTimer);
     showError('draw-error', e.message);
     sendBtn.disabled = false;
     sendBtn.textContent = 'Send to Review →';
@@ -2650,12 +3259,21 @@ function goHome() {
   loadedGlyphData = {};
   touchedInEdit = new Set();
   goTo('page-home');
+  updateResumeCard();
   loadSavedFonts();
 }
 
 // ── Saved-fonts list ──────────────────────────────────────
 
 async function loadSavedFonts() {
+  // Free-tier hosting sleeps between visits: the first request can hang for
+  // ~30 s while the server wakes. Say so instead of looking broken.
+  const wakeTimer = setTimeout(() => {
+    const el = document.getElementById('saved-fonts-list');
+    if (el && el.textContent.includes('Loading')) {
+      el.innerHTML = '<p class="saved-fonts-empty">Waking up the studio — the first visit can take ~30 seconds…</p>';
+    }
+  }, 2500);
   try {
     const res = await fetch(`${API}/fonts/saved`);
     if (!res.ok) throw new Error('fetch failed');
@@ -2663,7 +3281,51 @@ async function loadSavedFonts() {
     renderSavedFonts(data.fonts || []);
   } catch {
     document.getElementById('saved-fonts-list').innerHTML =
-      '<p class="saved-fonts-empty">Could not load saved fonts.</p>';
+      '<p class="saved-fonts-empty">Could not load saved fonts — check your connection and refresh.</p>';
+  } finally {
+    clearTimeout(wakeTimer);
+  }
+}
+
+// Render a saved font's name in the font itself — lazy @font-face against the
+// stored OTF (cached by the CDN, fetched only when the browser paints it).
+let savedFaceCss = null;
+function applySavedFontFace(jobId, fontName, nameEl) {
+  if (!nameEl) return;
+  if (!savedFaceCss) {
+    savedFaceCss = document.createElement('style');
+    savedFaceCss.id = 'saved-faces';
+    document.head.appendChild(savedFaceCss);
+  }
+  const family = `Saved_${jobId.replace(/[^a-zA-Z0-9]/g, '')}`;
+  if (!savedFaceCss.textContent.includes(family)) {
+    const safe = fontName.replace(/\s+/g, '_');
+    savedFaceCss.textContent +=
+      `@font-face{font-family:'${family}';src:url('${API}/fonts/${jobId}/${encodeURIComponent(safe)}.otf') format('opentype');font-display:swap;}\n`;
+  }
+  nameEl.style.fontFamily = `'${family}', var(--font-serif)`;
+  nameEl.style.fontSize = '26px';
+}
+
+async function renameSavedFont(jobId, btn) {
+  const card = btn.closest('.font-card');
+  const current = card ? card.dataset.fontName : '';
+  const name = prompt('New name for this font:', current);
+  if (name == null) return;
+  const trimmed = name.trim();
+  if (!trimmed || trimmed === current) return;
+  btn.disabled = true;
+  try {
+    const res = await fetch(`${API}/fonts/saved/${jobId}`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({font_name: trimmed}),
+    });
+    if (!res.ok) throw new Error('rename failed');
+    await loadSavedFonts();
+  } catch {
+    btn.disabled = false;
+    alert('Could not rename the font — please try again.');
   }
 }
 
@@ -2684,10 +3346,14 @@ function renderSavedFonts(fonts) {
     const bold = pen === 'realistic-bold';
     const card = document.createElement('div');
     card.className = 'font-card' + (f.job_exists ? '' : ' expired');
+    card.dataset.fontName = f.font_name;
     card.innerHTML = `
       <button class="btn-delete" title="Remove from this list" onclick="deleteSavedFont('${f.job_id}', this)">&#x2715;</button>
       <div>
-        <div class="font-card-name">${escHtml(f.font_name)}</div>
+        <div class="font-card-name-row">
+          <div class="font-card-name">${escHtml(f.font_name)}</div>
+          ${f.job_exists ? `<button class="rename-btn" title="Rename this font" onclick="renameSavedFont('${f.job_id}', this)">✎</button>` : ''}
+        </div>
         <div class="font-card-meta">
           <span class="badge badge-${f.mode}">${f.mode}</span>
           <span class="badge ${bold ? 'badge-bold' : 'badge-fine'}">${bold ? 'bold' : 'fine'} pen</span>
@@ -2729,6 +3395,11 @@ function renderSavedFonts(fonts) {
       <div class="fc-expired-note">Expired. The drawing data is gone, so this font can no longer be edited or downloaded.</div>`}
     `;
     container.appendChild(card);
+    // Show the name in the font itself (lazy, CDN-cached; falls back to the
+    // serif while the OTF loads or if the job has expired).
+    if (f.job_exists) {
+      applySavedFontFace(f.job_id, f.font_name, card.querySelector('.font-card-name'));
+    }
   }
 }
 
@@ -2912,15 +3583,25 @@ async function openSavedFont(savedJobId) {
     }
   }
 
-  // Style is fixed for every font: pen tool, size 6, default ink colour —
-  // saved pen_tool/pen_size/pen_color are ignored on restore. The pen WEIGHT
-  // is restored from settings below so the canvas previews the saved ink.
-  fontSettings = { tool: 'pen', toolSize: 6, color: [38, 32, 28], penStyle: 'realistic' };
+  // Pen tool and size are fixed for every font; the ink colour is the font's
+  // own — restore it from the saved glyphs so edits keep the same ink. The
+  // pen WEIGHT is restored from settings below.
+  const savedColor = (data.glyphs.find(g => Array.isArray(g.pen_color)) || {}).pen_color
+                     || [38, 32, 28];
+  fontSettings = { tool: 'pen', toolSize: 6, color: [...savedColor], penStyle: 'realistic' };
   Object.assign(drawState, {
     tool:     'pen',
     toolSize: 6,
-    color:    [38, 32, 28],
+    color:    [...savedColor],
   });
+  // Saved strokes carry no colour of their own — paint them in the font ink.
+  for (const slots of Object.values(drawState.strokes)) {
+    for (const forms of Object.values(slots)) {
+      for (const list of Object.values(forms)) {
+        for (const strk of list) strk.color = [...savedColor];
+      }
+    }
+  }
 
   // Pre-fill font name for the review page.
   document.getElementById('font-name').value = data.font_name || '';
@@ -2943,16 +3624,11 @@ async function openSavedFont(savedJobId) {
   } catch { /* non-fatal */ }
 
   buildCharGrid();
+  buildInkSwatches();
   goTo('page-draw');
   setTimeout(() => {
     initDrawCanvas();
-    // Mark chars that have saved data with the green dot.
-    for (const cell of document.querySelectorAll('.draw-char-cell')) {
-      const char = cell.dataset.char;
-      const base = SPECIAL_IDS[char] ?? char;
-      const hasLoaded = Object.keys(loadedGlyphData).some(k => k.startsWith(base + '_'));
-      if (hasLoaded) cell.classList.add('drawn');
-    }
+    refreshDrawnDots();
     updateDrawUI();
   }, 50);
 }
@@ -3014,9 +3690,18 @@ async function openBordersEditor(savedJobId, fontName) {
 
   hideError('borders-error');
   document.getElementById('borders-status').textContent = '';
+  bordersSampleDirty = false;
+  document.getElementById('borders-sample').value = '';
   renderBordersStrip();
   selectBordersGlyph(0);
   goTo('page-borders');
+
+  // Prefetch the auto-bearing suggestions in the background so the editor can
+  // show ghost ticks where auto-adjust would put each line (and "Auto-adjust
+  // all" is instant). Non-blocking; ticks just don't render if it fails.
+  fetchAutoBearings()
+    .then(() => { renderBordersEditor(); })
+    .catch(() => {});
 }
 
 function bordersCurrent() { return bordersList[bordersIdx]; }
@@ -3052,6 +3737,7 @@ function selectBordersGlyph(i) {
   document.querySelectorAll('#borders-strip .borders-thumb').forEach((el, idx) =>
     el.classList.toggle('active', idx === bordersIdx));
   renderBordersEditor();
+  renderBordersPreview();
   syncBordersInputs();
 }
 
@@ -3095,15 +3781,88 @@ function renderBordersEditor() {
     `<line class="bd-line ${side === 'right' ? 'right' : ''}" data-side="${side}" x1="${x}" y1="0" x2="${x}" y2="${H}"/>
      <line class="bd-hit" data-side="${side}" x1="${x}" y1="0" x2="${x}" y2="${H}"/>`;
 
+  // Ghost ticks where auto-adjust would put each line — lets you blend manual
+  // judgment with the suggestion per letter without committing to it.
+  let autoTicks = '';
+  const sug = bordersAuto && bordersAuto[g.glyph_id];
+  if (sug) {
+    const aox = g.canvas_pad - sug.lsb / g.coord_scale;
+    const aax = (g.svg_width - g.canvas_pad) + sug.rsb / g.coord_scale;
+    autoTicks =
+      `<line class="bd-auto-line left" x1="${aox}" y1="0" x2="${aox}" y2="${H}"><title>Auto suggestion: ${sug.lsb}</title></line>` +
+      `<line class="bd-auto-line right" x1="${aax}" y1="0" x2="${aax}" y2="${H}"><title>Auto suggestion: ${sug.rsb}</title></line>`;
+  }
+
   svg.innerHTML =
     `<line class="bd-baseline" x1="${vbX}" y1="${baseline}" x2="${vbX + vbW}" y2="${baseline}"/>` +
-    paths +
+    paths + autoTicks +
     line(ox, 'left') + line(ax, 'right') +
     grip(ox, 'left', 'L') + grip(ax, 'right', 'R');
 
   // Tint ink to the chosen pen colour.
   const [pr, pg, pb] = (fontSettings && fontSettings.color) || [38, 32, 28];
   svg.querySelectorAll('.bd-ink').forEach(p => p.setAttribute('fill', `rgb(${pr},${pg},${pb})`));
+}
+
+// ── Live word preview ─────────────────────────────────────────
+// Renders a sample word from the REAL outlines positioned by the CURRENT
+// lsb/rsb + letter spacing — so you see the letter sitting between
+// neighbours instantly, without rebuilding the font.
+let bordersSampleDirty = false;  // true once the user types their own sample
+
+function bordersDefaultSample(ch) {
+  if (ch >= 'a' && ch <= 'z') return `n${ch}n o${ch}o h${ch}`;
+  if (ch >= 'A' && ch <= 'Z') return `H${ch}H O${ch}O n${ch}`;
+  if (ch >= '0' && ch <= '9') return `0${ch}0 1${ch}1`;
+  return `n${ch}n o${ch}o`;
+}
+
+function renderBordersPreview() {
+  const svg = document.getElementById('borders-preview-svg');
+  if (!svg || !bordersList.length) return;
+  const cur = bordersCurrent();
+  const input = document.getElementById('borders-sample');
+  if (!bordersSampleDirty) input.placeholder = bordersDefaultSample(cur.char);
+  const sample = input.value || bordersDefaultSample(cur.char);
+
+  // First slot-0 glyph per char wins; fall back to any slot.
+  const byChar = {};
+  for (const g of bordersList) {
+    if (!(g.char in byChar) || (byChar[g.char].slot > 0 && g.slot === 0)) byChar[g.char] = g;
+  }
+
+  const ls = parseInt(document.getElementById('letter-spacing').value) || 0;
+  const spaceW = parseInt(document.getElementById('space-width').value) || 600;
+  const [pr, pg, pb] = (fontSettings && fontSettings.color) || [38, 32, 28];
+
+  let penX = 8;
+  let parts = '';
+  for (const ch of sample) {
+    const g = byChar[ch];
+    if (!g) {
+      if (ch === ' ' && bordersList[0]) penX += spaceW / bordersList[0].coord_scale;
+      continue;
+    }
+    const cs = g.coord_scale;
+    const pad = g.canvas_pad;
+    const inkW = g.svg_width - 2 * pad;
+    const tx = penX + g.lsb / cs - pad;   // glyph origin (font x=0) at penX
+    const isCur = g === cur;
+    parts += `<g transform="translate(${tx.toFixed(1)},0)">` +
+      (g.svg_paths || []).map(d =>
+        `<path class="bp-ink${isCur ? ' current' : ''}"${isCur ? '' : ` fill="rgb(${pr},${pg},${pb})"`} d="${d}"/>`
+      ).join('') + '</g>';
+    penX += (g.lsb + g.rsb) / cs + inkW + ls / cs;
+  }
+  penX += 8;
+
+  const baseline = (bordersList[0] && bordersList[0].baseline_y) || 288;
+  const yTop = 40, yH = 350;  // crop cap→descender band with a little air
+  svg.setAttribute('viewBox', `0 ${yTop} ${Math.max(penX, 60)} ${yH}`);
+  svg.setAttribute('width', Math.max(penX, 60) * (92 / yH));
+  svg.setAttribute('height', 92);
+  svg.innerHTML =
+    `<line class="bp-baseline" x1="0" y1="${baseline}" x2="${penX}" y2="${baseline}"/>` + parts;
 }
 
 // Map a pointer event to an x position in the SVG's viewBox coordinate space.
@@ -3138,6 +3897,7 @@ function setCurrentBearing(side, value) {
     if (thumb) thumb.classList.toggle('edited', bordersIsEdited(g));
   }
   renderBordersEditor();
+  renderBordersPreview();
   document.getElementById('borders-char-meta').textContent =
     `${g.slot > 0 ? `${g.char} (alternate ${g.slot})` : g.char} · width ${Math.round(g.lsb + (g.svg_width - 2 * g.canvas_pad) * g.coord_scale + g.rsb)} units`;
 }
@@ -3284,8 +4044,9 @@ async function applyBorders() {
   const btn = document.getElementById('borders-apply-btn');
   const status = document.getElementById('borders-status');
   btn.disabled = true;
-  status.textContent = 'Rebuilding…';
+  status.textContent = '';
   hideError('borders-error');
+  buildOverlayShow('Baking your borders into the font…');
 
   const bearings = {};
   for (const g of bordersList) {
@@ -3309,16 +4070,8 @@ async function applyBorders() {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.detail || 'Rebuild failed');
     }
-    const final = await new Promise((resolve, reject) => {
-      const t = setInterval(async () => {
-        try {
-          const s = await fetch(`${API}/process/${jobId}/status`).then(r => r.json());
-          if (s.status === 'complete') { clearInterval(t); resolve(s); }
-          else if (s.status === 'error') { clearInterval(t); reject(new Error(s.error_message || 'Rebuild failed')); }
-        } catch (err) { clearInterval(t); reject(err); }
-      }, 1000);
-    });
-    status.textContent = '';
+    const final = await waitForBuild();
+    buildOverlayHide(true);
     btn.disabled = false;
     lastBuiltSpacing = currentSpacing();  // rebuild just baked these values
     showDownloadPage(final.fea_warning, undefined, {
@@ -3326,8 +4079,8 @@ async function applyBorders() {
       skipped: final.line_skipped_glyphs || [],
     });
   } catch (e) {
+    buildOverlayHide(false);
     btn.disabled = false;
-    status.textContent = '';
     showError('borders-error', e.message);
   }
 }
@@ -3437,9 +4190,12 @@ sendToReview = async function () {
     }
 
     await submitGlyphBatches(jobId, tasks);
+    touchedInEdit = new Set();   // changes are on the server now
 
     document.getElementById('draw-submit-status').textContent = '';
     await loadGlyphs();
+    sendBtn.disabled = false;
+    sendBtn.textContent = 'Send to Review →';
 
   } catch (e) {
     showError('draw-error', e.message);
@@ -3448,11 +4204,23 @@ sendToReview = async function () {
   }
 };
 
+// ── Leave-page guard ───────────────────────────────────────
+// New drafts are autosaved locally, but edit sessions of saved fonts are not
+// (the server is their source of truth) — warn before losing those changes.
+window.addEventListener('beforeunload', (e) => {
+  if (editingJobId && touchedInEdit.size > 0 &&
+      document.getElementById('page-draw').classList.contains('active')) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+
 // ── Page init ──────────────────────────────────────────────
 updatePenStyleButtons();
+updateResumeCard();
 loadSavedFonts();
-// Point the guided-creator link at the backend origin (API is '' when this
-// page is served by the backend itself, so the relative href already works).
+// Point the share-with-a-client link at the backend origin (API is '' when
+// this page is served by the backend itself, so the relative href works).
 const _createLink = document.getElementById('open-create-link');
 if (_createLink) _createLink.href = createUrl();
 </script>
