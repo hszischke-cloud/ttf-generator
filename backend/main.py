@@ -292,11 +292,12 @@ async def finalize(job_id: str, req: FinalizeRequest, background_tasks: Backgrou
             gid: {"lsb": int(b.lsb), "rsb": int(b.rsb)}
             for gid, b in req.glyph_bearings.items()
         }
-    # Pen style only when provided — None means keep the job's current style.
+    # Pen weight only when provided — None means keep the job's current one.
     if req.pen_style is not None:
-        if req.pen_style not in ("classic", "realistic"):
-            raise HTTPException(422, "pen_style must be 'classic' or 'realistic'")
-        update_kwargs["pen_style"] = req.pen_style
+        style = _normalize_pen_style(req.pen_style)
+        if style is None:
+            raise HTTPException(422, "pen_style must be 'realistic' or 'realistic-bold'")
+        update_kwargs["pen_style"] = style
     job_store.update_state(job_id, **update_kwargs)
 
     background_tasks.add_task(run_in_threadpool, _build_font_job, job_id)
@@ -451,7 +452,8 @@ async def list_saved_fonts():
                 **f,
                 "job_exists": fields is not None,
                 "has_line_font": bool(fields and fields.get("has_line_font")),
-                "pen_style": (fields.get("pen_style") if fields else None) or "classic",
+                "pen_style": _normalize_pen_style(
+                    fields.get("pen_style") if fields else None) or "realistic",
             })
         return annotated
     return {"fonts": await run_in_threadpool(_annotate)}
@@ -482,18 +484,35 @@ async def reopen_job(job_id: str):
     return {"ok": True}
 
 
+def _normalize_pen_style(value) -> Optional[str]:
+    """
+    Map any stored/requested pen style onto the two supported weights.
+
+    Every font is inked with the realistic stroker now; "classic" only
+    survives as a legacy stored value from before the realistic pen existed
+    and builds as the fine weight. Returns None for unrecognised input.
+    """
+    if value in (None, "", "classic", "fine", "realistic"):
+        return "realistic"
+    if value in ("bold", "realistic-bold"):
+        return "realistic-bold"
+    return None
+
+
 @app.post("/process/{job_id}/pen-style")
 async def set_pen_style(job_id: str, req: PenStyleRequest, background_tasks: BackgroundTasks):
     """
-    Switch a built font between the classic and realistic pen and rebuild.
+    Switch a built font between the fine and bold pen weight and rebuild.
 
     Both OTFs are regenerated from the job's stored glyph data and settings —
-    classic uses the canvas-captured svg_paths verbatim; realistic re-strokes
-    every glyph's pen_paths with the realistic-ink model. Toggling back and
-    forth is lossless because the underlying glyph data never changes.
+    every glyph's pen_paths are re-stroked with the realistic-ink model at
+    the requested weight. Toggling back and forth is lossless because the
+    underlying glyph data never changes, and both weights share identical
+    advance widths so layout never shifts.
     """
-    if req.pen_style not in ("classic", "realistic"):
-        raise HTTPException(422, "pen_style must be 'classic' or 'realistic'")
+    style = _normalize_pen_style(req.pen_style)
+    if style is None:
+        raise HTTPException(422, "pen_style must be 'realistic' or 'realistic-bold'")
 
     fields = await run_in_threadpool(
         job_store.get_state_fields, job_id,
@@ -506,15 +525,18 @@ async def set_pen_style(job_id: str, req: PenStyleRequest, background_tasks: Bac
     if not fields.get("approved_glyph_ids"):
         raise HTTPException(409, "Font has never been built — generate it first")
 
-    if (fields.get("pen_style") or "classic") == req.pen_style \
-            and fields.get("status") == "complete":
-        return {"ok": True, "pen_style": req.pen_style, "rebuilt": False}
+    # Note: a legacy "classic" job is NOT current even if it normalizes to
+    # the requested weight — it was built with the old brush outlines, so a
+    # rebuild genuinely changes it. Compare raw stored values for that case.
+    stored = fields.get("pen_style")
+    if stored == style and fields.get("status") == "complete":
+        return {"ok": True, "pen_style": style, "rebuilt": False}
 
     job_store.update_state(
-        job_id, pen_style=req.pen_style, status="finalizing", progress_pct=0,
+        job_id, pen_style=style, status="finalizing", progress_pct=0,
     )
     background_tasks.add_task(run_in_threadpool, _build_font_job, job_id)
-    return {"ok": True, "pen_style": req.pen_style, "rebuilt": True}
+    return {"ok": True, "pen_style": style, "rebuilt": True}
 
 
 @app.get("/process/{job_id}/pen-paths")
@@ -668,7 +690,7 @@ async def get_job_settings(job_id: str):
         "letter_spacing":     fields.get("letter_spacing") or 0,
         "space_width":        fields.get("space_width") or 600,
         "has_line_font":      bool(fields.get("has_line_font")),
-        "pen_style":          fields.get("pen_style") or "classic",
+        "pen_style":          _normalize_pen_style(fields.get("pen_style")) or "realistic",
     }
 
 
@@ -694,7 +716,7 @@ def _build_font_job(job_id: str):
         space_width = state.get("space_width", 600)
         manifest = state.get("glyph_manifest", [])
         glyph_bearings = state.get("glyph_bearings", {}) or {}
-        pen_style = state.get("pen_style") or "classic"
+        pen_style = _normalize_pen_style(state.get("pen_style")) or "realistic"
 
         job_store.update_state(job_id, progress_pct=10)
 
@@ -712,6 +734,26 @@ def _build_font_job(job_id: str):
             for e in manifest
             if e.get("has_glyph") and e["glyph_id"] in approved_ids
         )
+
+        # Auto-borders on a print job's FIRST build: compute the optical
+        # margin-equalizing side bearings (HT-Letterspacer-style, see
+        # processing/autospace.py) and persist them as the job's
+        # glyph_bearings. Persisting makes every later rebuild — spacing
+        # tweaks, pen-weight switches, manual border edits — start from the
+        # same values, and the borders editor presents them as the editable
+        # baseline. Gated on "never built + no manual bearings" so fonts
+        # built before this feature (and any user-adjusted borders) are
+        # never silently re-spaced. Cursive is excluded: its spacing comes
+        # from connection points and letter_spacing is forced to 0 there.
+        if not glyph_bearings and not state.get("font_files") and not is_cursive:
+            try:
+                from processing.autospace import compute_auto_bearings
+                auto = compute_auto_bearings(manifest)
+                if auto:
+                    glyph_bearings = auto
+                    job_store.update_state(job_id, glyph_bearings=glyph_bearings)
+            except Exception as exc:
+                print(f"[autospace] auto-borders skipped: {exc}")
 
         # Pick a font-wide base color for COLR layers: most common pen_color
         # across the approved glyphs. Falls back to the default ink color.
@@ -731,7 +773,11 @@ def _build_font_job(job_id: str):
             font_base_color = (38, 32, 28)
 
         from processing.centerline import polyline_paths_to_svg
-        from processing.pen_realistic import realistic_glyph_outlines
+        from processing.pen_realistic import (
+            BOLD_WIDTH_SCALE, realistic_glyph_outlines,
+        )
+
+        pen_width_scale = BOLD_WIDTH_SCALE if pen_style == "realistic-bold" else 1.0
 
         # positional[char] -> {"init": "a.init", "medi": "a.medi", "fina": "a.fina"}
         # only filled in cursive mode and only for letters that actually have
@@ -763,23 +809,24 @@ def _build_font_job(job_id: str):
             lsb_upm = _bearing.get("lsb") if _bearing else None
             rsb_upm = _bearing.get("rsb") if _bearing else None
 
-            # Dimensional outline source. Classic uses the canvas-captured
-            # brush polygons verbatim. Realistic re-strokes the raw pen track
-            # with the realistic-ink model (same coordinate space, so all
-            # baseline/advance/bearing math is untouched). Glyphs without
-            # pen_paths keep their classic outline.
+            # Dimensional outline source: every glyph is re-stroked from its
+            # raw pen track with the realistic-ink model at the chosen weight
+            # (same coordinate space, so all baseline/advance/bearing math is
+            # untouched). The stored svg_paths (legacy canvas brush polygons)
+            # are only a fallback for glyphs without pen_paths.
             dim_svg_paths = entry.get("svg_paths", [])
-            if pen_style == "realistic" and entry.get("pen_paths"):
+            if entry.get("pen_paths"):
                 try:
                     realistic = realistic_glyph_outlines(
                         entry["pen_paths"],
                         pen_size=float(entry.get("pen_size") or 6),
                         seed_key=glyph_id,
+                        width_scale=pen_width_scale,
                     )
                     if realistic:
                         dim_svg_paths = realistic
                 except Exception as exc:
-                    print(f"[pen_realistic] {glyph_id}: fell back to classic ({exc})")
+                    print(f"[pen_realistic] {glyph_id}: fell back to stored outline ({exc})")
 
             dimensional_glyphs.append(GlyphData(
                 char=char, slot=slot, glyph_name=glyph_name,
@@ -878,12 +925,12 @@ def _build_font_job(job_id: str):
         def _build_dim():
             # Realistic ink owns its own edge texture (waviness, fibre
             # notches, pooling are baked into the stroked outlines), so the
-            # UPM-space perturbation/divot pass is skipped — running both
-            # would double-texture every edge.
+            # UPM-space perturbation/divot pass is always skipped — running
+            # both would double-texture every edge.
             return build_otf(
                 dimensional_glyphs, font_name, font_style, letter_spacing, space_width,
                 positional=positional or None,
-                perturb=(pen_style != "realistic"),
+                perturb=False,
                 forced_advances=dim_advances,
                 base_color=font_base_color,
             )
