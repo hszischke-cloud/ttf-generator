@@ -1,7 +1,33 @@
 # TTF Generator — Claude Instructions
 
+> **NOTE: parts of this document describe an older scan/upload architecture.**
+> The app is now a digital-drawing-only flow (canvas in `test_ui.html` /
+> `client.html`, Supabase-backed `job_store.py`, no photo upload). Trust the
+> code over this doc where they disagree.
+
+## Pen styles (dimensional OTF)
+Every glyph stores both `svg_paths` (classic canvas brush polygons) and
+`pen_paths` (raw centerline strokes, points `[x, y, pressure, t_ms]`; legacy
+`[x, y]` still supported). The job-state field `pen_style` picks how the
+dimensional OTF is inked at build time:
+
+- `classic` — uses stored `svg_paths` verbatim + UPM-space perturb/divots
+  (the original look, byte-identical to before the feature existed).
+- `realistic` — `processing/pen_realistic.py` re-strokes each glyph's
+  `pen_paths` with an ink-dynamics model: speed/pressure width modulation,
+  ink pooling at corners/dwell points, round tip caps, blob starts, flick
+  tails, Bézier liquid edges with paper-fibre notches. Perturb is disabled
+  (the stroker owns the edge texture). Deterministic per glyph_id.
+
+Switching is lossless both ways (`POST /process/{job_id}/pen-style`, rebuilds
+with stored settings; advances are identical across styles so layout never
+shifts). `FinalizeRequest.pen_style=None` preserves the job's current style.
+UIs: pen selector on the draw screens, toggle on the download page and per
+saved font.
+
 ## Project Overview
-Handwriting-to-font web app. User downloads a PDF template, hand-writes characters, scans/uploads the page, reviews detected glyphs, and downloads an OTF + WOFF2 font file.
+Handwriting-to-font web app. User draws characters on a canvas, reviews
+glyphs, and downloads an OTF (plus a single-line OTF for pen plotters).
 
 Integrates into an existing Next.js website for personalized letters.
 
