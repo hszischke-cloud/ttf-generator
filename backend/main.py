@@ -735,6 +735,26 @@ def _build_font_job(job_id: str):
             if e.get("has_glyph") and e["glyph_id"] in approved_ids
         )
 
+        # Auto-borders on a print job's FIRST build: compute the optical
+        # margin-equalizing side bearings (HT-Letterspacer-style, see
+        # processing/autospace.py) and persist them as the job's
+        # glyph_bearings. Persisting makes every later rebuild — spacing
+        # tweaks, pen-weight switches, manual border edits — start from the
+        # same values, and the borders editor presents them as the editable
+        # baseline. Gated on "never built + no manual bearings" so fonts
+        # built before this feature (and any user-adjusted borders) are
+        # never silently re-spaced. Cursive is excluded: its spacing comes
+        # from connection points and letter_spacing is forced to 0 there.
+        if not glyph_bearings and not state.get("font_files") and not is_cursive:
+            try:
+                from processing.autospace import compute_auto_bearings
+                auto = compute_auto_bearings(manifest)
+                if auto:
+                    glyph_bearings = auto
+                    job_store.update_state(job_id, glyph_bearings=glyph_bearings)
+            except Exception as exc:
+                print(f"[autospace] auto-borders skipped: {exc}")
+
         # Pick a font-wide base color for COLR layers: most common pen_color
         # across the approved glyphs. Falls back to the default ink color.
         _color_counts: Dict[Tuple[int, int, int], int] = {}

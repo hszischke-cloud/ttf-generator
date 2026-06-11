@@ -29,6 +29,14 @@ shifts). `FinalizeRequest.pen_style=None` preserves the job's current weight.
 UIs: Fine/Bold selector on the draw screens (canvas previews the full ink
 model live), toggle on the download page and per saved font.
 
+## Auto-borders on first build
+A print job's FIRST build computes the optical margin-equalizing side
+bearings (`processing/autospace.py`) and persists them as `glyph_bearings`,
+so every glyph starts with perceived-width-equalized spacing and later
+rebuilds / the borders editor inherit the same values. Gated on "never built
++ no manual bearings + not cursive" so pre-existing fonts and user-adjusted
+borders are never silently re-spaced.
+
 ## Project Overview
 Handwriting-to-font web app. User draws characters on a canvas, reviews
 glyphs, and downloads an OTF (plus a single-line OTF for pen plotters).
