@@ -1,0 +1,1131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="format-detection" content="telephone=no">
+<title>Create your font · snailmail.eco</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400&family=EB+Garamond:ital,wght@0,400;1,400;1,500&family=Inter:wght@300;400;500;600;700&family=Righteous&display=swap" rel="stylesheet">
+<style>
+/* ───────── snailmail.eco home-screen brand tokens ───────── */
+:root{
+  /* brand palette */
+  --cream:#FAEDCD; --brown:#5B4134; --teal:#6BC7C1; --coral:#FD6C66; --orange:#D9573C;
+  /* semantic aliases (legacy names map onto the new palette) */
+  --paper:#FAEDCD; --ink:#5B4134; --ink-light:#856856; --border-color:#DDC9A4;
+  --sage:#6BC7C1; --sage-hover:#54B2AC; --terracotta:#FD6C66; --beige:#EBDBB6;
+  --soft-green:#6BC7C1; --input-bg:#FDF7E6; --warning:#C9A24B; --info:#6E8FB3;
+  --radius:12px; --radius-sm:8px; --radius-lg:14px; --radius-xl:18px; --radius-btn:12px;
+  --font-serif:'Cormorant Garamond','EB Garamond',serif;  /* body / smaller heads */
+  --font-tagline:'EB Garamond',serif;                     /* italic taglines */
+  --font-sans:'Inter',sans-serif;                         /* buttons / links / labels */
+  --font-display:'Righteous',sans-serif;                  /* hero headings / logo */
+}
+*{box-sizing:border-box;-webkit-text-size-adjust:100%;text-size-adjust:100%;}
+html,body{margin:0;padding:0;}
+body{
+  font-family:var(--font-sans); background:var(--paper); color:var(--ink);
+  line-height:1.7; letter-spacing:-0.01em; overflow-x:hidden;
+  min-height:100vh; -webkit-font-smoothing:antialiased;
+}
+/* hero headings use Righteous (round retro); smaller heads use the serif */
+h1,h2{font-family:var(--font-display); font-weight:400; letter-spacing:0.01em; margin:0; color:var(--brown);}
+h3,h4{font-family:var(--font-serif); font-weight:400; letter-spacing:0.01em; margin:0; color:var(--brown);}
+h1{font-size:2.8rem; line-height:1.12;}
+h2{font-size:2rem; line-height:1.18;}
+h3{font-size:1.6rem; line-height:1.4;}
+p{margin:0 0 16px;}
+.muted{color:var(--ink-light);}
+.center{text-align:center;}
+
+/* the signature "o" dot — a coloured circle behind the letter, peeking
+   through the counter. Sized smaller than the o so it only shows in the hole. */
+.odot{position:relative; display:inline-block; z-index:0;} /* own stacking context so the -1 dot sits behind the glyph, not the page */
+.odot::before{content:''; position:absolute; left:50%; top:55%; transform:translate(-50%,-50%);
+  width:0.38em; height:0.44em; border-radius:50%; z-index:-1;}
+.odot--teal::before{background:var(--teal);}
+.odot--orange::before{background:var(--orange);}
+
+/* layout */
+.wrap{max-width:560px; margin:0 auto; padding:32px 24px 64px;}
+.screen{display:none; animation:fade .35s ease both;}
+.screen.active{display:block;}
+@keyframes fade{from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:none;}}
+
+/* brand bar */
+.brand{font-family:var(--font-display); font-size:1.4rem; color:var(--brown); letter-spacing:0.01em;}
+.topbar{max-width:560px; margin:0 auto; display:flex; align-items:center; justify-content:flex-start; padding:22px 24px 2px;}
+
+/* buttons — 4px corners, hover lift + soft shadow */
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  font-family:var(--font-sans); font-size:1rem; font-weight:500; line-height:1.5;
+  border-radius:var(--radius-btn); border:2px solid transparent; cursor:pointer;
+  padding:13px 30px; transition:transform .2s ease, box-shadow .2s ease, background .2s ease, border-color .2s ease, color .2s ease;
+  text-decoration:none; white-space:nowrap;
+}
+.btn:disabled{opacity:.45; cursor:not-allowed;}
+.btn:not(:disabled):hover{transform:translateY(-2px); box-shadow:0 6px 16px rgba(91,65,52,.18);}
+/* primary = coral CTA */
+.btn-primary{background:var(--coral); color:var(--cream); border-color:var(--coral);}
+.btn-primary:not(:disabled):hover{background:#fa5a53; border-color:#fa5a53;}
+/* secondary = teal accent */
+.btn-secondary{background:var(--teal); color:var(--brown); border-color:var(--teal);}
+.btn-secondary:not(:disabled):hover{background:var(--sage-hover); border-color:var(--sage-hover);}
+/* outline = cream with brown border */
+.btn-outline{background:var(--cream); color:var(--brown); border-color:var(--brown);}
+.btn-outline:not(:disabled):hover{background:#fff6dd;}
+.btn-ghost{background:transparent; color:var(--ink-light); border-color:transparent; padding:13px 18px;}
+.btn-ghost:not(:disabled):hover{color:var(--brown); box-shadow:none; transform:none;}
+.btn-lg{padding:19px 42px; font-size:1.15rem;}
+.btn-block{width:100%;}
+
+/* cards */
+.card{background:var(--paper); border:1px solid var(--border-color); border-radius:var(--radius-lg); padding:24px;}
+
+/* inputs */
+.field-label{display:block; font-size:.875rem; letter-spacing:0.01em; color:var(--ink-light); margin-bottom:8px;}
+input[type=text]{
+  width:100%; height:48px; padding:4px 16px; font-size:16px; font-family:var(--font-sans);
+  background:var(--input-bg); border:2px solid var(--border-color); border-radius:var(--radius-sm);
+  color:var(--ink); transition:all .2s;
+}
+input[type=text]:focus{outline:none; border-color:var(--teal); box-shadow:0 0 0 3px rgba(107,199,193,.4);}
+
+/* range sliders */
+input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:6px; border-radius:9999px;
+  background:var(--beige); outline:none; }
+input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:24px; height:24px;
+  border-radius:50%; background:var(--sage); border:2px solid var(--paper); cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,.15);}
+input[type=range]::-moz-range-thumb{ width:24px; height:24px; border-radius:50%; background:var(--sage);
+  border:2px solid var(--paper); cursor:pointer;}
+
+/* ───────────────────────── Landing ───────────────────────── */
+#screen-landing{ padding-top:4px; }
+.hero-title{ font-family:var(--font-display); color:var(--brown); font-weight:400;
+  font-size:clamp(2.7rem, 13.5vw, 3.7rem); line-height:1.02; letter-spacing:0.005em; margin:6px 0 18px; }
+.lede{ font-family:var(--font-serif); font-size:1.35rem; line-height:1.4; color:var(--ink-light);
+  margin:0 0 30px; max-width:430px; }
+.steps{ display:flex; flex-direction:column; gap:14px; margin-bottom:30px; }
+.step{ display:flex; align-items:center; gap:16px; background:var(--input-bg);
+  border:1px solid var(--border-color); border-radius:18px; padding:18px 20px; }
+.step-num{ flex:0 0 auto; width:48px; height:48px; border-radius:50%; background:var(--teal);
+  color:var(--brown); font-family:var(--font-display); font-size:1.45rem; line-height:1;
+  display:flex; align-items:center; justify-content:center; }
+.step-title{ font-family:var(--font-sans); font-weight:600; font-size:1.06rem; color:var(--brown); margin-bottom:3px; }
+.step-desc{ font-family:var(--font-sans); font-weight:400; font-size:.92rem; line-height:1.45; color:var(--ink-light); }
+.meta{ font-family:var(--font-sans); font-size:.85rem; color:var(--ink-light); margin-top:16px; }
+.timehint{ font-family:var(--font-sans); font-size:.9rem; color:var(--ink-light); margin-top:8px; }
+
+/* ───────────────────────── Draw screen ───────────────────────── */
+.progress-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; font-size:.85rem; color:var(--ink-light); }
+.progress-track{ width:100%; height:8px; border-radius:9999px; background:var(--beige); overflow:hidden; margin-bottom:20px; }
+.progress-fill{ height:100%; background:var(--sage); border-radius:9999px; transition:width .3s ease; width:0%; }
+
+.prompt{ text-align:center; margin-bottom:14px; }
+.prompt .glyph{ font-family:var(--font-serif); font-size:2.6rem; font-weight:400; line-height:1;
+  font-feature-settings:'lnum' 1; font-variant-numeric:lining-nums; }
+.prompt .name{ font-size:1rem; color:var(--ink-light); margin-top:2px; }
+.prompt .alt-chip{ display:inline-block; margin-top:8px; font-size:.72rem; font-weight:600; letter-spacing:.04em;
+  text-transform:uppercase; color:#2f6f6a; background:rgba(107,199,193,.20); border-radius:9999px; padding:3px 12px; }
+
+.canvas-stage{ display:flex; flex-direction:column; align-items:center; }
+.canvas-frame{ position:relative; width:100%; max-width:340px; aspect-ratio:3/4; }
+#draw-canvas{ width:100%; height:100%; display:block; background:#fff; border:1px solid var(--border-color);
+  border-radius:var(--radius-sm); touch-action:none; cursor:crosshair; }
+
+.hint{ font-size:.92rem; color:var(--ink-light); text-align:center; margin:14px auto 4px; max-width:360px; min-height:42px; }
+.hint strong{ color:var(--ink); font-weight:600; }
+
+.tools{ display:flex; gap:8px; justify-content:center; margin:14px 0 6px; }
+.tool-btn{ font-family:var(--font-sans); font-size:.85rem; font-weight:500; color:var(--ink-light);
+  background:transparent; border:2px solid var(--border-color); border-radius:9999px; padding:8px 16px; cursor:pointer; transition:all .2s; }
+.tool-btn:not(:disabled):hover{ border-color:var(--ink); color:var(--ink); }
+.tool-btn:disabled{ opacity:.4; cursor:not-allowed; }
+.tool-btn.active-pen{ border-color:var(--ink); background:var(--ink); color:var(--paper); }
+.tool-btn.active-pen:disabled{ opacity:1; cursor:default; }
+.pen-style-row{ display:flex; gap:8px; justify-content:center; align-items:center; margin:2px 0 6px; }
+.pen-style-row .pen-label{ font-size:.78rem; color:var(--ink-light); text-transform:uppercase; letter-spacing:.06em; }
+
+.navrow{ display:flex; gap:12px; align-items:center; margin-top:18px; }
+.navrow .btn-back{ flex:0 0 auto; }
+.navrow .spacer{ flex:1; }
+
+.banner{ margin-top:16px; padding:12px 16px; border-radius:var(--radius-sm); font-size:.9rem; display:none; }
+.banner.show{ display:block; }
+.banner-warn{ background:rgba(201,162,75,.15); border:1px solid var(--warning); color:#7c5a00; }
+.banner-err{ background:rgba(253,108,102,.14); border:1px solid var(--coral); color:#9a3b36; }
+
+.missing-list{ display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+.missing-list span{ font-family:var(--font-serif); font-size:1.05rem; background:var(--paper); border:1px solid var(--terracotta);
+  border-radius:8px; padding:2px 9px; cursor:pointer; }
+
+/* ───────────────────────── Building / loading ───────────────────────── */
+.loader-stage{ text-align:center; padding:40px 0; }
+.snail{ font-size:3rem; display:inline-block; animation:crawl 20s ease-in-out infinite; }
+@keyframes crawl{ 0%{transform:translateX(-30px);} 50%{transform:translateX(30px);} 100%{transform:translateX(-30px);} }
+.build-msg{ font-family:var(--font-serif); font-size:1.5rem; font-weight:400; margin:24px 0 8px; min-height:38px; }
+.build-sub{ color:var(--ink-light); font-size:.95rem; margin-bottom:28px; }
+.build-track{ width:100%; max-width:360px; height:10px; border-radius:9999px; background:var(--beige); overflow:hidden; margin:0 auto; }
+.build-fill{ height:100%; background:var(--sage); border-radius:9999px; transition:width .5s ease; width:0%; }
+.build-pct{ margin-top:10px; font-size:.85rem; color:var(--ink-light); }
+
+/* ───────────────────────── Adjust ───────────────────────── */
+.preview-box{ background:#fff; border:1px solid var(--border-color); border-radius:var(--radius-sm);
+  padding:22px 20px; margin:18px 0; min-height:120px; }
+.preview-text{ font-size:1.9rem; line-height:1.5; color:var(--ink); word-break:break-word; }
+.slider-block{ margin:22px 0; }
+.slider-top{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
+.slider-top .val{ font-size:.85rem; color:var(--ink-light); }
+
+/* ───────────────────────── Done ───────────────────────── */
+.done-emoji{ font-size:3rem; }
+#screen-done h1{ margin:18px 0 8px; }
+.font-card{ background:var(--input-bg); border:1px solid var(--border-color); border-radius:var(--radius-lg); padding:26px 22px; margin:24px 0; }
+.font-card .fc-name{ font-family:var(--font-serif); font-size:1.4rem; margin-bottom:6px; }
+.font-card .fc-sample{ font-size:2rem; color:var(--ink); margin-top:14px; line-height:1.4; }
+.saved-pill{ display:inline-flex; align-items:center; gap:8px; background:rgba(107,199,193,.22); color:#2f6f6a;
+  border-radius:9999px; padding:6px 16px; font-size:.85rem; font-weight:500; margin-bottom:6px; }
+
+@media (max-width:480px){
+  h1{font-size:2.5rem;} #screen-landing h1{font-size:2.6rem;}
+  .wrap{padding:24px 18px 56px;}
+}
+</style>
+</head>
+<body>
+<div class="topbar"><span class="brand">snailmail.ec<span class="odot odot--teal">o</span></span></div>
+<div class="wrap">
+
+<!-- ════════════ 1. LANDING ════════════ -->
+<section class="screen active" id="screen-landing">
+  <h1 class="hero-title">Create<br>y<span class="odot odot--orange">o</span>ur f<span class="odot odot--orange">o</span>nt</h1>
+  <p class="lede">Turn your handwriting into a real font for cards and letters.</p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <div class="step-title">Draw each letter</div>
+        <div class="step-desc">Write each character on the guide lines. We show you one at a time.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <div class="step-title">We build your font</div>
+        <div class="step-desc">Your letters become a real font file in about a minute.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <div class="step-title">Name and save</div>
+        <div class="step-desc">Name your font, set the spacing, and download it.</div>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn-primary btn-block btn-lg" onclick="startCreate()">Start drawing →</button>
+  <p class="meta center" id="landing-meta">About 10 minutes &nbsp;•&nbsp; 132 characters</p>
+</section>
+
+<!-- ════════════ 2. DRAW ════════════ -->
+<section class="screen" id="screen-draw">
+  <div class="progress-head">
+    <span id="prog-section">Capitals</span>
+    <span id="prog-count">1 / 1</span>
+  </div>
+  <div class="progress-track"><div class="progress-fill" id="prog-fill"></div></div>
+
+  <div class="prompt">
+    <div class="glyph" id="prompt-glyph">A</div>
+    <div class="name" id="prompt-name">capital A</div>
+    <div class="alt-chip" id="prompt-alt" style="display:none">Alternate</div>
+  </div>
+
+  <div class="canvas-stage">
+    <div class="canvas-frame">
+      <canvas id="draw-canvas" width="300" height="400"></canvas>
+    </div>
+  </div>
+
+  <div class="hint" id="prompt-hint"></div>
+
+  <div class="tools">
+    <button class="tool-btn" id="undo-btn" onclick="undoStroke()">↶ Undo</button>
+    <button class="tool-btn" id="redo-btn" onclick="redoStroke()">↷ Redo</button>
+    <button class="tool-btn" id="clear-btn" onclick="clearCurrent()">Clear</button>
+  </div>
+  <!-- Pen weight. Every font is inked with the realistic pen (speed-driven
+       width, ink pooling, round tips, flick tails); this picks fine vs
+       slightly thicker. -->
+  <div class="pen-style-row">
+    <span class="pen-label">Pen</span>
+    <button class="tool-btn" id="pen-fine-btn" onclick="setPenStyle('realistic')" title="Realistic ink, true to your drawn pen size">Fine</button>
+    <button class="tool-btn" id="pen-bold-btn" onclick="setPenStyle('realistic-bold')" title="Realistic ink with a slightly thicker tip">Bold</button>
+  </div>
+
+  <div class="navrow">
+    <button class="btn btn-outline btn-back" id="back-btn" onclick="navCell(-1)">← Back</button>
+    <span class="spacer"></span>
+    <button class="btn btn-ghost" id="skip-btn" onclick="skipCell()">Skip</button>
+    <button class="btn btn-primary" id="next-btn" onclick="navCell(1)">Next →</button>
+  </div>
+
+  <div class="banner banner-warn" id="draw-warn"></div>
+  <div class="banner banner-err" id="draw-err"></div>
+</section>
+
+<!-- ════════════ 3. BUILDING ════════════ -->
+<section class="screen" id="screen-building">
+  <div class="loader-stage">
+    <div class="snail">🐌</div>
+    <div class="build-msg" id="build-msg">Tracing your letters…</div>
+    <div class="build-sub" id="build-sub">This usually takes a minute or two. You can keep this page open.</div>
+    <div class="build-track"><div class="build-fill" id="build-fill"></div></div>
+    <div class="build-pct" id="build-pct">0%</div>
+  </div>
+  <div class="banner banner-err" id="build-err"></div>
+</section>
+
+<!-- ════════════ 4. ADJUST ════════════ -->
+<section class="screen" id="screen-adjust">
+  <h2 class="center">Make it feel right</h2>
+  <p class="center muted">Give your font a name and nudge the spacing until it looks like you.</p>
+
+  <div class="preview-box">
+    <div class="preview-text" id="adj-preview">Sphinx of black quartz, judge my vow.</div>
+  </div>
+
+  <label class="field-label" for="adj-name">Font name</label>
+  <input type="text" id="adj-name" placeholder="My Handwriting" maxlength="40" oninput="onNameInput()">
+
+  <div class="slider-block">
+    <div class="slider-top"><span class="field-label" style="margin:0">Letter spacing</span><span class="val" id="ls-val">normal</span></div>
+    <input type="range" id="ls-range" min="-20" max="160" step="5" value="60" oninput="onAdjustSliders()">
+  </div>
+  <div class="slider-block">
+    <div class="slider-top"><span class="field-label" style="margin:0">Space width</span><span class="val" id="sw-val">600</span></div>
+    <input type="range" id="sw-range" min="250" max="950" step="10" value="600" oninput="onAdjustSliders()">
+  </div>
+
+  <button class="btn btn-primary btn-block btn-lg" id="adj-confirm" onclick="confirmAdjust()" disabled>All done →</button>
+  <p class="center timehint">We'll build the final version with your name and spacing.</p>
+  <div class="banner banner-err" id="adj-err"></div>
+</section>
+
+<!-- ════════════ 5. DONE ════════════ -->
+<section class="screen" id="screen-done">
+  <div class="center">
+    <div class="done-emoji">🎉</div>
+    <h1>All done!</h1>
+    <div class="saved-pill">✓ Saved to your fonts</div>
+  </div>
+  <div class="font-card center">
+    <div class="fc-name" id="done-name">My Handwriting</div>
+    <div class="muted" style="font-size:.85rem">your handwriting, as a font</div>
+    <div class="fc-sample" id="done-sample">Hello! Aa Bb Cc 123</div>
+  </div>
+  <div class="center">
+    <button class="btn btn-secondary btn-block btn-lg" id="done-download" onclick="downloadFont()">Download font (.otf)</button>
+    <button class="btn btn-ghost" style="margin-top:10px" onclick="restart()">Create another font</button>
+  </div>
+</section>
+
+</div><!-- /wrap -->
+
+<script>
+/* ════════════════════════════════════════════════════════════════════════
+   API base — rewritten to same-origin '' when served from the backend /create
+   route (see main.py). Falls back to local dev port when opened directly.
+   ════════════════════════════════════════════════════════════════════════ */
+const API = 'http://localhost:8001';
+
+/* ════════════════════════════════════════════════════════════════════════
+   Canvas geometry — kept identical to the studio UI so the backend builds
+   glyphs the same way (baseline_y, svg_height, coordinate scale all match).
+   ════════════════════════════════════════════════════════════════════════ */
+const DRAW_W = 300, DRAW_H = 400;
+const GUIDELINES = {
+  cap:       DRAW_H * 0.15,   // 60
+  xheight:   DRAW_H * 0.42,   // 168
+  baseline:  DRAW_H * 0.72,   // 288  → baseline_y sent to backend
+  // 380 — sits low so j/g/y tails get real room (92px below baseline).
+  // Must match GUIDELINE_BOTTOM_RATIO in font_builder.py: the font's
+  // vertical metrics are derived from it so descenders render unclipped.
+  descender: DRAW_H * 0.95,
+};
+// Renderable band. The font's win metrics cover the whole canvas, but we
+// still HARD-CLAMP every captured point into a sane band so letters can't
+// wander off the cell — the user physically cannot draw where the font
+// won't render, which kills the #1 "my letters got cut off" bug.
+const SAFE = { top: 30, bottom: GUIDELINES.descender, left: 16, right: DRAW_W - 16 };
+// A dedicated centre line for dashes / math symbols.
+const DASH_Y = (GUIDELINES.xheight + GUIDELINES.baseline) / 2; // 228
+
+/* ── Drawing engine constants (verbatim from the studio engine) ── */
+const SMOOTH_ALPHA = 0.62;
+const TOOL_PROFILES = {
+  pen: {thinning:0.35, startTaper:0.06, endTaper:0.08, widthMult:1.0, taperFloor:0.62},
+};
+function easeOut(t){ return 1-(1-t)*(1-t); }
+function easeIn(t){ return t*t; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   Character sequence — everything the studio collects, plus an automatic
+   single alternate for every lowercase letter and every digit, kept in
+   order (a, a-alt, b, b-alt …). Capitals & punctuation: one form each.
+   ════════════════════════════════════════════════════════════════════════ */
+const UPPER  = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'];
+const LOWER  = [...'abcdefghijklmnopqrstuvwxyz'];
+const DIGITS = [...'0123456789'];
+const PUNCT  = ['.', ',', ';', ':', '!', '?', '"', "'", '(', ')', '-', '/', '@', '&', '#', '%',
+                '$', '*', '+', '=', '_', '^', '~', '`', '[', ']', '{', '}', '|', '\\', '<', '>',
+                '–', '—'];
+
+const SPECIAL_IDS = {
+  '.':'period', ',':'comma', ';':'semicolon', ':':'colon', '!':'exclam', '?':'question',
+  '"':'quotedbl', "'":'quotesingle', '(':'parenleft', ')':'parenright', '-':'hyphen',
+  '/':'slash', '@':'at', '&':'ampersand', '#':'numbersign', '%':'percent', '$':'dollar',
+  '*':'asterisk', '+':'plus', '=':'equal', '_':'underscore', '^':'asciicircum',
+  '~':'asciitilde', '`':'grave', '[':'bracketleft', ']':'bracketright', '{':'braceleft',
+  '}':'braceright', '|':'bar', '\\':'backslash', '<':'less', '>':'greater',
+  '–':'endash', '—':'emdash',
+};
+const CHAR_NAMES = {
+  '.':'period',',':'comma',';':'semicolon',':':'colon','!':'exclamation mark',
+  '?':'question mark','"':'double quote',"'":'apostrophe','(':'open parenthesis',
+  ')':'close parenthesis','-':'hyphen','/':'slash','@':'at sign','&':'ampersand',
+  '#':'number sign','%':'percent','$':'dollar','*':'asterisk','+':'plus','=':'equals',
+  '_':'underscore','^':'caret','~':'tilde','`':'backtick','[':'open bracket',']':'close bracket',
+  '{':'open brace','}':'close brace','|':'vertical bar','\\':'backslash','<':'less than',
+  '>':'greater than','–':'en dash','—':'em dash',
+  '0':'zero','1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine',
+};
+function charName(c){
+  if (CHAR_NAMES[c]) return CHAR_NAMES[c];
+  if (c>='A'&&c<='Z') return `capital ${c}`;
+  if (c>='a'&&c<='z') return `lowercase ${c}`;
+  return c;
+}
+function glyphIdFor(char, slot){
+  const base = SPECIAL_IDS[char] ?? char;
+  return `${base}_${slot}`;
+}
+
+// Placement hints — the valuable part for foolproof punctuation. The dash
+// hints in particular fix the recurring em/en placement confusion.
+const HINTS = {
+  '-': 'A short bar sitting on the <strong>middle line</strong>.',
+  '–': 'En dash. A little <strong>longer than a hyphen</strong>, centred on the <strong>middle line</strong>.',
+  '—': 'Em dash. The <strong>longest</strong> dash. Draw a wide bar on the <strong>middle line</strong>, nearly cell-width.',
+  '_': 'Underscore. A flat bar <strong>on the baseline</strong> (the solid line).',
+  '.': 'A single dot resting <strong>on the baseline</strong>.',
+  ',': 'A comma <strong>on the baseline</strong> with a small tail dipping below it.',
+  ';': 'A dot on the baseline with a tail below, like a comma stacked under a dot.',
+  ':': 'Two dots stacked between the <strong>baseline and the middle</strong>.',
+  "'": 'An apostrophe hangs <strong>up near the top</strong> line.',
+  '"': 'Two marks hanging <strong>up near the top</strong> line.',
+  '*': 'An asterisk sits <strong>high</strong>, near the top line.',
+  '^': 'A caret sits <strong>high</strong>, near the top line.',
+  '`': 'A backtick hangs <strong>up near the top</strong> line.',
+  '~': 'A tilde wave centred on the <strong>middle line</strong>.',
+  '0': 'A zero sits <strong>like a capital</strong> on the baseline. Draw a tall, narrow oval, slimmer than a capital O.',
+};
+function hintFor(char){
+  if (HINTS[char]) return HINTS[char];
+  if (char>='A'&&char<='Z') return 'Fill from the <strong>top dashed line</strong> down to the <strong>baseline</strong>.';
+  if (char>='a'&&char<='z') return 'Small letters reach the <strong>middle line</strong>. Tails on g, j, p, q, y drop to the <strong>bottom dashed line</strong>.';
+  if (char>='0'&&char<='9') return 'Numbers sit <strong>like capitals</strong>. Fill from the <strong>top line</strong> down to the <strong>baseline</strong>, never below it.';
+  return 'Follow the faint grey guide for size and position.';
+}
+
+// Build the ordered list of cells to draw.
+function buildSequence(){
+  const cells = [];
+  for (const c of UPPER)  cells.push({char:c, slot:0, section:'Capitals',   required:true,  alt:false});
+  for (const c of LOWER){ cells.push({char:c, slot:0, section:'Lowercase',  required:true,  alt:false});
+                          cells.push({char:c, slot:1, section:'Lowercase',  required:false, alt:true}); }
+  for (const c of DIGITS){cells.push({char:c, slot:0, section:'Numbers',    required:true,  alt:false});
+                          cells.push({char:c, slot:1, section:'Numbers',    required:false, alt:true}); }
+  for (const c of PUNCT)  cells.push({char:c, slot:0, section:'Punctuation',required:false, alt:false});
+  return cells;
+}
+const SEQUENCE = buildSequence();
+
+/* ════════════════════════════════════════════════════════════════════════
+   Draw state
+   ════════════════════════════════════════════════════════════════════════ */
+const drawState = {
+  strokes:{}, redoStacks:{},          // keyed [char][slot]['iso']
+  currentStroke:[], isDrawing:false,
+  tool:'pen', toolSize:6, color:[34,32,30],
+  lastPoint:null, smoothedPoint:null,
+  currentForm:'iso',
+};
+// penStyle picks the pen WEIGHT — every font is inked with the realistic
+// pen: 'realistic' (fine, default) or 'realistic-bold' (slightly thicker).
+const fontSettings = { tool:'pen', toolSize:6, color:[34,32,30], penStyle:'realistic' };
+
+let seqIndex = 0;
+let jobId = null;
+let approvedIds = [];
+let fontName = '';
+let letterSpacing = 0;
+let spaceWidth = 600;
+let otfUrl = null;
+let pollTimer = null;
+let ghostFontReady = false;
+
+function getStrokes(char, slot){
+  if(!drawState.strokes[char]) drawState.strokes[char]={};
+  if(!drawState.strokes[char][slot]) drawState.strokes[char][slot]={};
+  if(!drawState.strokes[char][slot].iso) drawState.strokes[char][slot].iso=[];
+  return drawState.strokes[char][slot].iso;
+}
+function getRedoStack(char, slot){
+  if(!drawState.redoStacks[char]) drawState.redoStacks[char]={};
+  if(!drawState.redoStacks[char][slot]) drawState.redoStacks[char][slot]={};
+  if(!drawState.redoStacks[char][slot].iso) drawState.redoStacks[char][slot].iso=[];
+  return drawState.redoStacks[char][slot].iso;
+}
+function cur(){ return SEQUENCE[seqIndex]; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   Screen routing
+   ════════════════════════════════════════════════════════════════════════ */
+function showScreen(id){
+  for (const s of document.querySelectorAll('.screen')) s.classList.toggle('active', s.id===id);
+  window.scrollTo(0,0);
+}
+function showBanner(id, msg){ const e=document.getElementById(id); e.innerHTML=msg; e.classList.add('show'); }
+function hideBanner(id){ document.getElementById(id).classList.remove('show'); }
+
+/* ════════════════════════════════════════════════════════════════════════
+   Start
+   ════════════════════════════════════════════════════════════════════════ */
+let drawCanvas, drawCtx, canvasReady=false;
+function startCreate(){
+  // reset everything (supports "create another")
+  drawState.strokes={}; drawState.redoStacks={}; drawState.currentStroke=[];
+  seqIndex=0; jobId=null; approvedIds=[]; otfUrl=null;
+  letterSpacing=0; spaceWidth=600;
+  fontSettings.penStyle='realistic';
+  updatePenStyleButtons();
+  showScreen('screen-draw');
+  setTimeout(initCanvas, 30);
+}
+function initCanvas(){
+  drawCanvas = document.getElementById('draw-canvas');
+  drawCtx = drawCanvas.getContext('2d');
+  if(!canvasReady){
+    drawCanvas.addEventListener('pointerdown', onPointerDown);
+    drawCanvas.addEventListener('pointermove', onPointerMove);
+    drawCanvas.addEventListener('pointerup', onPointerUp);
+    drawCanvas.addEventListener('pointercancel', onPointerUp);
+    drawCanvas.addEventListener('pointerleave', onPointerUp);
+    canvasReady=true;
+  }
+  renderPrompt();
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Pointer handling — HARD CLAMP to the safe band
+   ════════════════════════════════════════════════════════════════════════ */
+function clampPt(x,y){
+  return { x: Math.max(SAFE.left, Math.min(SAFE.right, x)),
+           y: Math.max(SAFE.top,  Math.min(SAFE.bottom, y)) };
+}
+function toCanvasPoint(e){
+  const rect = drawCanvas.getBoundingClientRect();
+  let x = (e.clientX-rect.left)*(DRAW_W/rect.width);
+  let y = (e.clientY-rect.top )*(DRAW_H/rect.height);
+  const c = clampPt(x,y); x=c.x; y=c.y;
+  if(drawState.smoothedPoint){
+    x = x*SMOOTH_ALPHA + drawState.smoothedPoint.x*(1-SMOOTH_ALPHA);
+    y = y*SMOOTH_ALPHA + drawState.smoothedPoint.y*(1-SMOOTH_ALPHA);
+  }
+  const cc = clampPt(x,y); x=cc.x; y=cc.y;
+  drawState.smoothedPoint={x,y};
+  const p = computePressure(e.pressure, x, y, e.timeStamp, e.pointerType);
+  return {x,y,p,t:e.timeStamp};
+}
+function computePressure(rawPressure,x,y,t,pointerType){
+  const last=drawState.lastPoint;
+  const vel = last ? Math.hypot(x-last.x,y-last.y)/Math.max(t-last.t,1) : 0;
+  const velFactor = Math.max(0.72, 1.0 - vel*0.018);
+  if(pointerType==='pen' && rawPressure>0) return Math.max(0.35, rawPressure*0.7 + velFactor*0.3);
+  const prev = drawState.lastPoint?.p ?? 0.72;
+  return prev*0.55 + velFactor*0.45;
+}
+function onPointerDown(e){
+  e.preventDefault();
+  try{ drawCanvas.setPointerCapture(e.pointerId); }catch(_){}
+  drawState.smoothedPoint=null;
+  const pt=toCanvasPoint(e); drawState.lastPoint=pt;
+  drawState.isDrawing=true; drawState.currentStroke=[pt];
+  renderCanvas();
+}
+function onPointerMove(e){
+  if(!drawState.isDrawing) return;
+  e.preventDefault();
+  const pt=toCanvasPoint(e); drawState.lastPoint=pt;
+  drawState.currentStroke.push(pt);
+  renderCanvas();
+}
+function onPointerUp(e){
+  if(!drawState.isDrawing) return;
+  drawState.isDrawing=false;
+  if(drawState.currentStroke.length>1){
+    const {char,slot}=cur();
+    const strk=[...drawState.currentStroke];
+    strk.color=[...drawState.color]; strk.tool=drawState.tool;
+    getStrokes(char,slot).push(strk);
+    getRedoStack(char,slot).length=0;
+  }
+  drawState.currentStroke=[];
+  renderCanvas(); updateToolButtons();
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Rendering — masks, guides, ghost reference, ink
+   ════════════════════════════════════════════════════════════════════════ */
+function renderCanvas(){
+  if(!drawCtx) return;
+  const ctx=drawCtx;
+  ctx.clearRect(0,0,DRAW_W,DRAW_H);
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,DRAW_W,DRAW_H);
+  drawMasks(ctx);
+  drawGhost(ctx);
+  drawGuidelines(ctx);
+
+  const {char,slot}=cur();
+  for(const s of getStrokes(char,slot)){
+    renderStrokePolygon(ctx, strokeToPolygon(s,drawState.toolSize,s.tool||drawState.tool),
+                        s.tool||drawState.tool, s.color||drawState.color, s);
+  }
+  if(drawState.currentStroke.length>1){
+    renderStrokePolygon(ctx, strokeToPolygon(drawState.currentStroke,drawState.toolSize,drawState.tool),
+                        drawState.tool, drawState.color, drawState.currentStroke);
+  }
+}
+
+function drawMasks(ctx){
+  ctx.save();
+  ctx.fillStyle='rgba(91,65,52,0.07)';
+  ctx.fillRect(0,0,DRAW_W,SAFE.top);                       // top
+  ctx.fillRect(0,SAFE.bottom,DRAW_W,DRAW_H-SAFE.bottom);   // bottom
+  ctx.fillRect(0,SAFE.top,SAFE.left,SAFE.bottom-SAFE.top); // left
+  ctx.fillRect(SAFE.right,SAFE.top,DRAW_W-SAFE.right,SAFE.bottom-SAFE.top); // right
+  // dashed safe-zone border
+  ctx.strokeStyle='rgba(107,199,193,0.6)'; ctx.lineWidth=1; ctx.setLineDash([5,4]);
+  ctx.strokeRect(SAFE.left+0.5,SAFE.top+0.5,SAFE.right-SAFE.left-1,SAFE.bottom-SAFE.top-1);
+  ctx.restore();
+}
+
+function drawGuidelines(ctx){
+  ctx.save();
+  const lines=[
+    {y:GUIDELINES.cap,       color:'rgba(110,143,179,0.45)', dash:[6,4]},
+    {y:GUIDELINES.xheight,   color:'rgba(212,207,191,0.9)',  dash:[4,4]},
+    {y:GUIDELINES.baseline,  color:'rgba(110,143,179,0.7)',  dash:[]},
+    {y:GUIDELINES.descender, color:'rgba(212,207,191,0.9)',  dash:[4,4]},
+  ];
+  ctx.lineWidth=1;
+  for(const {y,color,dash} of lines){
+    ctx.setLineDash(dash); ctx.strokeStyle=color;
+    ctx.beginPath(); ctx.moveTo(SAFE.left,y); ctx.lineTo(SAFE.right,y); ctx.stroke();
+  }
+  // dash centre line — only for dash/tilde glyphs, so it doesn't clutter letters
+  const ch=cur().char;
+  if(['-','–','—','~','+','=','<','>'].includes(ch)){
+    ctx.setLineDash([2,4]); ctx.strokeStyle='rgba(217,87,60,0.65)';
+    ctx.beginPath(); ctx.moveTo(SAFE.left,DASH_Y); ctx.lineTo(SAFE.right,DASH_Y); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Faint reference glyph showing ideal size & position. Lowercase uses a
+// smaller size so its x-height lands on the middle line; everything else is
+// cap-aligned. Clipped to the safe band.
+function drawGhost(ctx){
+  const ch=cur().char;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(SAFE.left,SAFE.top,SAFE.right-SAFE.left,SAFE.bottom-SAFE.top); ctx.clip();
+  const isLower = ch>='a'&&ch<='z';
+  const isDigit = ch>='0'&&ch<='9';
+  // Letters: serif at cap/x-height size. Digits: a lining-figure sans so the
+  // reference sits like a capital ON the baseline (Cormorant uses old-style
+  // figures that dip below the line and whose 0 reads like an O — wrong guide).
+  const size = isLower ? 232 : 300;
+  const fam = isDigit ? "'Arial','Helvetica Neue',sans-serif"
+                      : (ghostFontReady ? "'Cormorant Garamond',serif" : 'Georgia,serif');
+  ctx.font = `${isDigit?500:300} ${size}px ${fam}`;
+  ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  ctx.fillStyle='rgba(34,32,30,0.10)';
+  ctx.fillText(ch, DRAW_W/2, GUIDELINES.baseline);
+  ctx.restore();
+}
+
+/* ── Engine (verbatim from studio) ── */
+// The "bold" pen weight — must match BOLD_WIDTH_SCALE in
+// processing/pen_realistic.py so the canvas previews the built OTF weight.
+const PEN_BOLD_SCALE = 1.35;
+
+// Realistic-ink half-width profile — mirrors the backend stroker
+// (processing/pen_realistic.py): width follows pressure + pen speed, ink
+// pools at corners, terminals get blob starts / flick or pooled lifts.
+function _realisticHalfWidths(points, maxSize){
+  const n=points.length;
+  const v=new Array(n).fill(0), arc=new Array(n).fill(0);
+  for(let i=1;i<n;i++){
+    const d=Math.hypot(points[i].x-points[i-1].x,points[i].y-points[i-1].y);
+    arc[i]=arc[i-1]+d;
+    const dt=(points[i].t||0)-(points[i-1].t||0);
+    v[i]=dt>0 ? d/dt*1000 : d*60;
+  }
+  if(n>1) v[0]=v[1];
+  const sv=v.slice();
+  for(let i=1;i<n-1;i++) sv[i]=(v[i-1]+v[i]*2+v[i+1])/4;
+  const sorted=sv.filter(x=>x>0).sort((a,b)=>a-b);
+  const vmed=sorted.length?sorted[Math.floor(sorted.length/2)]:0;
+
+  const hws=new Array(n);
+  for(let i=0;i<n;i++){
+    let w=(maxSize/2)*(0.78+0.42*(points[i].p??0.6));
+    if(vmed>0){ const rel=Math.min(4,Math.max(0.25,sv[i]/vmed));
+      w*=Math.min(1.22,Math.max(0.78,Math.pow(rel,-0.22))); }
+    if(i>=2&&i<n-2){
+      const v1x=points[i].x-points[i-2].x, v1y=points[i].y-points[i-2].y;
+      const v2x=points[i+2].x-points[i].x, v2y=points[i+2].y-points[i].y;
+      const n1=Math.hypot(v1x,v1y), n2=Math.hypot(v2x,v2y);
+      if(n1>1e-6&&n2>1e-6){
+        const dot=Math.max(-1,Math.min(1,(v1x*v2x+v1y*v2y)/(n1*n2)));
+        const ang=Math.acos(dot)*180/Math.PI;
+        w*=1+0.30*Math.max(0,Math.min(1,(ang-28)/72));
+      }
+    }
+    hws[i]=w;
+  }
+  // Terminal envelopes in arc length: ramp-in (+ blob on slow starts);
+  // fast lift → long thin flick tail, slow lift → small ink pool.
+  const total=arc[n-1]||1;
+  const rampIn=maxSize, blobLen=maxSize*1.8, flickLen=maxSize*2.6, poolLen=maxSize;
+  const slowStart=vmed>0&&sv[0]<0.5*vmed;
+  const fastLift=vmed>0&&sv[n-1]>1.45*vmed;
+  for(let i=0;i<n;i++){
+    const s=arc[i], e=total-arc[i];
+    if(s<rampIn){ const t=s/rampIn; hws[i]*=0.70+0.30*(1-(1-t)*(1-t)); }
+    if(slowStart&&s<blobLen) hws[i]*=1+0.20*Math.pow(1-s/blobLen,1.5);
+    if(fastLift){ if(e<flickLen) hws[i]*=0.22+0.78*Math.pow(e/flickLen,1.6); }
+    else if(e<poolLen) hws[i]*=1+0.16*Math.pow(1-e/poolLen,1.5);
+  }
+  const out=hws.slice();
+  for(let i=1;i<n-1;i++) out[i]=(hws[i-1]+hws[i]*2+hws[i+1])/4;
+  return out;
+}
+function strokeToPolygon(points,maxSize,tool,penStyle){
+  if(points.length<2) return [];
+  const prof=TOOL_PROFILES[tool]||TOOL_PROFILES.pen; const n=points.length;
+  // Live rendering always uses the realistic ink model at the font-wide
+  // weight; 'classic' only survives for strokeToOutlineSVG, which exports
+  // the legacy brush polygon as the svg_paths fallback (the backend
+  // re-strokes pen_paths for the real OTF outlines).
+  const style=penStyle??fontSettings.penStyle??'realistic';
+  const tangents=[],hws=[];
+  for(let i=0;i<n;i++){
+    const pt=points[i], prev=points[Math.max(0,i-1)], next=points[Math.min(n-1,i+1)];
+    const dx=next.x-prev.x, dy=next.y-prev.y, len=Math.hypot(dx,dy)||1;
+    const tx=dx/len, ty=dy/len; tangents.push({nx:-ty,ny:tx});
+    if(style!=='classic') continue;
+    const st=easeOut(Math.min(i/Math.max(n*prof.startTaper,1),1));
+    const et=easeIn(Math.min((n-1-i)/Math.max(n*prof.endTaper,1),1));
+    const taper=Math.max(prof.taperFloor??0.0, st*et);
+    const pMod=(1-prof.thinning)+prof.thinning*pt.p;
+    hws.push(Math.max(0.05,maxSize*prof.widthMult*pMod*taper/2));
+  }
+  if(style!=='classic'){
+    const size=maxSize*(style==='realistic-bold'?PEN_BOLD_SCALE:1);
+    for(const w of _realisticHalfWidths(points,size)) hws.push(Math.max(0.05,w));
+  }
+  const smoothed=hws.map((hw,i)=> i===0||i===n-1 ? hw : (hws[i-1]+hw*2+hws[i+1])/4);
+  const left=[],right=[];
+  for(let i=0;i<n;i++){ const {nx,ny}=tangents[i], pt=points[i], hw=smoothed[i];
+    left.push({x:pt.x+nx*hw,y:pt.y+ny*hw}); right.push({x:pt.x-nx*hw,y:pt.y-ny*hw}); }
+  return [...left,...right.reverse()];
+}
+/* Ink rendering: paint each stroke exactly as the built OTF will render it.
+   The OTF carries only filled vector outlines in one flat colour (no
+   transparency, texture, dots/divots or per-segment tone shifts), so the
+   canvas draws the same realistic outline geometry as a single flat
+   nonzero-winding fill (CFF's fill rule) plus round terminal caps that
+   match the backend stroker's tip caps. What you draw is what you get. */
+function renderStrokePolygon(ctx,polygon,tool,color=[34,32,30],points=null){
+  if(polygon.length<3) return;
+  const [r,g,b]=color;
+  ctx.save();
+  ctx.fillStyle=`rgb(${r},${g},${b})`;
+  ctx.beginPath();
+  ctx.moveTo(polygon[0].x,polygon[0].y);
+  for(let i=1;i<polygon.length;i++) ctx.lineTo(polygon[i].x,polygon[i].y);
+  ctx.closePath();
+  ctx.fill();
+  const n=points?points.length:0;
+  if(points&&n>=2&&polygon.length===2*n){
+    for(const idx of [0,n-1]){
+      const lp=polygon[idx], rp=polygon[2*n-1-idx];
+      const hw=Math.hypot(lp.x-rp.x,lp.y-rp.y)/2;
+      if(hw<0.5) continue;
+      ctx.beginPath(); ctx.arc(points[idx].x,points[idx].y,hw,0,Math.PI*2); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+/* ── Export helpers (verbatim) ── */
+function getGlyphXBounds(char,slot){
+  const strokes=getStrokes(char,slot); let minX=Infinity,maxX=-Infinity;
+  for(const s of strokes) for(const pt of s){ if(pt.x<minX)minX=pt.x; if(pt.x>maxX)maxX=pt.x; }
+  return (minX===Infinity)?{minX:0,maxX:DRAW_W}:{minX,maxX};
+}
+// Always the legacy brush polygon: stored svg_paths are only a FALLBACK for
+// glyphs whose pen_paths can't be stroked — the backend re-strokes
+// pen_paths with the realistic pen for the real OTF outlines.
+function strokeToOutlineSVG(points,size,xShift=0){
+  const polygon=strokeToPolygon(points,size,drawState.tool,'classic');
+  if(!polygon||polygon.length<3) return null;
+  const pts=polygon.map(p=>({x:p.x-xShift,y:p.y}));
+  return 'M '+pts.map(p=>`${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L ')+' Z';
+}
+function glyphToSVGPaths(char,slot,xShift=0){
+  return getStrokes(char,slot).filter(s=>s.length>1).map(s=>strokeToOutlineSVG(s,drawState.toolSize,xShift)).filter(Boolean);
+}
+// Each point [x, y, pressure, t_ms] — pressure + stroke-relative time feed
+// the backend realistic-ink stroker; the line font only reads x/y.
+function glyphToPenPaths(char,slot,xShift=0){
+  return getStrokes(char,slot).filter(s=>s.length>1).map(s=>{
+    const t0=s[0].t||0;
+    return s.map(pt=>[
+      Math.round((pt.x-xShift)*100)/100,
+      Math.round(pt.y*100)/100,
+      Math.round((pt.p??0.6)*1000)/1000,
+      Math.max(0,Math.round((pt.t||0)-t0)),
+    ]);
+  });
+}
+function glyphThumbnailB64(char,slot){
+  // Thumbnails are review-grid previews shown at ≤ 56 px — render at half
+  // scale so each PNG (and the upload payload) is ~4× smaller.
+  const SCALE=0.5;
+  const off=document.createElement('canvas'); off.width=DRAW_W*SCALE; off.height=DRAW_H*SCALE;
+  const ctx=off.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,off.width,off.height);
+  ctx.scale(SCALE,SCALE);
+  for(const s of getStrokes(char,slot))
+    renderStrokePolygon(ctx, strokeToPolygon(s,drawState.toolSize,drawState.tool), drawState.tool, drawState.color, s);
+  return off.toDataURL('image/png').split(',')[1];
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Draw-screen UI controls
+   ════════════════════════════════════════════════════════════════════════ */
+function renderPrompt(){
+  const c=cur();
+  document.getElementById('prompt-glyph').textContent = c.char===' '?'space':c.char;
+  document.getElementById('prompt-name').textContent  = charName(c.char);
+  document.getElementById('prompt-alt').style.display = c.alt?'inline-block':'none';
+  document.getElementById('prompt-hint').innerHTML    = c.alt
+    ? 'Draw <strong>'+c.char+'</strong> again, a little differently. This gives your font natural variety.'
+    : hintFor(c.char);
+  document.getElementById('prog-section').textContent = c.section;
+  document.getElementById('prog-count').textContent   = `${seqIndex+1} / ${SEQUENCE.length}`;
+  document.getElementById('prog-fill').style.width    = `${((seqIndex+1)/SEQUENCE.length)*100}%`;
+
+  document.getElementById('back-btn').disabled = seqIndex===0;
+  document.getElementById('skip-btn').style.display = c.required?'none':'inline-flex';
+  const nextBtn=document.getElementById('next-btn');
+  nextBtn.textContent = (seqIndex===SEQUENCE.length-1) ? 'Create my font →' : 'Next →';
+
+  hideBanner('draw-warn'); hideBanner('draw-err');
+  updateToolButtons();
+  renderCanvas();
+}
+function updateToolButtons(){
+  const {char,slot}=cur();
+  document.getElementById('undo-btn').disabled  = getStrokes(char,slot).length===0;
+  document.getElementById('redo-btn').disabled  = getRedoStack(char,slot).length===0;
+  document.getElementById('clear-btn').disabled = getStrokes(char,slot).length===0;
+}
+function setPenStyle(style){
+  fontSettings.penStyle = style==='realistic-bold' ? 'realistic-bold' : 'realistic';
+  updatePenStyleButtons();
+  if(drawCtx) renderCanvas();
+}
+function updatePenStyleButtons(){
+  const f=document.getElementById('pen-fine-btn'), b=document.getElementById('pen-bold-btn');
+  if(!f||!b) return;
+  const bold=fontSettings.penStyle==='realistic-bold';
+  f.classList.toggle('active-pen',!bold); b.classList.toggle('active-pen',bold);
+}
+function undoStroke(){ const {char,slot}=cur(); const s=getStrokes(char,slot); if(!s.length) return;
+  getRedoStack(char,slot).push(s.pop()); renderCanvas(); updateToolButtons(); }
+function redoStroke(){ const {char,slot}=cur(); const r=getRedoStack(char,slot); if(!r.length) return;
+  getStrokes(char,slot).push(r.pop()); renderCanvas(); updateToolButtons(); }
+function clearCurrent(){ const {char,slot}=cur(); const s=getStrokes(char,slot); if(!s.length) return;
+  getRedoStack(char,slot).push(...s.splice(0)); renderCanvas(); updateToolButtons(); }
+
+function skipCell(){ advance(1); }
+function navCell(dir){
+  const c=cur();
+  if(dir>0 && c.required && getStrokes(c.char,c.slot).length===0){
+    showBanner('draw-warn', 'Please draw <strong>'+charName(c.char)+'</strong> before moving on. Your font needs it.');
+    return;
+  }
+  if(dir>0 && seqIndex===SEQUENCE.length-1){ finishDrawing(); return; }
+  advance(dir);
+}
+function advance(dir){
+  const ni=Math.max(0,Math.min(SEQUENCE.length-1, seqIndex+dir));
+  if(ni===seqIndex && dir>0){ finishDrawing(); return; }
+  seqIndex=ni; renderPrompt();
+}
+document.addEventListener('keydown', e=>{
+  if(!document.getElementById('screen-draw').classList.contains('active')) return;
+  if(document.activeElement && document.activeElement.tagName==='INPUT') return;
+  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&e.key==='z'){ e.preventDefault(); undoStroke(); }
+  else if((e.ctrlKey||e.metaKey)&&(e.key==='y'||(e.shiftKey&&e.key==='z'))){ e.preventDefault(); redoStroke(); }
+  else if(e.key==='ArrowRight'){ e.preventDefault(); navCell(1); }
+  else if(e.key==='ArrowLeft'){ e.preventDefault(); navCell(-1); }
+});
+
+/* ════════════════════════════════════════════════════════════════════════
+   Finish drawing → validate required → submit glyphs → build
+   ════════════════════════════════════════════════════════════════════════ */
+function firstMissingRequired(){
+  for(let i=0;i<SEQUENCE.length;i++){ const c=SEQUENCE[i];
+    if(c.required && getStrokes(c.char,c.slot).length===0) return i; }
+  return -1;
+}
+async function finishDrawing(){
+  const miss=firstMissingRequired();
+  if(miss>=0){
+    const missingChars=SEQUENCE.filter(c=>c.required && getStrokes(c.char,c.slot).length===0)
+      .map(c=>c.char).slice(0,30);
+    const chips=missingChars.map(ch=>`<span onclick="jumpTo('${ch.replace(/'/g,"\\'")}')">${ch==='<'?'&lt;':ch==='>'?'&gt;':ch}</span>`).join('');
+    seqIndex=miss; renderPrompt();
+    showBanner('draw-warn',
+      'A few required characters still need drawing. Tap one to jump to it.'+
+      '<div class="missing-list">'+chips+'</div>');
+    return;
+  }
+  submitAll();
+}
+function jumpTo(ch){
+  const i=SEQUENCE.findIndex(c=>c.char===ch && getStrokes(c.char,c.slot).length===0);
+  if(i>=0){ seqIndex=i; renderPrompt(); }
+}
+
+async function submitAll(){
+  showScreen('screen-building');
+  setBuild(2, 'Saving your letters…');
+  hideBanner('build-err');
+  try{
+    const createRes=await fetch(`${API}/draw/create`,{method:'POST'});
+    if(!createRes.ok) throw new Error('Could not start the build. Please try again.');
+    jobId=(await createRes.json()).job_id;
+
+    // Collect drawn cells (both slots), preserving order.
+    const tasks=[];
+    for(const c of SEQUENCE){
+      if(getStrokes(c.char,c.slot).length>0)
+        tasks.push({char:c.char, slot:c.slot, glyphId:glyphIdFor(c.char,c.slot)});
+    }
+    approvedIds=tasks.map(t=>t.glyphId);
+    if(!tasks.length) throw new Error('No letters were drawn.');
+
+    // Build every glyph payload up front, then send them in a few batched
+    // requests. The old one-POST-per-glyph loop was the slowest step of the
+    // whole flow (132 serial round trips, each re-writing the server-side
+    // manifest); batching collapses it to ~4 requests.
+    const PAD=12, CHUNK=35;
+    const payloads=tasks.map(t=>{
+      const {minX,maxX}=getGlyphXBounds(t.char,t.slot);
+      const xShift=minX-PAD; const svgWidth=Math.round(maxX-minX+PAD*2);
+      return {
+        glyph_id:t.glyphId, char:t.char, slot:t.slot, form:'iso',
+        svg_paths:glyphToSVGPaths(t.char,t.slot,xShift),
+        pen_paths:glyphToPenPaths(t.char,t.slot,xShift),
+        svg_width:svgWidth, svg_height:DRAW_H,
+        baseline_y:Math.round(GUIDELINES.baseline), upscale_factor:1.0,
+        thumbnail_png_b64:glyphThumbnailB64(t.char,t.slot),
+        x_shift:xShift, entry_x:null, exit_x:null, entry_y:null, exit_y:null,
+        pen_tool:fontSettings.tool, pen_size:fontSettings.toolSize, pen_color:fontSettings.color,
+      };
+    });
+    for(let i=0;i<payloads.length;i+=CHUNK){
+      const chunk=payloads.slice(i,i+CHUNK);
+      setBuild(2 + Math.round((i/payloads.length)*18), 'Saving your letters…',
+               `${Math.min(i+chunk.length,payloads.length)} of ${payloads.length} letters`);
+      const res=await fetch(`${API}/draw/${jobId}/glyphs/batch`,{
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({glyphs:chunk}),
+      });
+      if(!res.ok) throw new Error('Could not save your letters. Please try again.');
+    }
+    // Kick off the first build (placeholder name; real name applied at "All
+    // done"). Built spacing-NEUTRAL (0 / 600): the adjust screen previews the
+    // sliders via CSS letter/word-spacing on top of this font, so anything
+    // baked in here would be double-counted and the first paint wouldn't
+    // match the slider values. The real spacing is baked by the final build.
+    await runBuild('My Handwriting', 0, 600, /*onComplete*/ showAdjust);
+  }catch(e){
+    showBanner('build-err', e.message || 'Something went wrong. Please try again.');
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Build + poll
+   ════════════════════════════════════════════════════════════════════════ */
+const BUILD_MSGS=['Tracing your letters…','Smoothing the curves…','Spacing things out…','Building the font file…','Almost there…'];
+function setBuild(pct, msg, sub){
+  document.getElementById('build-fill').style.width=`${Math.min(100,pct)}%`;
+  document.getElementById('build-pct').textContent=`${Math.min(100,Math.round(pct))}%`;
+  if(msg) document.getElementById('build-msg').textContent=msg;
+  if(sub!==undefined) document.getElementById('build-sub').textContent=sub;
+}
+async function runBuild(name, ls, sw, onComplete){
+  showScreen('screen-building');
+  setBuild(20, BUILD_MSGS[0], 'This usually takes a minute or two.');
+  const finRes=await fetch(`${API}/process/${jobId}/finalize`,{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({approved_glyph_ids:approvedIds, font_name:name, font_style:'Regular',
+                         letter_spacing:ls, space_width:sw,
+                         pen_style:fontSettings.penStyle||'realistic'}),
+  });
+  if(!finRes.ok) throw new Error('Build could not start. Please try again.');
+  const fin=await finRes.json();
+  otfUrl=fin.otf_url;
+  fontName=name; letterSpacing=ls; spaceWidth=sw;
+  pollBuild(onComplete);
+}
+function pollBuild(onComplete){
+  if(pollTimer) clearInterval(pollTimer);
+  let msgIdx=0;
+  pollTimer=setInterval(async ()=>{
+    try{
+      const r=await fetch(`${API}/process/${jobId}/status`);
+      if(!r.ok) return;
+      const st=await r.json();
+      if(st.status==='finalizing' || st.status==='processing'){
+        // Map backend 0–100 onto our 20–95 window so the bar always moves.
+        const pct=20 + Math.round((st.progress_pct||0)*0.75);
+        msgIdx=Math.min(BUILD_MSGS.length-1, Math.floor((st.progress_pct||0)/22));
+        setBuild(pct, BUILD_MSGS[msgIdx]);
+      } else if(st.status==='complete'){
+        clearInterval(pollTimer); pollTimer=null;
+        setBuild(100, 'Done!');
+        setTimeout(()=>onComplete(), 350);
+      } else if(st.status==='error'){
+        clearInterval(pollTimer); pollTimer=null;
+        showBanner('build-err', 'The font failed to build. '+(st.error_message? 'Please try again.':'Please try again.'));
+      }
+    }catch(_){ /* transient — keep polling */ }
+  }, 1200);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Adjust screen
+   ════════════════════════════════════════════════════════════════════════ */
+let previewFontFamily=null;
+async function showAdjust(){
+  await loadPreviewFont();
+  showScreen('screen-adjust');
+  onAdjustSliders();
+  onNameInput();
+}
+async function loadPreviewFont(){
+  // No ?v=<timestamp> cache-buster: the backend serves each build from a
+  // content-versioned, immutable URL, so re-previewing the same build is a
+  // cache hit (no re-download) while a genuine rebuild resolves to a fresh
+  // path automatically. The family name is still unique per load so the CSS
+  // engine doesn't paint with a stale decoded face.
+  const fam='ClientFont_'+Date.now();
+  previewFontFamily=fam;
+  const url=`${API}${otfUrl}`;
+  try{
+    const ff=new FontFace(fam, `url(${url})`);
+    await ff.load(); document.fonts.add(ff);
+  }catch(_){ /* preview will fall back to serif */ }
+  const pv=document.getElementById('adj-preview');
+  pv.style.fontFamily=`'${fam}', var(--font-serif)`;
+}
+function onNameInput(){
+  const v=document.getElementById('adj-name').value.trim();
+  document.getElementById('adj-confirm').disabled = v.length===0;
+}
+function onAdjustSliders(){
+  const ls=parseInt(document.getElementById('ls-range').value,10);
+  const sw=parseInt(document.getElementById('sw-range').value,10);
+  document.getElementById('ls-val').textContent = ls===0?'touching':(ls>0?`+${ls}`:`${ls}`);
+  document.getElementById('sw-val').textContent = sw;
+  // Live CSS approximation against the preview font. The preview build is
+  // spacing-neutral (0 / 600), so the slider values map 1:1 onto CSS em
+  // offsets (1000 UPM = 1em) — what the slider says is what you see.
+  const pv=document.getElementById('adj-preview');
+  pv.style.letterSpacing = `${(ls/1000).toFixed(4)}em`;
+  pv.style.wordSpacing   = `${((sw-600)/1000).toFixed(4)}em`;
+}
+async function confirmAdjust(){
+  const name=document.getElementById('adj-name').value.trim() || 'My Handwriting';
+  const ls=parseInt(document.getElementById('ls-range').value,10);
+  const sw=parseInt(document.getElementById('sw-range').value,10);
+  hideBanner('adj-err');
+  try{
+    await runBuild(name, ls, sw, finishAndSave);
+  }catch(e){
+    showBanner('adj-err', e.message || 'Could not build. Please try again.');
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Final save → done
+   ════════════════════════════════════════════════════════════════════════ */
+async function finishAndSave(){
+  try{ await fetch(`${API}/fonts/save/${jobId}`,{method:'POST'}); }catch(_){}
+  await loadPreviewFont();
+  document.getElementById('done-name').textContent=fontName;
+  const sample=document.getElementById('done-sample');
+  sample.style.fontFamily=`'${previewFontFamily}', var(--font-serif)`;
+  sample.textContent='Hello! Aa Bb Cc 123';
+  showScreen('screen-done');
+}
+function downloadFont(){
+  // Use the authoritative URL the backend returned at finalize (its filename
+  // only swaps spaces for underscores — reconstructing it here would mismatch
+  // for names with punctuation).
+  const dl = (fontName.replace(/\s+/g,'_') || 'MyFont') + '.otf';
+  const a=document.createElement('a');
+  a.href=`${API}${otfUrl}`;
+  a.download=dl;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function restart(){ showScreen('screen-landing'); }
+
+/* landing meta line — kept honest with the real sequence length */
+(function(){
+  const el=document.getElementById('landing-meta');
+  if(!el) return;
+  const mins=Math.max(5, Math.round(SEQUENCE.length*4.5/60/5)*5);
+  el.innerHTML=`About ${mins} minutes &nbsp;•&nbsp; ${SEQUENCE.length} characters`;
+})();
+
+/* preload heading font for the ghost reference */
+document.fonts.ready.then(()=>{ ghostFontReady=true; if(canvasReady) renderCanvas(); });
+if(document.fonts && document.fonts.load){
+  document.fonts.load('300 100px "Cormorant Garamond"').then(()=>{ ghostFontReady=true; if(canvasReady) renderCanvas(); }).catch(()=>{});
+}
+</script>
+</body>
+</html>
