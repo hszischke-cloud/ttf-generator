@@ -31,7 +31,12 @@ class GlyphInfo(BaseModel):
     glyph_id: str          # e.g. "e_0", "e_1", "A_0"
     char: str
     slot: int              # 0 = primary, 1+ = alternate
-    image_b64: str         # base64-encoded PNG of the drawn glyph
+    # Public CDN URL of the thumbnail PNG. The browser loads thumbnails
+    # directly (parallel + cacheable) instead of the backend proxying every
+    # PNG through base64 — that proxying made the review page scale linearly
+    # with glyph count.
+    image_url: Optional[str] = None
+    image_b64: Optional[str] = None  # legacy fallback; no longer populated
     accepted: bool = True
 
 
@@ -108,3 +113,13 @@ class DrawGlyphRequest(BaseModel):
     pen_tool: str = "pen"
     pen_size: int = 14
     pen_color: List[int] = Field(default_factory=lambda: [38, 32, 28])
+
+
+class DrawGlyphBatchRequest(BaseModel):
+    """Many drawn glyphs in one request — replaces N serial /glyph POSTs.
+
+    Submitting glyphs one-by-one was O(n²): every request re-read and re-wrote
+    the whole (multi-MB) manifest just to append one entry. A batch is one
+    manifest read + one write, with thumbnail uploads fanned out in parallel.
+    """
+    glyphs: List[DrawGlyphRequest]

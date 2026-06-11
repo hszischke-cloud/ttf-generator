@@ -780,8 +780,12 @@ function glyphToPenPaths(char,slot,xShift=0){
   return getStrokes(char,slot).filter(s=>s.length>1).map(s=>s.map(pt=>[pt.x-xShift,pt.y]));
 }
 function glyphThumbnailB64(char,slot){
-  const off=document.createElement('canvas'); off.width=DRAW_W; off.height=DRAW_H;
-  const ctx=off.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,DRAW_W,DRAW_H);
+  // Thumbnails are review-grid previews shown at ≤ 56 px — render at half
+  // scale so each PNG (and the upload payload) is ~4× smaller.
+  const SCALE=0.5;
+  const off=document.createElement('canvas'); off.width=DRAW_W*SCALE; off.height=DRAW_H*SCALE;
+  const ctx=off.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,off.width,off.height);
+  ctx.scale(SCALE,SCALE);
   const strokes=getStrokes(char,slot); const polys=strokes.map(s=>strokeToPolygon(s,drawState.toolSize,drawState.tool));
   for(let i=0;i<strokes.length;i++){ const others=[]; for(let j=0;j<polys.length;j++) if(j!==i) others.push(polys[j]);
     renderStrokePolygon(ctx,polys[i],drawState.tool,drawState.color,strokes[i],others); }
@@ -894,27 +898,34 @@ async function submitAll(){
     approvedIds=tasks.map(t=>t.glyphId);
     if(!tasks.length) throw new Error('No letters were drawn.');
 
-    const PAD=12;
-    for(let i=0;i<tasks.length;i++){
-      const t=tasks[i];
-      setBuild(2 + Math.round((i/tasks.length)*18), 'Saving your letters…',
-               `${i+1} of ${tasks.length} glyphs`);
+    // Build every glyph payload up front, then send them in a few batched
+    // requests. The old one-POST-per-glyph loop was the slowest step of the
+    // whole flow (132 serial round trips, each re-writing the server-side
+    // manifest); batching collapses it to ~4 requests.
+    const PAD=12, CHUNK=35;
+    const payloads=tasks.map(t=>{
       const {minX,maxX}=getGlyphXBounds(t.char,t.slot);
       const xShift=minX-PAD; const svgWidth=Math.round(maxX-minX+PAD*2);
-      const res=await fetch(`${API}/draw/${jobId}/glyph`,{
+      return {
+        glyph_id:t.glyphId, char:t.char, slot:t.slot, form:'iso',
+        svg_paths:glyphToSVGPaths(t.char,t.slot,xShift),
+        pen_paths:glyphToPenPaths(t.char,t.slot,xShift),
+        svg_width:svgWidth, svg_height:DRAW_H,
+        baseline_y:Math.round(GUIDELINES.baseline), upscale_factor:1.0,
+        thumbnail_png_b64:glyphThumbnailB64(t.char,t.slot),
+        x_shift:xShift, entry_x:null, exit_x:null, entry_y:null, exit_y:null,
+        pen_tool:fontSettings.tool, pen_size:fontSettings.toolSize, pen_color:fontSettings.color,
+      };
+    });
+    for(let i=0;i<payloads.length;i+=CHUNK){
+      const chunk=payloads.slice(i,i+CHUNK);
+      setBuild(2 + Math.round((i/payloads.length)*18), 'Saving your letters…',
+               `${Math.min(i+chunk.length,payloads.length)} of ${payloads.length} letters`);
+      const res=await fetch(`${API}/draw/${jobId}/glyphs/batch`,{
         method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          glyph_id:t.glyphId, char:t.char, slot:t.slot, form:'iso',
-          svg_paths:glyphToSVGPaths(t.char,t.slot,xShift),
-          pen_paths:glyphToPenPaths(t.char,t.slot,xShift),
-          svg_width:svgWidth, svg_height:DRAW_H,
-          baseline_y:Math.round(GUIDELINES.baseline), upscale_factor:1.0,
-          thumbnail_png_b64:glyphThumbnailB64(t.char,t.slot),
-          x_shift:xShift, entry_x:null, exit_x:null, entry_y:null, exit_y:null,
-          pen_tool:fontSettings.tool, pen_size:fontSettings.toolSize, pen_color:fontSettings.color,
-        }),
+        body:JSON.stringify({glyphs:chunk}),
       });
-      if(!res.ok) throw new Error(`Could not save "${t.char}". Please try again.`);
+      if(!res.ok) throw new Error('Could not save your letters. Please try again.');
     }
     // Kick off the first build (placeholder name; real name applied at "All done").
     // 60 = small comfortable gap; 0 would make letters touch (edges meet).

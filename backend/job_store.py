@@ -81,6 +81,22 @@ class JobStore:
             return {}
         return res.data[0]["state"] or {}
 
+    def get_state_fields(self, job_id: str, fields: list) -> Optional[Dict[str, Any]]:
+        """
+        Fetch only the given top-level state keys in one small query.
+
+        The full state blob carries every glyph's svg_paths/pen_paths (several
+        MB), so endpoints that only need status/progress must not download it —
+        especially the status endpoint, which the UIs poll every 1–2 s.
+        PostgREST JSON-path selection (state->key) returns just those values;
+        missing keys come back as None. Returns None if the job doesn't exist.
+        """
+        sel = ",".join(f"state->{f}" for f in fields)
+        res = supabase.table("jobs").select(sel).eq("job_id", job_id).execute()
+        if not res.data:
+            return None
+        return res.data[0]
+
     # Whether the server-side `patch_job_state` RPC is available. None = not yet
     # probed; True/False after the first call. Avoids re-attempting the RPC on
     # every update once we've learned it isn't deployed.
@@ -116,15 +132,28 @@ class JobStore:
     # Storage — glyph thumbnails
     # ------------------------------------------------------------------
 
-    def upload_glyph_png(self, job_id: str, glyph_id: str, png_bytes: bytes) -> None:
-        path = f"{job_id}/glyphs/{glyph_id}.png"
+    def upload_glyph_png(self, job_id: str, glyph_id: str, png_bytes: bytes) -> str:
+        """
+        Upload a glyph thumbnail, returning its storage path.
+
+        The path is content-versioned ({glyph_id}-{hash}.png) so the public
+        CDN URL changes whenever the drawing changes — each version is
+        immutable/cacheable and a redrawn glyph is never served stale. The
+        whole glyphs/ prefix is removed on job cleanup, so superseded versions
+        don't leak.
+        """
+        import hashlib
+        version = hashlib.sha1(png_bytes).hexdigest()[:10]
+        path = f"{job_id}/glyphs/{glyph_id}-{version}.png"
         _retry(lambda: supabase.storage.from_(STORAGE_BUCKET).upload(
             path, png_bytes,
-            file_options={"content-type": "image/png", "upsert": "true"},
+            file_options={"content-type": "image/png", "upsert": "true",
+                          "cache-control": "public, max-age=31536000, immutable"},
         ))
+        return path
 
-    def download_glyph_png(self, job_id: str, glyph_id: str) -> Optional[bytes]:
-        path = f"{job_id}/glyphs/{glyph_id}.png"
+    def download_glyph_png(self, job_id: str, glyph_id: str, thumb_path: Optional[str] = None) -> Optional[bytes]:
+        path = thumb_path or f"{job_id}/glyphs/{glyph_id}.png"
         try:
             return supabase.storage.from_(STORAGE_BUCKET).download(path)
         except Exception:
