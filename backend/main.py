@@ -34,6 +34,7 @@ from font_registry import (
     save_font as registry_save_font,
     list_fonts as registry_list_fonts,
     delete_font as registry_delete_font,
+    rename_font as registry_rename_font,
     saved_job_ids,
 )
 from job_store import job_store
@@ -42,7 +43,7 @@ from models import (
     FinalizeRequest, FinalizeResponse,
     GlyphInfo, GlyphsResponse,
     JobStatus, JobStatusResponse,
-    SavedFontInfo,
+    RenameFontRequest, SavedFontInfo,
 )
 from processing.font_builder import (
     GlyphData, build_otf, compute_glyph_advance,
@@ -98,29 +99,10 @@ async def health():
     return {"status": "ok"}
 
 
-@app.get("/ui", response_class=Response)
-async def serve_ui():
-    ui_path = Path(__file__).parent.parent / "test_ui.html"
-    content = ui_path.read_text(encoding="utf-8")
-    # Rewrite API base to the same origin so the static HTML works in any deployment.
-    content = content.replace("const API = 'http://localhost:8001';", "const API = '';")
-    content = content.replace("const API = 'http://localhost:8000';", "const API = '';")
-    return Response(
-        content=content,
-        media_type="text/html",
-        headers={"Cache-Control": "no-store, must-revalidate"},
-    )
-
-
-@app.get("/create", response_class=Response)
-async def serve_client():
-    """Foolproof, end-to-end client font-creation flow (snailmail.eco styling).
-
-    Standalone single-file app — same API-base rewrite trick as /ui so it
-    talks to whatever origin it's served from.
-    """
-    client_path = Path(__file__).parent.parent / "client.html"
-    content = client_path.read_text(encoding="utf-8")
+def _serve_app() -> Response:
+    """Serve the single-file app with the API base rewritten to same-origin."""
+    app_path = Path(__file__).parent.parent / "app.html"
+    content = app_path.read_text(encoding="utf-8")
     content = content.replace("const API = 'http://localhost:8001';", "const API = '';")
     content = content.replace("const API = 'http://localhost:8000';", "const API = '';")
     # no-store so browsers / edge caches never serve a stale build of the UI.
@@ -129,6 +111,22 @@ async def serve_client():
         media_type="text/html",
         headers={"Cache-Control": "no-store, must-revalidate"},
     )
+
+
+@app.get("/", include_in_schema=False)
+async def serve_root():
+    return RedirectResponse("/ui", status_code=302)
+
+
+@app.get("/ui", response_class=Response)
+async def serve_ui():
+    return _serve_app()
+
+
+@app.get("/create", response_class=Response)
+async def serve_client():
+    # Legacy route — the consumer flow and the studio are one app now.
+    return _serve_app()
 
 
 @app.post("/draw/create")
@@ -453,10 +451,32 @@ async def list_saved_fonts():
 @app.delete("/fonts/saved/{job_id}")
 async def remove_saved_font(job_id: str):
     """Remove a font from the saved registry (job data is kept on disk)."""
-    deleted = registry_delete_font(job_id)
+    deleted = await run_in_threadpool(registry_delete_font, job_id)
     if not deleted:
         raise HTTPException(404, "Font not found in saved registry")
     return {"ok": True}
+
+
+@app.patch("/fonts/saved/{job_id}")
+async def rename_saved_font(job_id: str, req: RenameFontRequest):
+    """
+    Rename a saved font. Updates the registry and the job state immediately;
+    the name baked inside the OTF binary updates on the next rebuild
+    (finalize reads font_name from state).
+    """
+    name = req.font_name.strip()[:60]
+    if not name:
+        raise HTTPException(422, "Font name cannot be empty")
+
+    def _rename():
+        ok = registry_rename_font(job_id, name)
+        if ok and job_store.get_state_fields(job_id, ["status"]) is not None:
+            job_store.update_state(job_id, font_name=name)
+        return ok
+
+    if not await run_in_threadpool(_rename):
+        raise HTTPException(404, "Font not found in saved registry")
+    return {"ok": True, "font_name": name}
 
 
 @app.post("/process/{job_id}/reopen")
@@ -809,6 +829,8 @@ def _build_font_job(job_id: str):
         }
         dim_advances["space"] = space_width
 
+        job_store.update_state(job_id, progress_pct=35)
+
         # Build both OTFs in parallel — they share no state and each holds the
         # GIL only intermittently (fontTools spends most of its time in C
         # ext modules and I/O), so threading actually overlaps.
@@ -835,6 +857,7 @@ def _build_font_job(job_id: str):
             dim_future = pool.submit(_build_dim)
             line_future = pool.submit(_build_line)
             otf_bytes, fea_warning = dim_future.result()
+            job_store.update_state(job_id, progress_pct=70)
             line_otf_bytes, line_fea_warning = line_future.result()
 
         job_store.update_state(job_id, progress_pct=85)
@@ -882,11 +905,22 @@ def _build_font_job(job_id: str):
             **extra,
         )
 
-    except Exception:
+    except Exception as exc:
+        # Full traceback to the server log; a human-readable sentence to the
+        # user. Raw tracebacks in the UI read as broken software.
+        print(f"[build] job {job_id} failed:\n{traceback.format_exc()}")
+        if isinstance(exc, ValueError):
+            friendly = str(exc)
+        else:
+            friendly = (
+                "Something went wrong while building your font. "
+                "Please try again — if it keeps failing, try redrawing the "
+                "last letters you changed."
+            )
         job_store.update_state(
             job_id,
             status="error",
-            error_message=traceback.format_exc()[:2000],
+            error_message=friendly,
         )
 
 

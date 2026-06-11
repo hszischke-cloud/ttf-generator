@@ -1,224 +1,147 @@
 # TTF Generator — Claude Instructions
 
 ## Project Overview
-Handwriting-to-font web app. User downloads a PDF template, hand-writes characters, scans/uploads the page, reviews detected glyphs, and downloads an OTF + WOFF2 font file.
-
-Integrates into an existing Next.js website for personalized letters.
+Handwriting-to-font web app: the user **draws** each character on a canvas
+(no scanning/uploading — that flow was removed long ago), reviews the glyphs,
+fine-tunes spacing and per-letter borders, and downloads an OTF — plus a
+single-line OTF for pen plotters. Branded for snailmail.eco (personalized
+letters).
 
 **Stack:**
-- Backend: Python + FastAPI on Railway
-- Frontend: Next.js/TypeScript on Vercel
-- Image processing: OpenCV + adaptive thresholding
-- Vectorization: vtracer via cv2 contours (potrace fallback mentioned but not yet implemented)
-- Font generation: fonttools (CFF/OTF) + feaLib for calt/ss01/ss02 OpenType features
-- Template: reportlab
+- Backend: Python + FastAPI (deployed on Render: `ttf-generator.onrender.com`)
+- Persistence: Supabase — Postgres (`jobs`, `saved_fonts` tables) + public
+  Storage bucket `ttf-generator`
+- Font generation: fontTools (CFF/OTF), feaLib (`calt` alternates + cursive
+  positional rules), COLR/CPAL for the chosen ink colour
+- Frontend: **one** single-file app — `app.html` (vanilla JS, no build step),
+  served by the backend at `/ui` and `/create` (same file; `/` redirects)
 
 ---
 
-## Architecture
+## Repository layout
 
 ```
-Frontend (Next.js/TypeScript)
-├── pages/font-generator/
-│   ├── index.tsx        — landing (instructions + template download)
-│   ├── upload.tsx       — file upload + job creation
-│   ├── review.tsx       — poll status, approve/reject glyphs, trigger finalize
-│   └── download.tsx     — poll until complete, live font preview, download
-├── components/
-│   ├── UploadDropzone.tsx
-│   ├── GlyphGrid.tsx
-│   └── GlyphCell.tsx
-└── /api/backend/*  →  proxy to backend (BACKEND_URL env var)
-
-Backend (FastAPI/Python)
-├── main.py          — endpoints + background task launcher
-├── models.py        — Pydantic types + JobStatus enum
-├── job_store.py     — filesystem job state (/tmp/jobs/{job_id}/)
-├── worker.py        — subprocess entry point for processing
-├── template.py      — PDF generation + TEMPLATE_SPEC (single source of truth)
+app.html                     — the entire frontend (single file)
+schema.sql                   — Supabase schema; paste into the SQL editor
+backend/
+├── main.py                  — FastAPI endpoints + font build pipeline
+├── models.py                — Pydantic request/response models
+├── job_store.py             — Supabase-backed job state + storage
+├── font_registry.py         — saved-fonts registry (saved_fonts table)
+├── supabase_client.py       — singleton client (forces HTTP/1.1)
+├── tests/                   — pytest suite (in-memory Supabase stub)
 └── processing/
-    ├── alignment.py     — registration marker detection + perspective correction
-    ├── extraction.py    — cell crop + adaptive-threshold glyph segmentation
-    ├── vectorize.py     — contour → SVG paths
-    └── font_builder.py  — SVG → OTF/WOFF2 via fonttools
+    ├── font_builder.py      — glyph outlines → OTF (metrics, features, COLR)
+    ├── autospace.py         — optical side-bearing suggestions
+    ├── centerline.py        — pen_paths → single-line SVG for the line OTF
+    ├── perturb.py           — organic outline jitter
+    └── proof_sheet.py       — OTF → SVG proof sheet
 ```
 
----
-
-## Job Lifecycle
+## Job lifecycle
 
 ```
-POST /upload → pending → processing → awaiting_review (user reviews glyphs)
-                                    ↓
-                              POST /finalize → finalizing → complete
-                                    (any step can → error)
+POST /draw/create → awaiting_review  (glyphs submitted in batches)
+POST /process/{id}/finalize → finalizing → complete   (or → error)
+POST /process/{id}/reopen → awaiting_review            (edit a saved font)
 ```
 
-**Job directory structure:**
-```
-/tmp/jobs/{job_id}/
-├── raw/             # original upload
-├── pages/           # page_0.png, page_1.png (300 dpi)
-├── glyphs/          # {glyph_id}.png + {glyph_id}.json (SVG paths + metadata)
-├── output/          # {font_name}.otf + {font_name}.woff2
-└── state.json       # atomic lock-protected job state
-```
+State is one JSONB blob per job in the `jobs` table. It carries the full
+glyph manifest (svg_paths + pen_paths per glyph — several MB), so:
+- **Never fetch the whole blob to read a couple of fields** — use
+  `job_store.get_state_fields()` (PostgREST `state->key` selection).
+- Writes go through the `patch_job_state` RPC (server-side shallow merge);
+  falls back to read-modify-write if the RPC isn't deployed.
 
-State fields: `status`, `progress_pct`, `error_message`, `created_at`, `glyph_manifest`, `alignment_warnings`, `approved_glyph_ids`, `font_name`, `font_style`, `font_files`, `raw_filename`, `is_pdf`, `alignment_failed_image_b64`
+Cleanup: jobs older than 24 h are deleted hourly; jobs in `saved_fonts` are
+kept forever.
 
-Cleanup: jobs deleted after 24h (checked hourly). On startup: jobs >10 min old deleted.
+## API endpoints (all in main.py)
 
----
+| Method | Path | Notes |
+|--------|------|-------|
+| GET  | `/health` | |
+| GET  | `/`, `/ui`, `/create` | serve app.html (API base rewritten to '') |
+| POST | `/draw/create` | new empty job |
+| POST | `/draw/{id}/glyph` | single glyph upsert (legacy) |
+| POST | `/draw/{id}/glyphs/batch` | **preferred** — one manifest write for N glyphs |
+| GET  | `/process/{id}/status` | cheap field-select; polled every 1–2 s |
+| GET  | `/process/{id}/glyphs` | review list; thumbnails as public CDN URLs |
+| POST | `/process/{id}/finalize` | build OTF + line OTF (BackgroundTasks) |
+| GET  | `/process/{id}/bearings` | border-editor payload (iso glyphs only) |
+| GET  | `/process/{id}/bearings/auto?tightness=N` | optical lsb/rsb suggestions |
+| GET  | `/process/{id}/pen-paths` | full glyph data to re-open for editing |
+| GET  | `/process/{id}/settings` | spacing/name needed to re-finalize |
+| POST | `/process/{id}/reopen` | back to awaiting_review |
+| GET  | `/process/{id}/proof?font=line\|dimensional` | SVG proof sheet |
+| GET  | `/fonts/{id}/{filename}` | 302 → content-versioned public storage URL |
+| POST/GET/PATCH/DELETE | `/fonts/save/{id}`, `/fonts/saved`, `/fonts/saved/{id}` | saved-fonts registry (PATCH = rename) |
 
-## API Endpoints
+## Coordinate system & font metrics (font_builder.py)
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | `{"status": "ok"}` |
-| GET | `/template/download` | PDF binary (2-page A4) |
-| POST | `/process/upload` | MultipartForm file → `{"job_id": str}` |
-| GET | `/process/{job_id}/status` | `JobStatusResponse` |
-| GET | `/process/{job_id}/glyphs` | `GlyphsResponse` (requires awaiting_review) |
-| POST | `/process/{job_id}/finalize` | `FinalizeRequest` → `FinalizeResponse` |
-| GET | `/fonts/{job_id}/{filename}` | OTF or WOFF2 binary (202 if not ready) |
-| GET | `/ui` | Standalone HTML UI |
+- Canvas: 300×400 logical px. Guidelines: cap y=60, x-height 168,
+  **baseline 288**, descender 360. Safe band: y 30–360, x 16–284 (the UI
+  hard-clamps strokes into it).
+- Glyphs are submitted post-xShift: ink starts at x = PAD (12 px);
+  `svg_width` = ink width + 2·PAD.
+- `CELL_SCALE` ≈ 4.35 UPM/px (UPM 1000). Font y = −(canvas y)·scale +
+  baseline·scale. Caps reach ≈ 990 UPM; descenders ≈ −313.
+- `usWinAscent 1150 / usWinDescent 340` cover the full safe band so Windows
+  never clips; hhea/typo metrics stay at 800/−221 so line spacing is stable.
+  **Don't change CELL_SCALE** — it would resize every saved font.
+- iso glyphs: advance = lsb + ink width + rsb; default bearings are 0/0
+  (edges touch at letter_spacing 0). Per-glyph overrides live in state
+  `glyph_bearings` and are preserved across spacing-only re-finalizes.
+- Cursive (init/medi/fina) forms derive bearings from entry_x/exit_x
+  connection points; they're excluded from the border editor.
 
-**Key models:**
-```python
-class JobStatus(str, Enum):
-    PENDING | PROCESSING | AWAITING_REVIEW | FINALIZING | COMPLETE | ERROR
+## Border auto-adjust (processing/autospace.py)
 
-class GlyphInfo:
-    glyph_id: str       # e.g. "e_0", "period_1"
-    char: str
-    slot: int           # 0 = primary, 1+ = alternate
-    image_b64: str      # base64 PNG tight-crop
-    accepted: bool = True
+HT-Letterspacer-style optical margins: scanlines across a per-case zone
+(x-height band for lowercase, cap band for caps/digits, own ink band for
+punctuation), depth-capped, target = median letter margin (self-calibrating),
+output clamped to [−150, 250] UPM. Suggestions only — nothing persists until
+the user applies (finalize with `glyph_bearings`).
 
-class FinalizeRequest:
-    approved_glyph_ids: List[str]
-    font_name: str
-    font_style: str = "Regular"
-    manual_alignment: Optional[List[List[ManualAlignmentPoint]]]  # not yet wired up
-```
+## Frontend notes (app.html)
 
----
+- Single file: pages = home / draw / review / download / borders, toggled by
+  `goTo()`. `const API = 'http://localhost:8001'` is rewritten to '' when
+  served by the backend.
+- Drafts autosave to localStorage (`hwfont_draft_v1`) debounced after every
+  stroke; resume card on home. Edit sessions of saved fonts are NOT
+  autosaved (server is source of truth) — they get a beforeunload guard.
+- Canvas uses a devicePixelRatio backing store; all logic stays in logical
+  300×400 coords.
+- Spacing preview: the previewed OTF has the last build's spacing BAKED IN;
+  CSS letter/word-spacing applies only the *delta* from `lastBuiltSpacing`.
+- Builds show the full-screen overlay (`buildOverlayShow/Set/Hide` +
+  `waitForBuild`); backend progress is eased/crept so the bar never stalls.
+- Border editor: drag lines or type values; ghost ticks show the auto
+  suggestion; live word preview composes the real outlines with current
+  bearings (no rebuild). Tightness slider re-applies cached suggestions
+  client-side.
+- Glyph thumbnails are public CDN URLs (content-versioned), rendered at half
+  scale on upload.
 
-## Template Specification (`TEMPLATE_SPEC` in template.py — single source of truth)
+## Testing
 
-```
-Page size: A4 (210×297 mm)
-Cell size: 18×24 mm, 10 columns
-Margins: left 12 mm, top 20 mm
+`cd backend && pytest tests/` — no network needed: `tests/conftest.py`
+installs an in-memory Supabase stub into `sys.modules` before app import.
+The API test does a REAL fontTools build. CI runs this + a node syntax check
+of app.html on every push/PR (`.github/workflows/ci.yml`).
 
-Guideline ratios (fraction of cell height from top):
-  CAP line:       0.15
-  x-height:       0.42
-  baseline:       0.72
-  descender:      0.90
+## Environment variables
 
-Guide gutter (left, excluded from extraction): 3.5 mm
-Registration markers: 8 mm diameter, 4 mm from page edge (4 corners)
+| Var | Used by |
+|-----|---------|
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | required by the backend |
+| `ALLOWED_ORIGINS` (default `*`) | CORS |
 
-Characters:
-  Page 0: A-Z (cells 0-25), a-z (cells 26-51)
-  Page 1: 0-9, .,;:!?"'()-/@&# (punct), then alternates section
-  Alternates: e,t,a,o,i,n,s,h,r,d — 2 extra slots each
-```
+## Working preferences
 
----
-
-## Processing Pipeline Details
-
-### Alignment (`alignment.py`)
-1. EXIF auto-rotate (PIL)
-2. Grayscale → threshold (THRESH_BINARY_INV, 127)
-3. Find contours, filter by area `[r×0.4, r×1.8]` and circularity ≥ 0.75
-4. Pick best 4 by circularity → sort to [TL, TR, BL, BR]
-5. `findHomography` (RANSAC, 5.0) → `warpPerspective` (LANCZOS4, white border)
-6. Output: 2480×3508 px (A4 at 300 dpi)
-- Min input: 1200×1600 px; if alignment fails, returns raw image + error
-
-### Extraction (`extraction.py`)
-Per cell: crop to CAP→descender lines, exclude 3.5 mm left gutter + 8px inset
-- Gaussian blur (3×3) → adaptive threshold (GAUSSIAN_C, blockSize=21, C=10)
-- Morphological closing (3×3, 2 iterations) to connect strokes
-- Find external contours, filter: min area 50px², max 80% cell area
-- Merge bounding boxes, add 8px padding
-- Glyph IDs: letters/digits as-is; punct mapped (period, comma, exclam, etc.)
-
-### Vectorization (`vectorize.py`)
-- Upscale if height < 400px (LANCZOS4)
-- Re-threshold → `findContours(RETR_TREE, CHAIN_APPROX_TC89_KCOS)`
-- Filter: min area 0.1% of image; Douglas-Peucker epsilon = 0.005 × perimeter
-- Output: SVG `M L C Z` paths, width/height px, upscale_factor
-- Reject if ink < 20px or no valid contours
-
-### Font Builder (`font_builder.py`)
-**UPM = 1000.** Constants derived from TEMPLATE_SPEC ratios:
-```
-ASCENDER = 800, CAP_HEIGHT = 700
-X_HEIGHT ≈ 368, DESCENDER ≈ -221
-```
-
-Coordinate transform (SVG → font space):
-```
-coord_scale = CELL_SCALE / upscale_factor
-fx = sx × coord_scale
-fy = -(sy × coord_scale) + (baseline_y_in_svg × CELL_SCALE)
-```
-All glyphs use same CELL_SCALE → consistent baseline alignment.
-
-Advance width: `int(svg_width × coord_scale) + 60` (fixed 60 UPM side bearing)
-
-**OpenType features:**
-- `calt`: distance-based cycling up to 8 glyphs look-back; each letter cycles through its forms for natural variety
-- `ss01`: force all letters to first alternate
-- `ss02`: force all letters to second alternate
-- feaLib errors are caught/skipped — font still builds without features
-
----
-
-## Incomplete / Not Yet Implemented
-
-1. **Manual alignment UI**: `FinalizeRequest.manual_alignment` field exists, `align_page_with_manual_points()` exists in alignment.py, but frontend has no corner-selection UI and worker never calls it
-2. **Cloudflare R2**: CLAUDE.md mentions R2 for output persistence — no R2 code exists yet; fonts saved to local filesystem only
-3. **Potrace fallback**: mentioned in docs but not in code; current vectorizer uses only cv2 contours
-4. **`_DeferredPen`**: class exists in font_builder.py but is unused
-
----
-
-## Environment Variables
-
-| Var | Default | Used by |
-|-----|---------|---------|
-| `ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:3001` | Backend CORS |
-| `JOBS_DIR` | `/tmp/jobs` | Backend job storage |
-| `BACKEND_URL` | — | Frontend Next.js proxy |
-
----
-
-## Key Thresholds (for debugging/tuning)
-
-| Stage | Parameter | Value |
-|-------|-----------|-------|
-| Alignment | Min input resolution | 1200×1600 px |
-| Alignment | Marker circularity | ≥ 0.75 |
-| Extraction | Adaptive threshold block | 21 px |
-| Extraction | Min contour area | 50 px² |
-| Vectorization | Min height before upscale | 400 px |
-| Vectorization | D-P epsilon | 0.005 × perimeter |
-| Font | calt look-back distance | 8 glyphs |
-| Font | Side bearing | +60 UPM |
-| Upload | Max file size | 50 MB |
-| Frontend | Poll interval | 2000 ms |
-| Cleanup | Max job age | 24 h |
-
----
-
-## Working Preferences
-
-- Think in product/user-flow terms first, then implementation
-- Plan thoroughly before coding — raise design questions upfront
-- Look for existing open-source approaches before designing from scratch
-- Keep responses concise and direct
+- Think in product/user-flow terms first, then implementation.
+- Plan thoroughly before coding — raise design questions upfront.
+- Never change saved fonts' metrics/widths implicitly; bearings and spacing
+  are user-owned values.
+- Keep responses concise and direct.

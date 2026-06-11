@@ -76,6 +76,10 @@ class FinalizeResponse(BaseModel):
     otf_line_url: str
 
 
+class RenameFontRequest(BaseModel):
+    font_name: str
+
+
 class SavedFontInfo(BaseModel):
     job_id: str
     font_name: str

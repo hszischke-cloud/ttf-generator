@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # The test suite stubs supabase_client, so the supabase SDK itself
+      # isn't needed — keeps CI installs fast.
+      - name: Install dependencies
+        run: pip install fastapi uvicorn "fonttools[woff]" brotli httpx pytest
+
+      - name: Run backend tests
+        working-directory: backend
+        run: pytest tests/ -q
+
+      - name: Syntax-check app.html script
+        run: |
+          python3 - <<'EOF'
+          import re, subprocess, sys
+          js = re.findall(r'<script>(.*?)</script>', open('app.html').read(), re.S)[0]
+          open('/tmp/app.js', 'w').write(js)
+          sys.exit(subprocess.run(['node', '--check', '/tmp/app.js']).returncode)
+          EOF

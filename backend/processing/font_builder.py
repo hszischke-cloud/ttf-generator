@@ -41,8 +41,15 @@ GUIDELINE_BOTTOM_RATIO    = 0.90        # descender
 UPM = 1000
 ASCENDER = 800
 CAP_HEIGHT = 700
-WIN_ASCENT = 900
-WIN_DESCENT = 200
+# usWinAscent/usWinDescent are CLIPPING bounds on Windows (GDI crops any ink
+# outside them). At CELL_SCALE (~4.35 UPM/px) the drawable safe band reaches
+# (288−30)px ≈ 1122 UPM above and (360−288)px ≈ 313 UPM below the baseline,
+# so the old 900/200 silently sliced tall capitals and descender tails in
+# Windows apps. These cover the full band with margin. hhea/typo metrics are
+# deliberately left unchanged so line spacing (and existing layouts) don't
+# shift — this only stops other software from cropping the glyphs.
+WIN_ASCENT = 1150
+WIN_DESCENT = 340
 DEFAULT_ADVANCE_WIDTH = 600
 
 # Derive vertical metrics from the guideline ratios so the canvas and the
