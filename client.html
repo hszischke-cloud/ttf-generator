@@ -144,6 +144,10 @@ input[type=range]::-moz-range-thumb{ width:24px; height:24px; border-radius:50%;
   background:transparent; border:2px solid var(--border-color); border-radius:9999px; padding:8px 16px; cursor:pointer; transition:all .2s; }
 .tool-btn:not(:disabled):hover{ border-color:var(--ink); color:var(--ink); }
 .tool-btn:disabled{ opacity:.4; cursor:not-allowed; }
+.tool-btn.active-pen{ border-color:var(--ink); background:var(--ink); color:var(--paper); }
+.tool-btn.active-pen:disabled{ opacity:1; cursor:default; }
+.pen-style-row{ display:flex; gap:8px; justify-content:center; align-items:center; margin:2px 0 6px; }
+.pen-style-row .pen-label{ font-size:.78rem; color:var(--ink-light); text-transform:uppercase; letter-spacing:.06em; }
 
 .navrow{ display:flex; gap:12px; align-items:center; margin-top:18px; }
 .navrow .btn-back{ flex:0 0 auto; }
@@ -254,6 +258,13 @@ input[type=range]::-moz-range-thumb{ width:24px; height:24px; border-radius:50%;
     <button class="tool-btn" id="undo-btn" onclick="undoStroke()">↶ Undo</button>
     <button class="tool-btn" id="redo-btn" onclick="redoStroke()">↷ Redo</button>
     <button class="tool-btn" id="clear-btn" onclick="clearCurrent()">Clear</button>
+  </div>
+  <!-- Pen style: how the finished font is inked. Realistic bakes true pen
+       dynamics (ink pooling, round tips, flick tails) into the OTF. -->
+  <div class="pen-style-row">
+    <span class="pen-label">Pen</span>
+    <button class="tool-btn" id="pen-classic-btn" onclick="setPenStyle('classic')" title="The original brush look — exactly the shape you draw">Classic</button>
+    <button class="tool-btn" id="pen-realistic-btn" onclick="setPenStyle('realistic')" title="Ultra-real ink: width follows your pen speed, ink pools at corners and stops, fast lifts leave thin flick tails">Realistic ink</button>
   </div>
 
   <div class="navrow">
@@ -462,7 +473,9 @@ const drawState = {
   lastPoint:null, smoothedPoint:null,
   currentForm:'iso',
 };
-const fontSettings = { tool:'pen', toolSize:6, color:[34,32,30] };
+// penStyle: 'realistic' (default — ink dynamics baked into the OTF) or
+// 'classic' (the original brush outline). Toggle lives in the tools row.
+const fontSettings = { tool:'pen', toolSize:6, color:[34,32,30], penStyle:'realistic' };
 
 let seqIndex = 0;
 let jobId = null;
@@ -507,6 +520,8 @@ function startCreate(){
   drawState.strokes={}; drawState.redoStacks={}; drawState.currentStroke=[];
   seqIndex=0; jobId=null; approvedIds=[]; otfUrl=null;
   letterSpacing=0; spaceWidth=600;
+  fontSettings.penStyle='realistic';
+  updatePenStyleButtons();
   showScreen('screen-draw');
   setTimeout(initCanvas, 30);
 }
@@ -665,9 +680,51 @@ function drawGhost(ctx){
 }
 
 /* ── Engine (verbatim from studio) ── */
-function strokeToPolygon(points,maxSize,tool){
+// Realistic-ink preview dynamics — mirrors the backend stroker
+// (processing/pen_realistic.py): width follows pen speed (slow = wet and
+// wide, fast = thin) and ink pools at sharp corners.
+function _realisticWidthFactors(points){
+  const n=points.length; const v=new Array(n).fill(0);
+  for(let i=1;i<n;i++){
+    const d=Math.hypot(points[i].x-points[i-1].x,points[i].y-points[i-1].y);
+    const dt=(points[i].t||0)-(points[i-1].t||0);
+    v[i]=dt>0 ? d/dt*1000 : d*60;
+  }
+  if(n>1) v[0]=v[1];
+  const sm=v.slice();
+  for(let i=1;i<n-1;i++) sm[i]=(v[i-1]+v[i]*2+v[i+1])/4;
+  const sorted=sm.filter(x=>x>0).sort((a,b)=>a-b);
+  const vmed=sorted.length?sorted[Math.floor(sorted.length/2)]:0;
+  const raw=new Array(n).fill(1);
+  for(let i=0;i<n;i++){
+    let f=1;
+    if(vmed>0){ const rel=Math.min(4,Math.max(0.25,sm[i]/vmed));
+      f*=Math.min(1.22,Math.max(0.78,Math.pow(rel,-0.22))); }
+    if(i>=2&&i<n-2){
+      const v1x=points[i].x-points[i-2].x, v1y=points[i].y-points[i-2].y;
+      const v2x=points[i+2].x-points[i].x, v2y=points[i+2].y-points[i].y;
+      const n1=Math.hypot(v1x,v1y), n2=Math.hypot(v2x,v2y);
+      if(n1>1e-6&&n2>1e-6){
+        const dot=Math.max(-1,Math.min(1,(v1x*v2x+v1y*v2y)/(n1*n2)));
+        const ang=Math.acos(dot)*180/Math.PI;
+        f*=1+0.30*Math.max(0,Math.min(1,(ang-28)/72));
+      }
+    }
+    raw[i]=f;
+  }
+  const out=raw.slice();
+  for(let i=1;i<n-1;i++) out[i]=(raw[i-1]+raw[i]*2+raw[i+1])/4;
+  out.fastLift=vmed>0&&sm[n-1]>1.45*vmed;
+  return out;
+}
+function strokeToPolygon(points,maxSize,tool,penStyle){
   if(points.length<2) return [];
   const prof=TOOL_PROFILES[tool]||TOOL_PROFILES.pen; const n=points.length;
+  // Default to the font-wide pen style; strokeToOutlineSVG passes 'classic'
+  // explicitly (submitted svg_paths are always classic — the backend
+  // re-strokes pen_paths when building the realistic OTF).
+  const realistic=(penStyle??fontSettings.penStyle)==='realistic';
+  const dyn=realistic?_realisticWidthFactors(points):null;
   const avgP=points.reduce((s,pt)=>s+pt.p,0)/n;
   const tangents=[],hws=[];
   for(let i=0;i<n;i++){
@@ -676,9 +733,12 @@ function strokeToPolygon(points,maxSize,tool){
     const tx=dx/len, ty=dy/len; tangents.push({nx:-ty,ny:tx});
     const st=easeOut(Math.min(i/Math.max(n*prof.startTaper,1),1));
     const et=easeIn(Math.min((n-1-i)/Math.max(n*prof.endTaper,1),1));
-    const taper=Math.max(prof.taperFloor??0.0, st*et);
+    const floor=dyn?(dyn.fastLift?0.22:0.5):(prof.taperFloor??0.0);
+    const taper=Math.max(floor, st*et);
     const pMod=(1-prof.thinning)+prof.thinning*pt.p;
-    const hw=maxSize*prof.widthMult*pMod*taper/2; hws.push(Math.max(0.05,hw));
+    let hw=maxSize*prof.widthMult*pMod*taper/2;
+    if(dyn) hw*=dyn[i];
+    hws.push(Math.max(0.05,hw));
   }
   const smoothed=hws.map((hw,i)=> i===0||i===n-1 ? hw : (hws[i-1]+hw*2+hws[i+1])/4);
   const left=[],right=[];
@@ -767,8 +827,10 @@ function getGlyphXBounds(char,slot){
   for(const s of strokes) for(const pt of s){ if(pt.x<minX)minX=pt.x; if(pt.x>maxX)maxX=pt.x; }
   return (minX===Infinity)?{minX:0,maxX:DRAW_W}:{minX,maxX};
 }
+// Always the CLASSIC brush polygon: stored svg_paths are the canonical
+// classic outline; the backend re-strokes pen_paths for the realistic OTF.
 function strokeToOutlineSVG(points,size,xShift=0){
-  const polygon=strokeToPolygon(points,size,drawState.tool);
+  const polygon=strokeToPolygon(points,size,drawState.tool,'classic');
   if(!polygon||polygon.length<3) return null;
   const pts=polygon.map(p=>({x:p.x-xShift,y:p.y}));
   return 'M '+pts.map(p=>`${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L ')+' Z';
@@ -776,8 +838,18 @@ function strokeToOutlineSVG(points,size,xShift=0){
 function glyphToSVGPaths(char,slot,xShift=0){
   return getStrokes(char,slot).filter(s=>s.length>1).map(s=>strokeToOutlineSVG(s,drawState.toolSize,xShift)).filter(Boolean);
 }
+// Each point [x, y, pressure, t_ms] — pressure + stroke-relative time feed
+// the backend realistic-ink stroker; the line font only reads x/y.
 function glyphToPenPaths(char,slot,xShift=0){
-  return getStrokes(char,slot).filter(s=>s.length>1).map(s=>s.map(pt=>[pt.x-xShift,pt.y]));
+  return getStrokes(char,slot).filter(s=>s.length>1).map(s=>{
+    const t0=s[0].t||0;
+    return s.map(pt=>[
+      Math.round((pt.x-xShift)*100)/100,
+      Math.round(pt.y*100)/100,
+      Math.round((pt.p??0.6)*1000)/1000,
+      Math.max(0,Math.round((pt.t||0)-t0)),
+    ]);
+  });
 }
 function glyphThumbnailB64(char,slot){
   // Thumbnails are review-grid previews shown at ≤ 56 px — render at half
@@ -821,6 +893,17 @@ function updateToolButtons(){
   document.getElementById('undo-btn').disabled  = getStrokes(char,slot).length===0;
   document.getElementById('redo-btn').disabled  = getRedoStack(char,slot).length===0;
   document.getElementById('clear-btn').disabled = getStrokes(char,slot).length===0;
+}
+function setPenStyle(style){
+  fontSettings.penStyle = style==='realistic' ? 'realistic' : 'classic';
+  updatePenStyleButtons();
+  if(drawCtx) renderCanvas();
+}
+function updatePenStyleButtons(){
+  const c=document.getElementById('pen-classic-btn'), r=document.getElementById('pen-realistic-btn');
+  if(!c||!r) return;
+  const real=fontSettings.penStyle==='realistic';
+  c.classList.toggle('active-pen',!real); r.classList.toggle('active-pen',real);
 }
 function undoStroke(){ const {char,slot}=cur(); const s=getStrokes(char,slot); if(!s.length) return;
   getRedoStack(char,slot).push(s.pop()); renderCanvas(); updateToolButtons(); }
@@ -954,7 +1037,8 @@ async function runBuild(name, ls, sw, onComplete){
   const finRes=await fetch(`${API}/process/${jobId}/finalize`,{
     method:'POST', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({approved_glyph_ids:approvedIds, font_name:name, font_style:'Regular',
-                         letter_spacing:ls, space_width:sw}),
+                         letter_spacing:ls, space_width:sw,
+                         pen_style:fontSettings.penStyle||'classic'}),
   });
   if(!finRes.ok) throw new Error('Build could not start. Please try again.');
   const fin=await finRes.json();

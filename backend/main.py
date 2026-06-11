@@ -42,7 +42,7 @@ from models import (
     FinalizeRequest, FinalizeResponse,
     GlyphInfo, GlyphsResponse,
     JobStatus, JobStatusResponse,
-    SavedFontInfo,
+    PenStyleRequest, SavedFontInfo,
 )
 from processing.font_builder import (
     GlyphData, build_otf, compute_glyph_advance,
@@ -292,6 +292,11 @@ async def finalize(job_id: str, req: FinalizeRequest, background_tasks: Backgrou
             gid: {"lsb": int(b.lsb), "rsb": int(b.rsb)}
             for gid, b in req.glyph_bearings.items()
         }
+    # Pen style only when provided — None means keep the job's current style.
+    if req.pen_style is not None:
+        if req.pen_style not in ("classic", "realistic"):
+            raise HTTPException(422, "pen_style must be 'classic' or 'realistic'")
+        update_kwargs["pen_style"] = req.pen_style
     job_store.update_state(job_id, **update_kwargs)
 
     background_tasks.add_task(run_in_threadpool, _build_font_job, job_id)
@@ -440,11 +445,13 @@ async def list_saved_fonts():
         # field-select per font — never the full multi-MB state blob.
         annotated = []
         for f in fonts:
-            fields = job_store.get_state_fields(f["job_id"], ["has_line_font"])
+            fields = job_store.get_state_fields(
+                f["job_id"], ["has_line_font", "pen_style"])
             annotated.append({
                 **f,
                 "job_exists": fields is not None,
                 "has_line_font": bool(fields and fields.get("has_line_font")),
+                "pen_style": (fields.get("pen_style") if fields else None) or "classic",
             })
         return annotated
     return {"fonts": await run_in_threadpool(_annotate)}
@@ -473,6 +480,41 @@ async def reopen_job(job_id: str):
         await run_in_threadpool(
             lambda: job_store.update_state(job_id, status="awaiting_review"))
     return {"ok": True}
+
+
+@app.post("/process/{job_id}/pen-style")
+async def set_pen_style(job_id: str, req: PenStyleRequest, background_tasks: BackgroundTasks):
+    """
+    Switch a built font between the classic and realistic pen and rebuild.
+
+    Both OTFs are regenerated from the job's stored glyph data and settings —
+    classic uses the canvas-captured svg_paths verbatim; realistic re-strokes
+    every glyph's pen_paths with the realistic-ink model. Toggling back and
+    forth is lossless because the underlying glyph data never changes.
+    """
+    if req.pen_style not in ("classic", "realistic"):
+        raise HTTPException(422, "pen_style must be 'classic' or 'realistic'")
+
+    fields = await run_in_threadpool(
+        job_store.get_state_fields, job_id,
+        ["status", "approved_glyph_ids", "font_name", "pen_style"],
+    )
+    if fields is None:
+        raise HTTPException(404, "Job not found")
+    if fields.get("status") not in ("complete", "awaiting_review", "error"):
+        raise HTTPException(409, "Job is still building — try again shortly")
+    if not fields.get("approved_glyph_ids"):
+        raise HTTPException(409, "Font has never been built — generate it first")
+
+    if (fields.get("pen_style") or "classic") == req.pen_style \
+            and fields.get("status") == "complete":
+        return {"ok": True, "pen_style": req.pen_style, "rebuilt": False}
+
+    job_store.update_state(
+        job_id, pen_style=req.pen_style, status="finalizing", progress_pct=0,
+    )
+    background_tasks.add_task(run_in_threadpool, _build_font_job, job_id)
+    return {"ok": True, "pen_style": req.pen_style, "rebuilt": True}
 
 
 @app.get("/process/{job_id}/pen-paths")
@@ -615,7 +657,7 @@ async def get_job_settings(job_id: str):
     fields = await run_in_threadpool(
         job_store.get_state_fields, job_id,
         ["font_name", "font_style", "approved_glyph_ids",
-         "letter_spacing", "space_width", "has_line_font"],
+         "letter_spacing", "space_width", "has_line_font", "pen_style"],
     )
     if fields is None:
         raise HTTPException(404, "Job not found")
@@ -626,6 +668,7 @@ async def get_job_settings(job_id: str):
         "letter_spacing":     fields.get("letter_spacing") or 0,
         "space_width":        fields.get("space_width") or 600,
         "has_line_font":      bool(fields.get("has_line_font")),
+        "pen_style":          fields.get("pen_style") or "classic",
     }
 
 
@@ -651,6 +694,7 @@ def _build_font_job(job_id: str):
         space_width = state.get("space_width", 600)
         manifest = state.get("glyph_manifest", [])
         glyph_bearings = state.get("glyph_bearings", {}) or {}
+        pen_style = state.get("pen_style") or "classic"
 
         job_store.update_state(job_id, progress_pct=10)
 
@@ -687,6 +731,7 @@ def _build_font_job(job_id: str):
             font_base_color = (38, 32, 28)
 
         from processing.centerline import polyline_paths_to_svg
+        from processing.pen_realistic import realistic_glyph_outlines
 
         # positional[char] -> {"init": "a.init", "medi": "a.medi", "fina": "a.fina"}
         # only filled in cursive mode and only for letters that actually have
@@ -718,9 +763,27 @@ def _build_font_job(job_id: str):
             lsb_upm = _bearing.get("lsb") if _bearing else None
             rsb_upm = _bearing.get("rsb") if _bearing else None
 
+            # Dimensional outline source. Classic uses the canvas-captured
+            # brush polygons verbatim. Realistic re-strokes the raw pen track
+            # with the realistic-ink model (same coordinate space, so all
+            # baseline/advance/bearing math is untouched). Glyphs without
+            # pen_paths keep their classic outline.
+            dim_svg_paths = entry.get("svg_paths", [])
+            if pen_style == "realistic" and entry.get("pen_paths"):
+                try:
+                    realistic = realistic_glyph_outlines(
+                        entry["pen_paths"],
+                        pen_size=float(entry.get("pen_size") or 6),
+                        seed_key=glyph_id,
+                    )
+                    if realistic:
+                        dim_svg_paths = realistic
+                except Exception as exc:
+                    print(f"[pen_realistic] {glyph_id}: fell back to classic ({exc})")
+
             dimensional_glyphs.append(GlyphData(
                 char=char, slot=slot, glyph_name=glyph_name,
-                svg_paths=entry.get("svg_paths", []),
+                svg_paths=dim_svg_paths,
                 svg_width=svg_w, svg_height=svg_h,
                 baseline_y_in_svg=baseline_y,
                 is_lowercase=is_lower,
@@ -813,9 +876,14 @@ def _build_font_job(job_id: str):
         # GIL only intermittently (fontTools spends most of its time in C
         # ext modules and I/O), so threading actually overlaps.
         def _build_dim():
+            # Realistic ink owns its own edge texture (waviness, fibre
+            # notches, pooling are baked into the stroked outlines), so the
+            # UPM-space perturbation/divot pass is skipped — running both
+            # would double-texture every edge.
             return build_otf(
                 dimensional_glyphs, font_name, font_style, letter_spacing, space_width,
                 positional=positional or None,
+                perturb=(pen_style != "realistic"),
                 forced_advances=dim_advances,
                 base_color=font_base_color,
             )
