@@ -209,21 +209,21 @@ input[type=range]::-moz-range-thumb{ width:24px; height:24px; border-radius:50%;
       <div class="step-num">1</div>
       <div class="step-body">
         <div class="step-title">Draw each letter</div>
-        <div class="step-desc">Follow the guide lines. We'll walk you through every one.</div>
+        <div class="step-desc">Write each character on the guide lines. We show you one at a time.</div>
       </div>
     </div>
     <div class="step">
       <div class="step-num">2</div>
       <div class="step-body">
         <div class="step-title">We build your font</div>
-        <div class="step-desc">Takes just a few minutes — grab a tea.</div>
+        <div class="step-desc">Your letters become a real font file in about a minute.</div>
       </div>
     </div>
     <div class="step">
       <div class="step-num">3</div>
       <div class="step-body">
-        <div class="step-title">Fine-tune &amp; save</div>
-        <div class="step-desc">Name it and adjust spacing. Your font is ready.</div>
+        <div class="step-title">Name and save</div>
+        <div class="step-desc">Name your font, set the spacing, and download it.</div>
       </div>
     </div>
   </div>
@@ -243,7 +243,7 @@ input[type=range]::-moz-range-thumb{ width:24px; height:24px; border-radius:50%;
   <div class="prompt">
     <div class="glyph" id="prompt-glyph">A</div>
     <div class="name" id="prompt-name">capital A</div>
-    <div class="alt-chip" id="prompt-alt" style="display:none">Alternate — write it a little differently</div>
+    <div class="alt-chip" id="prompt-alt" style="display:none">Alternate: write it a little differently</div>
   </div>
 
   <div class="canvas-stage">
@@ -371,16 +371,6 @@ const SMOOTH_ALPHA = 0.62;
 const TOOL_PROFILES = {
   pen: {thinning:0.35, startTaper:0.06, endTaper:0.08, widthMult:1.0, taperFloor:0.62},
 };
-const INK_VARIATION = {
-  outlineNoiseFreq:0.20, dotThreshold:0.25, divotThreshold:0.25,
-  dotRadius:[1.3,2.4], divotRadius:[1.3,2.4], dotInsetFrac:0.7,
-  dotAlpha:0.85, divotAlpha:0.9, pressureBias:0.25,
-  speedWhitenStart:250, speedWhitenFull:1400, speedWhitenMax:0.35,
-};
-function _inkHash(i){ let h=(i|0)>>>0; h=((h^61)^(h>>>16))>>>0; h=(h+(h<<3))>>>0;
-  h=(h^(h>>>4))>>>0; h=Math.imul(h,0x27d4eb2d)>>>0; h=(h^(h>>>15))>>>0; return (h&0xffff)/32767.5-1.0; }
-function _inkNoise1d(x){ const i=Math.floor(x), f=x-i, a=_inkHash(i), b=_inkHash(i+1);
-  const t=f*f*(3-2*f); return a+t*(b-a); }
 function easeOut(t){ return 1-(1-t)*(1-t); }
 function easeIn(t){ return t*t; }
 
@@ -430,12 +420,12 @@ function glyphIdFor(char, slot){
 // hints in particular fix the recurring em/en placement confusion.
 const HINTS = {
   '-': 'A short bar sitting on the <strong>middle line</strong>.',
-  '–': 'En dash — a little <strong>longer than a hyphen</strong>, centred on the <strong>middle line</strong>.',
-  '—': 'Em dash — the <strong>longest</strong> dash. A wide bar on the <strong>middle line</strong>, nearly cell-width.',
-  '_': 'Underscore — sits <strong>on the baseline</strong> (the bottom solid line).',
+  '–': 'En dash: a little <strong>longer than a hyphen</strong>, centred on the <strong>middle line</strong>.',
+  '—': 'Em dash: the <strong>longest</strong> dash. Draw a wide bar on the <strong>middle line</strong>, nearly cell-width.',
+  '_': 'Underscore: a flat bar <strong>on the baseline</strong> (the solid line).',
   '.': 'A single dot resting <strong>on the baseline</strong>.',
   ',': 'A comma <strong>on the baseline</strong> with a small tail dipping below it.',
-  ';': 'A dot on the baseline with a tail below — like a comma stacked under a dot.',
+  ';': 'A dot on the baseline with a tail below, like a comma stacked under a dot.',
   ':': 'Two dots stacked between the <strong>baseline and the middle</strong>.',
   "'": 'An apostrophe hangs <strong>up near the top</strong> line.',
   '"': 'Two marks hanging <strong>up near the top</strong> line.',
@@ -443,13 +433,13 @@ const HINTS = {
   '^': 'A caret sits <strong>high</strong>, near the top line.',
   '`': 'A backtick hangs <strong>up near the top</strong> line.',
   '~': 'A tilde wave centred on the <strong>middle line</strong>.',
-  '0': 'A zero sits <strong>like a capital</strong> on the baseline — a tall, narrow oval (slimmer than a capital O).',
+  '0': 'A zero sits <strong>like a capital</strong> on the baseline. Draw a tall, narrow oval, slimmer than a capital O.',
 };
 function hintFor(char){
   if (HINTS[char]) return HINTS[char];
   if (char>='A'&&char<='Z') return 'Fill from the <strong>top dashed line</strong> down to the <strong>baseline</strong>.';
-  if (char>='a'&&char<='z') return 'Small letters reach the <strong>middle line</strong>. Tails (g, j, p, q, y) drop below the baseline.';
-  if (char>='0'&&char<='9') return 'Numbers sit <strong>like capitals</strong> — fill from the <strong>top line</strong> down to the <strong>baseline</strong>, and <strong>never below it</strong>.';
+  if (char>='a'&&char<='z') return 'Small letters reach the <strong>middle line</strong>. Tails on g, j, p, q, y drop to the <strong>bottom dashed line</strong>.';
+  if (char>='0'&&char<='9') return 'Numbers sit <strong>like capitals</strong>. Fill from the <strong>top line</strong> down to the <strong>baseline</strong>, never below it.';
   return 'Follow the faint grey guide for size and position.';
 }
 
@@ -613,16 +603,14 @@ function renderCanvas(){
   drawGuidelines(ctx);
 
   const {char,slot}=cur();
-  const committed=getStrokes(char,slot);
-  const allPolys=committed.map(s=>strokeToPolygon(s,drawState.toolSize,s.tool||drawState.tool));
-  let curPoly=null;
-  if(drawState.currentStroke.length>1) curPoly=strokeToPolygon(drawState.currentStroke,drawState.toolSize,drawState.tool);
-  for(let i=0;i<committed.length;i++){
-    const others=[]; for(let j=0;j<allPolys.length;j++) if(j!==i) others.push(allPolys[j]);
-    if(curPoly) others.push(curPoly);
-    renderStrokePolygon(ctx,allPolys[i],committed[i].tool||drawState.tool,committed[i].color||drawState.color,committed[i],others);
+  for(const s of getStrokes(char,slot)){
+    renderStrokePolygon(ctx, strokeToPolygon(s,drawState.toolSize,s.tool||drawState.tool),
+                        s.tool||drawState.tool, s.color||drawState.color, s);
   }
-  if(curPoly) renderStrokePolygon(ctx,curPoly,drawState.tool,drawState.color,drawState.currentStroke,allPolys);
+  if(drawState.currentStroke.length>1){
+    renderStrokePolygon(ctx, strokeToPolygon(drawState.currentStroke,drawState.toolSize,drawState.tool),
+                        drawState.tool, drawState.color, drawState.currentStroke);
+  }
 }
 
 function drawMasks(ctx){
@@ -747,7 +735,6 @@ function strokeToPolygon(points,maxSize,tool,penStyle){
   // the legacy brush polygon as the svg_paths fallback (the backend
   // re-strokes pen_paths for the real OTF outlines).
   const style=penStyle??fontSettings.penStyle??'realistic';
-  const avgP=points.reduce((s,pt)=>s+pt.p,0)/n;
   const tangents=[],hws=[];
   for(let i=0;i<n;i++){
     const pt=points[i], prev=points[Math.max(0,i-1)], next=points[Math.min(n-1,i+1)];
@@ -768,81 +755,34 @@ function strokeToPolygon(points,maxSize,tool,penStyle){
   const left=[],right=[];
   for(let i=0;i<n;i++){ const {nx,ny}=tangents[i], pt=points[i], hw=smoothed[i];
     left.push({x:pt.x+nx*hw,y:pt.y+ny*hw}); right.push({x:pt.x-nx*hw,y:pt.y-ny*hw}); }
-  const poly=[...left,...right.reverse()]; poly.avgP=avgP; return poly;
+  return [...left,...right.reverse()];
 }
-function _segmentSpeedPxPerSec(points,i){ const a=points[i],b=points[i+1]; const dt=(b.t||0)-(a.t||0);
-  if(dt<=0) return 0; return Math.hypot(b.x-a.x,b.y-a.y)/dt*1000; }
-function _speedWhitenFactor(speed){ const ink=INK_VARIATION; if(speed<=ink.speedWhitenStart) return 0;
-  const t=Math.min(1,(speed-ink.speedWhitenStart)/(ink.speedWhitenFull-ink.speedWhitenStart)); return t*ink.speedWhitenMax; }
-function fillStrokeAsQuadsWithSpeed(ctx,polygon,points,color,baseOpacity){
-  const n=points.length; if(n<2||polygon.length!==2*n) return; const [r,g,b]=color; const aStr=baseOpacity.toFixed(2);
-  for(let i=0;i<n-1;i++){ const wf=_speedWhitenFactor(_segmentSpeedPxPerSec(points,i));
-    const cr=Math.round(r+(255-r)*wf),cg=Math.round(g+(255-g)*wf),cb=Math.round(b+(255-b)*wf);
-    ctx.fillStyle=`rgba(${cr},${cg},${cb},${aStr})`;
-    const li=polygon[i],li2=polygon[i+1],ri=polygon[2*n-1-i],ri2=polygon[2*n-1-(i+1)];
-    ctx.beginPath(); ctx.moveTo(li.x,li.y); ctx.lineTo(li2.x,li2.y); ctx.lineTo(ri2.x,ri2.y); ctx.lineTo(ri.x,ri.y); ctx.closePath(); ctx.fill(); }
-}
-function paintEndpointCaps(ctx,polygon,points,color,opacity){
-  const n=points.length; if(n<2||polygon.length!==2*n) return; const [r,g,b]=color;
-  ctx.fillStyle=`rgba(${r},${g},${b},${opacity.toFixed(2)})`;
-  for(const idx of [0,n-1]){ const lp=polygon[idx],rp=polygon[2*n-1-idx];
-    const hw=Math.hypot(lp.x-rp.x,lp.y-rp.y)/2; if(hw<0.5) continue;
-    ctx.beginPath(); ctx.arc(points[idx].x,points[idx].y,hw,0,Math.PI*2); ctx.fill(); }
-}
-function renderStrokePolygon(ctx,polygon,tool,color=[34,32,30],points=null,otherPolys=null){
-  if(polygon.length<3) return; const [r,g,b]=color;
-  const avgP=polygon.avgP??0.7; const opacity=0.78+avgP*0.17;
-  ctx.save(); ctx.beginPath(); ctx.moveTo(polygon[0].x,polygon[0].y);
-  for(let i=1;i<polygon.length-1;i++){ const mx=(polygon[i].x+polygon[i+1].x)/2, my=(polygon[i].y+polygon[i+1].y)/2;
-    ctx.quadraticCurveTo(polygon[i].x,polygon[i].y,mx,my); }
+/* Ink rendering: paint each stroke exactly as the built OTF will render it.
+   The OTF carries only filled vector outlines in one flat colour (no
+   transparency, texture, dots/divots or per-segment tone shifts), so the
+   canvas draws the same realistic outline geometry as a single flat
+   nonzero-winding fill (CFF's fill rule) plus round terminal caps that
+   match the backend stroker's tip caps. What you draw is what you get. */
+function renderStrokePolygon(ctx,polygon,tool,color=[34,32,30],points=null){
+  if(polygon.length<3) return;
+  const [r,g,b]=color;
+  ctx.save();
+  ctx.fillStyle=`rgb(${r},${g},${b})`;
+  ctx.beginPath();
+  ctx.moveTo(polygon[0].x,polygon[0].y);
+  for(let i=1;i<polygon.length;i++) ctx.lineTo(polygon[i].x,polygon[i].y);
   ctx.closePath();
-  ctx.shadowBlur=1.2; ctx.shadowColor=`rgba(${r},${g},${b},0.25)`;
-  if(points&&points.length>=3&&polygon.length===2*points.length){
-    paintEndpointCaps(ctx,polygon,points,color,opacity);
-    fillStrokeAsQuadsWithSpeed(ctx,polygon,points,color,opacity);
-  } else { ctx.fillStyle=`rgba(${r},${g},${b},${opacity.toFixed(2)})`; ctx.fill(); }
-  ctx.shadowBlur=0;
-  if(points&&points.length>=3) addPenInkVariation(ctx,polygon,points,color,opacity,otherPolys);
+  ctx.fill();
+  const n=points?points.length:0;
+  if(points&&n>=2&&polygon.length===2*n){
+    for(const idx of [0,n-1]){
+      const lp=polygon[idx], rp=polygon[2*n-1-idx];
+      const hw=Math.hypot(lp.x-rp.x,lp.y-rp.y)/2;
+      if(hw<0.5) continue;
+      ctx.beginPath(); ctx.arc(points[idx].x,points[idx].y,hw,0,Math.PI*2); ctx.fill();
+    }
+  }
   ctx.restore();
-}
-function _pointInPolygon(x,y,poly){ if(!poly||poly.length<3) return false; let inside=false;
-  for(let i=0,j=poly.length-1;i<poly.length;j=i++){ const xi=poly[i].x,yi=poly[i].y,xj=poly[j].x,yj=poly[j].y;
-    if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/((yj-yi)||1e-9)+xi)) inside=!inside; } return inside; }
-function _edgeBuriedInOther(x,y,otherPolys){ if(!otherPolys||!otherPolys.length) return false;
-  for(let k=0;k<otherPolys.length;k++) if(_pointInPolygon(x,y,otherPolys[k])) return true; return false; }
-function addPenInkVariation(ctx,polygon,points,color,baseOpacity,otherPolys=null){
-  const [r,g,b]=color; const ink=INK_VARIATION; const n=points.length; if(n<4||polygon.length!==2*n) return;
-  const arc=new Array(n); arc[0]=0;
-  for(let i=1;i<n;i++) arc[i]=arc[i-1]+Math.hypot(points[i].x-points[i-1].x,points[i].y-points[i-1].y);
-  if(arc[n-1]<8) return;
-  const phase=Math.abs(points[0].x*0.137+points[0].y*0.213)%1024;
-  ctx.save(); ctx.beginPath(); ctx.moveTo(polygon[0].x,polygon[0].y);
-  for(let i=1;i<polygon.length;i++) ctx.lineTo(polygon[i].x,polygon[i].y); ctx.closePath(); ctx.clip();
-  for(let side=0;side<2;side++){ const sidePhase=phase+(side===0?0.0:31.7);
-    for(let i=1;i<n-1;i++){ const edgePt=side===0?polygon[i]:polygon[2*n-1-i];
-      if(_edgeBuriedInOther(edgePt.x,edgePt.y,otherPolys)) continue;
-      const nz=_inkNoise1d(arc[i]*ink.outlineNoiseFreq+sidePhase);
-      const driven=nz+(0.5-points[i].p)*ink.pressureBias;
-      if(driven<-ink.divotThreshold){ const intensity=Math.min(1,(-driven-ink.divotThreshold)/(1-ink.divotThreshold));
-        const radius=ink.divotRadius[0]+intensity*(ink.divotRadius[1]-ink.divotRadius[0]);
-        ctx.fillStyle=`rgba(255,255,255,${ink.divotAlpha.toFixed(2)})`;
-        ctx.beginPath(); ctx.arc(edgePt.x,edgePt.y,radius,0,Math.PI*2); ctx.fill(); } } }
-  ctx.restore();
-  for(let side=0;side<2;side++){ const sidePhase=phase+(side===0?50.3:81.7);
-    for(let i=1;i<n-1;i++){ const edgePt=side===0?polygon[i]:polygon[2*n-1-i];
-      if(_edgeBuriedInOther(edgePt.x,edgePt.y,otherPolys)) continue;
-      const centerPt=points[i]; const dx=centerPt.x-edgePt.x, dy=centerPt.y-edgePt.y; const dist=Math.hypot(dx,dy);
-      if(dist<0.5) continue; const ix=dx/dist, iy=dy/dist;
-      const nz=_inkNoise1d(arc[i]*ink.outlineNoiseFreq+sidePhase);
-      const driven=nz+(points[i].p-0.5)*ink.pressureBias;
-      if(driven>ink.dotThreshold){ const intensity=Math.min(1,(driven-ink.dotThreshold)/(1-ink.dotThreshold));
-        const radius=ink.dotRadius[0]+intensity*(ink.dotRadius[1]-ink.dotRadius[0]);
-        const cx=edgePt.x+ix*radius*ink.dotInsetFrac, cy=edgePt.y+iy*radius*ink.dotInsetFrac;
-        const sIn=i>0?_segmentSpeedPxPerSec(points,i-1):0, sOut=i<n-1?_segmentSpeedPxPerSec(points,i):0;
-        const wf=_speedWhitenFactor((sIn+sOut)/2);
-        const cr=Math.round(r+(255-r)*wf),cg=Math.round(g+(255-g)*wf),cb=Math.round(b+(255-b)*wf);
-        ctx.fillStyle=`rgba(${cr},${cg},${cb},${ink.dotAlpha.toFixed(2)})`;
-        ctx.beginPath(); ctx.arc(cx,cy,radius,0,Math.PI*2); ctx.fill(); } } }
 }
 
 /* ── Export helpers (verbatim) ── */
@@ -883,9 +823,8 @@ function glyphThumbnailB64(char,slot){
   const off=document.createElement('canvas'); off.width=DRAW_W*SCALE; off.height=DRAW_H*SCALE;
   const ctx=off.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,off.width,off.height);
   ctx.scale(SCALE,SCALE);
-  const strokes=getStrokes(char,slot); const polys=strokes.map(s=>strokeToPolygon(s,drawState.toolSize,drawState.tool));
-  for(let i=0;i<strokes.length;i++){ const others=[]; for(let j=0;j<polys.length;j++) if(j!==i) others.push(polys[j]);
-    renderStrokePolygon(ctx,polys[i],drawState.tool,drawState.color,strokes[i],others); }
+  for(const s of getStrokes(char,slot))
+    renderStrokePolygon(ctx, strokeToPolygon(s,drawState.toolSize,drawState.tool), drawState.tool, drawState.color, s);
   return off.toDataURL('image/png').split(',')[1];
 }
 
@@ -898,7 +837,7 @@ function renderPrompt(){
   document.getElementById('prompt-name').textContent  = charName(c.char);
   document.getElementById('prompt-alt').style.display = c.alt?'inline-block':'none';
   document.getElementById('prompt-hint').innerHTML    = c.alt
-    ? 'Draw <strong>'+c.char+'</strong> again, a little differently — this gives your font natural variety.'
+    ? 'Draw <strong>'+c.char+'</strong> again, a little differently. This gives your font natural variety.'
     : hintFor(c.char);
   document.getElementById('prog-section').textContent = c.section;
   document.getElementById('prog-count').textContent   = `${seqIndex+1} / ${SEQUENCE.length}`;
@@ -941,7 +880,7 @@ function skipCell(){ advance(1); }
 function navCell(dir){
   const c=cur();
   if(dir>0 && c.required && getStrokes(c.char,c.slot).length===0){
-    showBanner('draw-warn', 'Please draw <strong>'+charName(c.char)+'</strong> before moving on — it\'s needed for your font.');
+    showBanner('draw-warn', 'Please draw <strong>'+charName(c.char)+'</strong> before moving on. Your font needs it.');
     return;
   }
   if(dir>0 && seqIndex===SEQUENCE.length-1){ finishDrawing(); return; }
