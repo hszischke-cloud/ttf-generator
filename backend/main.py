@@ -99,10 +99,10 @@ async def health():
     return {"status": "ok"}
 
 
-def _serve_app() -> Response:
-    """Serve the single-file app with the API base rewritten to same-origin."""
-    app_path = Path(__file__).parent.parent / "app.html"
-    content = app_path.read_text(encoding="utf-8")
+def _serve_html(filename: str) -> Response:
+    """Serve a single-file UI with the API base rewritten to same-origin."""
+    path = Path(__file__).parent.parent / filename
+    content = path.read_text(encoding="utf-8")
     content = content.replace("const API = 'http://localhost:8001';", "const API = '';")
     content = content.replace("const API = 'http://localhost:8000';", "const API = '';")
     # no-store so browsers / edge caches never serve a stale build of the UI.
@@ -120,14 +120,15 @@ async def serve_root():
 
 @app.get("/ui", response_class=Response)
 async def serve_ui():
-    return _serve_app()
+    """The studio — dashboard, drawing, review, borders, saved fonts."""
+    return _serve_html("app.html")
 
 
 @app.get("/create", response_class=Response)
 async def serve_client():
-    # Legacy guided-creator route — the consumer flow and the studio are one
-    # app now; the dashboard's "share with a client" link points here.
-    return _serve_app()
+    """The locked-down guided creator for clients: intro screen, one prompted
+    letter at a time, build, name + spacing, download. No dashboard access."""
+    return _serve_html("client.html")
 
 
 @app.post("/draw/create")

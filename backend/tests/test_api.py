@@ -194,10 +194,18 @@ def test_pen_style_switch(client):
 
 
 def test_app_routes_served(client):
-    for route in ("/ui", "/create"):
-        res = client.get(route)
-        assert res.status_code == 200
-        assert "const API = ''" in res.text
-        assert "page-borders" in res.text
+    # /ui = the studio (dashboard, borders editor, saved fonts)
+    res = client.get("/ui")
+    assert res.status_code == 200
+    assert "const API = ''" in res.text
+    assert "page-borders" in res.text
+
+    # /create = the locked-down guided client flow (intro screen first)
+    res = client.get("/create")
+    assert res.status_code == 200
+    assert "const API = ''" in res.text
+    assert "screen-landing" in res.text
+    assert "page-borders" not in res.text  # no studio pages for clients
+
     root = client.get("/", follow_redirects=False)
     assert root.status_code == 302 and root.headers["location"] == "/ui"

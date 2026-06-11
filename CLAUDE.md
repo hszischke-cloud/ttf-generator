@@ -13,15 +13,22 @@ letters).
   Storage bucket `ttf-generator`
 - Font generation: fontTools (CFF/OTF), feaLib (`calt` alternates + cursive
   positional rules), COLR/CPAL for the chosen ink colour
-- Frontend: **one** single-file app — `app.html` (vanilla JS, no build step),
-  served by the backend at `/ui` and `/create` (same file; `/` redirects)
+- Frontend: two single-file pages (vanilla JS, no build step), served by the
+  backend with the API base rewritten to same-origin:
+  - `app.html` at `/ui` (and `/` redirects there) — the STUDIO: dashboard,
+    free-form drawing, review, spacing, borders editor, saved fonts.
+  - `client.html` at `/create` — the LOCKED-DOWN guided creator for clients:
+    intro screen → one prompted letter at a time → build → name + spacing →
+    download. No dashboard or saved-fonts access. The dashboard's "Share
+    with a client" group links/copies this URL.
 
 ---
 
 ## Repository layout
 
 ```
-app.html                     — the entire frontend (single file)
+app.html                     — studio frontend (single file, /ui)
+client.html                  — guided client creator (single file, /create)
 schema.sql                   — Supabase schema; paste into the SQL editor
 backend/
 ├── main.py                  — FastAPI endpoints + font build pipeline
@@ -94,7 +101,8 @@ kept forever.
 | Method | Path | Notes |
 |--------|------|-------|
 | GET  | `/health` | |
-| GET  | `/`, `/ui`, `/create` | serve app.html (API base rewritten to '') |
+| GET  | `/`, `/ui` | studio (app.html; `/` redirects to `/ui`) |
+| GET  | `/create` | guided client creator (client.html) |
 | POST | `/draw/create` | new empty job |
 | POST | `/draw/{id}/glyph` | single glyph upsert (legacy) |
 | POST | `/draw/{id}/glyphs/batch` | **preferred** — one manifest write for N glyphs |
