@@ -32,31 +32,51 @@ MM_TO_PX = 11.811                       # 300 dpi
 GUIDELINE_TOP_RATIO       = 0.15        # CAP line
 GUIDELINE_XHEIGHT_RATIO   = 0.42
 GUIDELINE_BASELINE_RATIO  = 0.72
-GUIDELINE_BOTTOM_RATIO    = 0.90        # descender
+GUIDELINE_BOTTOM_RATIO    = 0.95        # descender (must match the UIs' GUIDELINES)
+
+# Height of the drawing canvas in both UIs (DRAW_H). Every glyph arrives in
+# this pixel space (svg_height=400, baseline_y=288).
+CANVAS_HEIGHT_PX = 400
 
 # ---------------------------------------------------------------------------
 # Font metric constants (in UPM = 1000)
 # ---------------------------------------------------------------------------
 
 UPM = 1000
-ASCENDER = 800
-CAP_HEIGHT = 700
-WIN_ASCENT = 900
-WIN_DESCENT = 200
+CAP_HEIGHT = 700        # nominal value CELL_SCALE is derived from — see below
 DEFAULT_ADVANCE_WIDTH = 600
 
-# Derive vertical metrics from the guideline ratios so the canvas and the
-# font share one coordinate system.
 _cap_to_base  = GUIDELINE_BASELINE_RATIO - GUIDELINE_TOP_RATIO
 _x_to_base    = GUIDELINE_BASELINE_RATIO - GUIDELINE_XHEIGHT_RATIO
 _base_to_desc = GUIDELINE_BOTTOM_RATIO   - GUIDELINE_BASELINE_RATIO
 
-X_HEIGHT  = int(_x_to_base  / _cap_to_base * CAP_HEIGHT)
-DESCENDER = -int(_base_to_desc / _cap_to_base * CAP_HEIGHT)
-
 # Cell-level scale: UPM per original canvas pixel (same for every glyph).
+# Historically derived from the 24mm scan-template cell — kept verbatim so
+# existing fonts keep their exact glyph scale on rebuild.
 CELL_BASELINE_Y_PX = int(CELL_HEIGHT_MM * MM_TO_PX * _cap_to_base)
 CELL_SCALE = CAP_HEIGHT / CELL_BASELINE_Y_PX
+
+# Real ink landmarks in UPM. The 400px canvas is ~1.42× taller than the 24mm
+# cell CELL_SCALE assumes, so ink drawn to the cap line actually lands at
+# ~991 UPM and ink at the descender line at ~-400 UPM. Vertical metrics MUST
+# be derived from this real canvas mapping: the old ratio×CAP_HEIGHT values
+# (ascent 800/descent -221, win 900/200) understated the envelope, and
+# renderers that clip to the declared metrics cut the bottoms off j/g/y
+# descenders and the tops off cap-line capitals.
+CAP_INK_UPM  = int(round(_cap_to_base  * CANVAS_HEIGHT_PX * CELL_SCALE))   # ≈ 991
+X_HEIGHT     = int(round(_x_to_base    * CANVAS_HEIGHT_PX * CELL_SCALE))   # ≈ 522
+DESC_INK_UPM = int(round(_base_to_desc * CANVAS_HEIGHT_PX * CELL_SCALE))   # ≈ 400
+
+# Line-box metrics (hhea + OS/2 typo): cap/descender ink plus margin for the
+# realistic pen's round caps and overshoot past the guides.
+ASCENDER  = 1050
+DESCENDER = -(DESC_INK_UPM + 50)        # ≈ -450
+
+# Win metrics are CLIP bounds on Windows — cover the entire drawable canvas
+# (y ∈ [0, 400] → ink ∈ [-487, +1252] plus stroke-cap overhang) so nothing
+# is ever cut off, even strokes drawn past the guides.
+WIN_ASCENT = 1280
+WIN_DESCENT = 520
 
 
 # ---------------------------------------------------------------------------
@@ -757,7 +777,7 @@ def build_otf(
         usWinAscent=WIN_ASCENT,
         usWinDescent=WIN_DESCENT,
         sxHeight=X_HEIGHT,
-        sCapHeight=CAP_HEIGHT,
+        sCapHeight=CAP_INK_UPM,
         fsType=0,
         panose=panose,
         # fsSelection: 0x40 = REGULAR. fontTools defaults this to 0 which

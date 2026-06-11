@@ -353,12 +353,14 @@ const GUIDELINES = {
   cap:       DRAW_H * 0.15,   // 60
   xheight:   DRAW_H * 0.42,   // 168
   baseline:  DRAW_H * 0.72,   // 288  → baseline_y sent to backend
-  descender: DRAW_H * 0.90,   // 360
+  // 380 — sits low so j/g/y tails get real room (92px below baseline).
+  // Must match GUIDELINE_BOTTOM_RATIO in font_builder.py: the font's
+  // vertical metrics are derived from it so descenders render unclipped.
+  descender: DRAW_H * 0.95,
 };
-// Renderable band, derived from what font_builder actually maps into the em.
-// Ascender (font 800u) lands at canvas y≈30; descender at y=360. Anything
-// outside this band would be clipped off the finished glyph — so we HARD-CLAMP
-// every captured point into it. The user physically cannot draw where the font
+// Renderable band. The font's win metrics cover the whole canvas, but we
+// still HARD-CLAMP every captured point into a sane band so letters can't
+// wander off the cell — the user physically cannot draw where the font
 // won't render, which kills the #1 "my letters got cut off" bug.
 const SAFE = { top: 30, bottom: GUIDELINES.descender, left: 16, right: DRAW_W - 16 };
 // A dedicated centre line for dashes / math symbols.

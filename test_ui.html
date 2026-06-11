@@ -45,6 +45,8 @@
     font-size: 20px; font-weight: 400; color: var(--brown); letter-spacing: 0.01em;
   }
   .site-nav .brand span { opacity: 0.55; font-weight: 400; margin-left: 8px; font-size: 13px; font-family: var(--font-sans); }
+  .site-nav .brand { cursor: pointer; }
+  .site-nav .nav-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
 
   /* signature "o" dot — coloured circle peeking through the counter */
   .odot{position:relative; display:inline-block; z-index:0;}
@@ -227,26 +229,63 @@
   }
   .error-banner.show { display: block; }
 
-  /* ── Home page ── */
-  .home-hero { text-align: center; padding: 16px 0 36px; }
-  .home-hero h1 { font-size: clamp(34px, 7vw, 44px); margin-bottom: 10px; }
-  .home-hero p.sub { font-size: 19px; margin-bottom: 0; }
-  .mode-cards { display: flex; gap: 20px; margin-top: 36px; flex-wrap: wrap; }
-  .mode-card {
-    flex: 1; min-width: 220px; background: var(--input-bg); border: 1.5px solid var(--border-color);
-    border-radius: var(--radius-xl); padding: 32px 24px; cursor: pointer; text-align: center;
-    transition: all 0.2s; position: relative; overflow: hidden;
+  /* ── Dashboard ── */
+  #page-home { max-width: 1060px; }
+  .dash-head { padding: 6px 0 2px; }
+  .dash-head p.sub { margin-bottom: 0; }
+  .dash-section-head {
+    display: flex; align-items: baseline; gap: 12px;
+    margin: 36px 0 14px; flex-wrap: wrap;
   }
-  .mode-card::before {
-    content: ''; position: absolute; inset: 0;
-    background: linear-gradient(135deg, rgba(107,199,193,0.10), transparent);
-    opacity: 0; transition: opacity 0.2s;
+  .dash-section-head h2 { margin-bottom: 0; font-size: 22px; }
+  .dash-section-head .count { font-size: 13px; color: var(--ink-light); }
+
+  /* Create row — the two ways to make a font, side by side */
+  .create-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 14px; }
+  .create-card {
+    background: var(--input-bg); border: 1.5px solid var(--border-color);
+    border-radius: var(--radius-xl); padding: 22px 22px 18px;
+    display: flex; flex-direction: column; gap: 12px;
+    transition: border-color .2s ease, box-shadow .2s ease;
   }
-  .mode-card:hover { border-color: var(--teal); transform: translateY(-3px); box-shadow: 0 6px 20px rgba(91,65,52,0.12); }
-  .mode-card:hover::before { opacity: 1; }
-  .mode-card .mode-icon { font-size: 34px; margin-bottom: 14px; display: block; }
-  .mode-card h2 { font-size: 19px; margin-bottom: 8px; }
-  .mode-card p { font-size: 13.5px; color: var(--ink-light); line-height: 1.6; }
+  .create-card:hover { border-color: var(--teal); box-shadow: 0 6px 20px rgba(91,65,52,0.10); }
+  .create-card h2 { font-size: 19px; margin-bottom: 4px; }
+  .create-card p { font-size: 13.5px; color: var(--ink-light); line-height: 1.6; }
+  .cc-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: auto; }
+  .cc-hint { font-size: 11.5px; color: var(--ink-light); font-style: italic; margin-top: 2px; }
+
+  /* Font cards grid */
+  .fonts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+  .font-card {
+    position: relative; background: var(--input-bg); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: 18px 18px 16px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .font-card-name {
+    font-family: var(--font-serif); font-size: 21px; font-weight: 600;
+    color: var(--brown); line-height: 1.2; padding-right: 30px; word-break: break-word;
+  }
+  .font-card-meta {
+    font-size: 12px; color: var(--ink-light); margin-top: 5px;
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  }
+  .font-card .btn-delete { position: absolute; top: 12px; right: 10px; }
+  .font-card.expired { opacity: 0.6; }
+  .font-card.expired .font-card-name::after {
+    content: ' (expired)'; font-size: 12px; color: var(--coral);
+    font-family: var(--font-sans); font-weight: 400;
+  }
+  .fc-expired-note { font-size: 12.5px; color: var(--ink-light); font-style: italic; }
+  .fc-rows { display: flex; flex-direction: column; gap: 9px; }
+  .fc-row { display: flex; align-items: center; gap: 10px; }
+  .fc-label {
+    width: 76px; flex-shrink: 0; font-size: 9.5px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-light);
+  }
+  .fc-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+  /* Segmented choices (pen weight): the CURRENT option is rendered as a
+     disabled primary button — it should read as "selected", not greyed out. */
+  .fc-btns .btn-primary:disabled { opacity: 1; cursor: default; }
 
   /* ── Draw mode layout ── */
   .draw-layout { display: flex; gap: 18px; align-items: flex-start; }
@@ -375,42 +414,22 @@
     font-size: 11.5px; color: var(--ink-light); font-variant-numeric: tabular-nums; font-style: italic;
   }
 
-  /* ── Saved fonts list ── */
-  .saved-fonts-section { margin-top: 48px; }
+  /* ── Saved fonts (shared bits) ── */
   .saved-fonts-empty { font-size: 14px; color: var(--ink-light); font-style: italic; margin-top: 8px; }
-  .saved-font-item {
-    display: flex; align-items: center; justify-content: space-between;
-    background: var(--input-bg); border: 1px solid var(--border-color); border-radius: var(--radius-lg);
-    padding: 16px 20px; margin-bottom: 10px; gap: 16px; flex-wrap: wrap;
-  }
-  .saved-font-info { flex: 1; min-width: 0; }
-  .saved-font-name {
-    font-family: var(--font-serif); font-size: 19px; font-weight: 600;
-    color: var(--brown); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .saved-font-meta { font-size: 12px; color: var(--ink-light); margin-top: 3px; }
   .badge {
     display: inline-block; padding: 2px 9px; border-radius: 9999px;
     font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em;
-    margin-right: 6px;
   }
   .badge-print   { background: rgba(107,199,193,.22); color: var(--teal-deep); }
   .badge-cursive { background: rgba(217,87,60,.16); color: var(--orange-deep); }
-  .saved-font-actions { display: flex; gap: 14px; align-items: flex-end; flex-shrink: 0; flex-wrap: wrap; }
-  .saved-font-group { display: flex; flex-direction: column; gap: 4px; }
-  .saved-font-group-label { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-light); font-weight: 600; }
-  .saved-font-group-btns { display: flex; gap: 6px; }
+  .badge-fine    { background: rgba(91,65,52,.10);  color: var(--ink); }
+  .badge-bold    { background: rgba(91,65,52,.85);  color: var(--cream); }
   .btn-delete {
     background: none; border: none; color: var(--border-color); cursor: pointer;
     font-size: 18px; line-height: 1; padding: 6px; border-radius: 4px;
     transition: color 0.15s;
   }
   .btn-delete:hover { color: var(--coral); }
-  .saved-font-item.expired { opacity: 0.55; }
-  .saved-font-item.expired .saved-font-name::after {
-    content: ' (expired)'; font-size: 12px; color: var(--coral);
-    font-family: var(--font-sans); font-weight: 400;
-  }
 
   /* ── Line-font section ── */
   .line-section {
@@ -508,9 +527,13 @@
     #page-draw { padding: 12px 10px 48px; }
 
     h1 { font-size: 26px; }
-    .home-hero { padding: 10px 0 20px; }
-    .mode-cards { flex-direction: column; gap: 14px; }
-    .mode-card { padding: 24px 18px; }
+
+    /* Dashboard: stack the create cards and the font cards */
+    .create-row { grid-template-columns: 1fr; gap: 12px; }
+    .create-card { padding: 18px 16px 14px; }
+    .cc-actions .btn { flex: 1 1 auto; }
+    .fonts-grid { grid-template-columns: 1fr; }
+    .fc-label { width: 72px; }
 
     /* Draw: stack canvas above panel */
     .draw-layout { flex-direction: column; gap: 10px; }
@@ -552,17 +575,12 @@
     /* Spacing sliders full width */
     .slider-row { max-width: 100%; }
 
-    /* Saved fonts: the three action groups don't fit beside the name on a
-       phone (flex-shrink:0 made them overflow the card edge). Stack the card
-       vertically, let groups wrap inside the card, and pin the delete ✕ to
-       the top-right corner. */
-    .saved-font-item { position: relative; flex-direction: column; align-items: stretch; gap: 12px; padding: 14px 16px; }
-    .saved-font-info { padding-right: 32px; }  /* keep clear of the ✕ */
-    .saved-font-name { white-space: normal; }
-    .saved-font-actions { width: 100%; flex-shrink: 1; align-items: stretch; gap: 10px 14px; }
-    .saved-font-group { min-width: 0; }
-    .saved-font-group-btns { flex-wrap: wrap; }
-    .saved-font-actions .btn-delete { position: absolute; top: 10px; right: 10px; }
+    /* Topbar: keep brand + actions on one line */
+    .site-nav { gap: 8px; }
+    .site-nav .brand span { display: none; }   /* hide the subtitle on phones */
+
+    /* Draw page: the step header costs canvas space on a phone */
+    #draw-step-header { display: none; }
 
     /* Borders editor: stack controls, full-width primary actions */
     .borders-readout { gap: 10px; }
@@ -577,40 +595,69 @@
 <body>
 
 <nav class="site-nav">
-  <div class="brand">Handwriting f<span class="odot odot--teal">o</span>nts <span>studio · snailmail.eco</span></div>
+  <div class="brand" onclick="goHome()" title="Back to the dashboard">Handwriting f<span class="odot odot--teal">o</span>nts <span>studio · snailmail.eco</span></div>
+  <div class="nav-actions">
+    <button class="btn btn-outline btn-sm" onclick="goHome()">My fonts</button>
+    <button class="btn btn-primary btn-sm" onclick="goNewFont()">＋ New font</button>
+  </div>
 </nav>
 
-<!-- ===================== PAGE 0: HOME ===================== -->
+<!-- ===================== DASHBOARD ===================== -->
 <div class="page active" id="page-home">
-  <div class="home-hero">
-    <h1>Create Your Font</h1>
-    <p class="sub">Turn your handwriting into a real font — OTF + single-line OTF for pen plotters</p>
+  <div class="dash-head">
+    <h1>Font dashboard</h1>
+    <p class="sub">Every handwriting font in one place — download, edit, re-ink, share.</p>
   </div>
-  <div class="mode-cards">
-    <div class="mode-card" onclick="startDrawMode('print')">
-      <h2>Print font</h2>
-      <p>Each letter drawn on its own. Letters don't connect — for clean, readable output.</p>
-      <p style="margin-top:10px;font-size:13px;color:var(--ink-light);">~52 cells (A-Z, a-z, digits, punctuation)</p>
+
+  <!-- The two ways to make a font -->
+  <div class="dash-section-head" id="create-section">
+    <h2>Make a new font</h2>
+  </div>
+  <div class="create-row">
+    <div class="create-card">
+      <div>
+        <h2>Design studio</h2>
+        <p>The full toolkit, right here: alternate letterforms, cursive joining, reference tracing, then spacing and border control after the build.</p>
+      </div>
+      <div class="cc-actions">
+        <button class="btn btn-primary" onclick="startDrawMode('print')">✍️ New print font</button>
+        <button class="btn btn-outline" onclick="startDrawMode('cursive')">New cursive font</button>
+      </div>
+      <p class="cc-hint">Print ≈ 52 letters · cursive ≈ 150 (init / medi / fina forms that join).</p>
     </div>
-    <div class="mode-card" onclick="startDrawMode('cursive')">
-      <h2>Cursive font</h2>
-      <p>Letters connect with entry hooks and exit tails. Three forms per lowercase letter for word-position-aware joining.</p>
-      <p style="margin-top:10px;font-size:13px;color:var(--ink-light);">~150 cells (init / medi / fina forms)</p>
+    <div class="create-card">
+      <div>
+        <h2>Guided creator</h2>
+        <p>The simple step-by-step flow made for clients — one letter at a time with placement hints, nothing to configure. Finished fonts appear on this dashboard.</p>
+      </div>
+      <div class="cc-actions">
+        <a class="btn btn-teal" id="open-create-link" href="/create" target="_blank" rel="noopener">Open guided creator ↗</a>
+        <button class="btn btn-outline" onclick="copyCreateLink(this)">Copy link</button>
+      </div>
+      <p class="cc-hint">Share the link with anyone whose handwriting you want as a font.</p>
     </div>
   </div>
 
-  <!-- Saved fonts list -->
-  <div class="saved-fonts-section">
-    <span class="section-label">My Saved Fonts</span>
-    <div id="saved-fonts-list">
-      <p class="saved-fonts-empty">Loading…</p>
-    </div>
+  <!-- All saved fonts -->
+  <div class="dash-section-head">
+    <h2>My fonts</h2>
+    <span class="count" id="fonts-count"></span>
+  </div>
+  <div id="saved-fonts-list" class="fonts-grid">
+    <p class="saved-fonts-empty">Loading…</p>
   </div>
 </div>
 
 <!-- ===================== PAGE DRAW ===================== -->
 <div class="page" id="page-draw">
-  <span class="back-link" onclick="goHome()">← Back to home</span>
+  <span class="back-link" onclick="goHome()">← Dashboard</span>
+  <div class="step-header" id="draw-step-header">
+    <div class="step-num">1</div>
+    <div>
+      <h1 style="font-size:24px;">Draw your letters</h1>
+      <p class="sub" style="margin:0;font-size:15px;">Write naturally — the pen records your speed and inks the font like real handwriting.</p>
+    </div>
+  </div>
   <div class="draw-layout">
 
     <!-- Left: canvas area -->
@@ -709,11 +756,11 @@
 
 <!-- ===================== PAGE 3: REVIEW ===================== -->
 <div class="page" id="page-review">
-  <span class="back-link" onclick="goHome()">← Start over</span>
+  <span class="back-link" onclick="goHome()">← Dashboard</span>
   <div class="step-header">
-    <div class="step-num">3</div>
+    <div class="step-num">2</div>
     <div>
-      <h1>Review Glyphs</h1>
+      <h1>Review your letters</h1>
       <p class="sub" style="margin:0">Click any glyph to reject it. Green = included in font.</p>
     </div>
   </div>
@@ -738,11 +785,11 @@
 
 <!-- ===================== PAGE 4: DOWNLOAD ===================== -->
 <div class="page" id="page-download">
-  <span class="back-link" onclick="goHome()">← Make another font</span>
+  <span class="back-link" onclick="goHome()">← Dashboard</span>
   <div class="step-header">
-    <div class="step-num">4</div>
+    <div class="step-num">3</div>
     <div>
-      <h1>Your Font is Ready!</h1>
+      <h1>Your font is ready</h1>
       <p class="sub" style="margin:0">Adjust spacing, then click download — spacing is baked in automatically</p>
     </div>
   </div>
@@ -824,11 +871,11 @@
 
 <!-- ── Border editor ─────────────────────────────────────────── -->
 <div class="page" id="page-borders">
-  <span class="back-link" onclick="goHome()">← Back to home</span>
+  <span class="back-link" onclick="goHome()">← Dashboard</span>
   <div class="step-header">
     <div class="step-num">↔</div>
     <div>
-      <h1>Adjust Letter Borders</h1>
+      <h1>Adjust letter borders</h1>
       <p class="sub" style="margin:0">The <span class="swatch-l">left</span> and <span class="swatch-r">right</span> lines sit on each letter's edges — where the next letter butts up against it. Drag a line <em>outward</em> to give a cramped letter (like “i”) more room, <em>inward</em> to tighten a wide one (like “T”). 0 = the line is right on the edge.</p>
     </div>
   </div>
@@ -1385,10 +1432,13 @@ async function downloadFont(fmt, line) {
 
 const DRAW_W = 300, DRAW_H = 400;
 const GUIDELINES = {
-  cap:       DRAW_H * 0.15,
-  xheight:   DRAW_H * 0.42,
-  baseline:  DRAW_H * 0.72,   // → baseline_y sent to backend
-  descender: DRAW_H * 0.90,
+  cap:       DRAW_H * 0.15,   // 60
+  xheight:   DRAW_H * 0.42,   // 168
+  baseline:  DRAW_H * 0.72,   // 288 → baseline_y sent to backend
+  // 380 — sits low so j/g/y tails get real room (92px below baseline).
+  // Must match GUIDELINE_BOTTOM_RATIO in font_builder.py: the font's
+  // vertical metrics are derived from it so descenders render unclipped.
+  descender: DRAW_H * 0.95,
 };
 
 // ── Drawing engine constants ──────────────────────────────────
@@ -2925,8 +2975,10 @@ async function loadSavedFonts() {
 
 function renderSavedFonts(fonts) {
   const container = document.getElementById('saved-fonts-list');
+  const count = document.getElementById('fonts-count');
+  if (count) count.textContent = fonts.length ? `${fonts.length} font${fonts.length !== 1 ? 's' : ''}` : '';
   if (!fonts.length) {
-    container.innerHTML = '<p class="saved-fonts-empty">No saved fonts yet — build a font and click “Save to My Fonts.”</p>';
+    container.innerHTML = '<p class="saved-fonts-empty">No fonts yet — start one in the studio above, or share the guided creator with someone whose handwriting you want.</p>';
     return;
   }
   container.innerHTML = '';
@@ -2934,53 +2986,84 @@ function renderSavedFonts(fonts) {
     const date = new Date(f.saved_at * 1000).toLocaleDateString(undefined, {
       year: 'numeric', month: 'short', day: 'numeric',
     });
-    const item = document.createElement('div');
-    item.className = 'saved-font-item' + (f.job_exists ? '' : ' expired');
-    item.innerHTML = `
-      <div class="saved-font-info">
-        <div class="saved-font-name">${escHtml(f.font_name)}</div>
-        <div class="saved-font-meta">
+    const pen = normalizePenStyle(f.pen_style);
+    const bold = pen === 'realistic-bold';
+    const card = document.createElement('div');
+    card.className = 'font-card' + (f.job_exists ? '' : ' expired');
+    card.innerHTML = `
+      <button class="btn-delete" title="Remove from this list" onclick="deleteSavedFont('${f.job_id}', this)">&#x2715;</button>
+      <div>
+        <div class="font-card-name">${escHtml(f.font_name)}</div>
+        <div class="font-card-meta">
           <span class="badge badge-${f.mode}">${f.mode}</span>
-          ${f.glyph_count} glyph${f.glyph_count !== 1 ? 's' : ''} &middot; saved ${date}
+          <span class="badge ${bold ? 'badge-bold' : 'badge-fine'}">${bold ? 'bold' : 'fine'} pen</span>
+          <span>${f.glyph_count} glyph${f.glyph_count !== 1 ? 's' : ''} &middot; saved ${date}</span>
         </div>
       </div>
-      <div class="saved-font-actions">
-        ${f.job_exists ? `
-          <div class="saved-font-group">
-            <span class="saved-font-group-label">Download</span>
-            <div class="saved-font-group-btns">
-              <button class="btn btn-outline btn-sm" onclick="downloadSavedFont('${f.job_id}','${escHtml(f.font_name)}',false)" title="Download the normal OTF">Normal</button>
-              ${f.has_line_font ? `<button class="btn btn-outline btn-sm" onclick="downloadSavedFont('${f.job_id}','${escHtml(f.font_name)}',true)" title="Download the single-line OTF (pen plotters)">Single-line</button>` : ''}
-            </div>
+      ${f.job_exists ? `
+      <div class="fc-rows">
+        <div class="fc-row">
+          <span class="fc-label">Download</span>
+          <div class="fc-btns">
+            <button class="btn btn-primary btn-sm" onclick="downloadSavedFont('${f.job_id}','${escHtml(f.font_name)}',false)" title="Download the normal OTF">OTF</button>
+            ${f.has_line_font ? `<button class="btn btn-outline btn-sm" onclick="downloadSavedFont('${f.job_id}','${escHtml(f.font_name)}',true)" title="Single-line OTF for pen plotters">Line OTF</button>` : ''}
           </div>
-          <div class="saved-font-group">
-            <span class="saved-font-group-label">Proof</span>
-            <div class="saved-font-group-btns">
-              <button class="btn btn-outline btn-sm" onclick="window.open('${API}/process/${f.job_id}/proof?font=dimensional','_blank')" title="Proof sheet for the normal OTF">Normal ↗</button>
-              ${f.has_line_font ? `<button class="btn btn-outline btn-sm" onclick="window.open('${API}/process/${f.job_id}/proof?font=line','_blank')" title="Proof sheet for the single-line OTF">Single-line ↗</button>` : ''}
-            </div>
+        </div>
+        <div class="fc-row">
+          <span class="fc-label">Edit</span>
+          <div class="fc-btns">
+            <button class="btn btn-teal btn-sm" onclick="openSavedFont('${f.job_id}')" title="Redraw or add letters on the canvas">Glyphs</button>
+            <button class="btn btn-teal btn-sm" onclick="openSavedFontSpacing('${f.job_id}','${escHtml(f.font_name)}','${f.mode}')" title="Adjust spacing with a live preview, then re-download">Spacing</button>
+            ${f.mode === 'print' ? `<button class="btn btn-teal btn-sm" onclick="openBordersEditor('${f.job_id}','${escHtml(f.font_name)}')" title="Fine-tune each letter's left/right borders">Borders</button>` : ''}
           </div>
-          <div class="saved-font-group">
-            <span class="saved-font-group-label">Pen weight</span>
-            <div class="saved-font-group-btns">
-              <button class="btn ${normalizePenStyle(f.pen_style) !== 'realistic-bold' ? 'btn-primary' : 'btn-outline'} btn-sm" ${normalizePenStyle(f.pen_style) !== 'realistic-bold' ? 'disabled' : ''} onclick="setSavedPenStyle('${f.job_id}','realistic',this)" title="Re-ink every letter at the fine weight (true to the drawn pen)">Fine</button>
-              <button class="btn ${normalizePenStyle(f.pen_style) === 'realistic-bold' ? 'btn-primary' : 'btn-outline'} btn-sm" ${normalizePenStyle(f.pen_style) === 'realistic-bold' ? 'disabled' : ''} onclick="setSavedPenStyle('${f.job_id}','realistic-bold',this)" title="Re-ink every letter slightly thicker">Bold</button>
-            </div>
+        </div>
+        <div class="fc-row">
+          <span class="fc-label">Pen weight</span>
+          <div class="fc-btns">
+            <button class="btn ${!bold ? 'btn-primary' : 'btn-outline'} btn-sm" ${!bold ? 'disabled' : ''} onclick="setSavedPenStyle('${f.job_id}','realistic',this)" title="Re-ink every letter at the fine weight (true to the drawn pen)">Fine</button>
+            <button class="btn ${bold ? 'btn-primary' : 'btn-outline'} btn-sm" ${bold ? 'disabled' : ''} onclick="setSavedPenStyle('${f.job_id}','realistic-bold',this)" title="Re-ink every letter slightly thicker">Bold</button>
           </div>
-          <div class="saved-font-group">
-            <span class="saved-font-group-label">Edit</span>
-            <div class="saved-font-group-btns">
-              <button class="btn btn-teal btn-sm" onclick="openSavedFontSpacing('${f.job_id}','${escHtml(f.font_name)}','${f.mode}')" title="Adjust spacing and re-download without re-editing glyphs">Spacing</button>
-              ${f.mode === 'print' ? `<button class="btn btn-teal btn-sm" onclick="openBordersEditor('${f.job_id}','${escHtml(f.font_name)}')" title="Fine-tune each letter's left/right spacing">Borders</button>` : ''}
-              <button class="btn btn-primary btn-sm" onclick="openSavedFont('${f.job_id}')" title="Edit the drawn glyphs">Glyphs</button>
-            </div>
+        </div>
+        <div class="fc-row">
+          <span class="fc-label">Proof</span>
+          <div class="fc-btns">
+            <button class="btn btn-outline btn-sm" onclick="window.open('${API}/process/${f.job_id}/proof?font=dimensional','_blank')" title="Contact sheet rendered from the actual OTF">Normal ↗</button>
+            ${f.has_line_font ? `<button class="btn btn-outline btn-sm" onclick="window.open('${API}/process/${f.job_id}/proof?font=line','_blank')" title="Contact sheet for the single-line OTF">Line ↗</button>` : ''}
           </div>
-        ` : '<span style="font-size:12px;color:var(--coral);">Expired</span>'}
-        <button class="btn-delete" title="Remove from list" onclick="deleteSavedFont('${f.job_id}', this)">&#x2715;</button>
-      </div>
+        </div>
+      </div>` : `
+      <div class="fc-expired-note">The editable drawing data for this font has expired — it can no longer be downloaded or edited. Remove it, or recreate it in the studio.</div>`}
     `;
-    container.appendChild(item);
+    container.appendChild(card);
   }
+}
+
+// ── Dashboard nav helpers ──────────────────────────────────
+
+// Topbar "+ New font": land on the dashboard and bring the create cards
+// into view (they're the first section, but the user may be mid-flow).
+function goNewFont() {
+  goHome();
+  setTimeout(() => {
+    document.getElementById('create-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 80);
+}
+
+// Copy the guided-creator URL for sharing with clients. API is '' when the
+// page is served by the backend (same origin); in local dev it points at
+// the backend explicitly, so resolve against it rather than this page.
+function createUrl() {
+  return (API || window.location.origin) + '/create';
+}
+async function copyCreateLink(btn) {
+  const url = createUrl();
+  try {
+    await navigator.clipboard.writeText(url);
+    btn.textContent = 'Copied!';
+  } catch {
+    window.prompt('Copy this link:', url);
+  }
+  setTimeout(() => { btn.textContent = 'Copy link'; }, 1800);
 }
 
 function escHtml(s) {
@@ -3671,9 +3754,13 @@ sendToReview = async function () {
   }
 };
 
-// ── Load saved fonts on page load ─────────────────────────
+// ── Page init ──────────────────────────────────────────────
 updatePenStyleButtons();
 loadSavedFonts();
+// Point the guided-creator link at the backend origin (API is '' when this
+// page is served by the backend itself, so the relative href already works).
+const _createLink = document.getElementById('open-create-link');
+if (_createLink) _createLink.href = createUrl();
 </script>
 </body>
 </html>
