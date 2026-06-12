@@ -273,20 +273,27 @@
     border-radius: var(--radius-lg); padding: 24px 28px;
     display: flex; gap: 30px; align-items: center;
   }
-  .fc-name-wrap { flex: 0 1 360px; min-width: 200px; }
+  .fc-name-wrap {
+    flex: 0 1 380px; min-width: 200px; align-self: stretch;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    text-align: center; min-height: 96px; overflow: hidden;
+  }
   .font-card-name {
     font-family: var(--font-serif); font-size: 30px; font-weight: 600;
-    color: var(--brown); line-height: 1.2; word-break: break-word;
+    color: var(--brown); line-height: 1.2; word-break: break-word; min-width: 0;
   }
-  /* Once the saved OTF loads, the name is the hero preview — render it big */
-  .font-card-name.has-face { font-size: 56px; font-weight: 400; line-height: 1.25; }
+  /* Once the saved OTF loads, the name is the hero preview — fitFontName()
+     scales it to fill the column, so keep it on one line for measuring */
+  .font-card-name.has-face { font-weight: 400; line-height: 1.25; white-space: nowrap; }
   .fc-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 13px; }
   .fc-meta-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .fc-glyphs { font-size: 12px; color: var(--ink-light); }
   .fc-spacer { flex: 1; }
-  .fc-actions { display: flex; gap: 12px; flex-wrap: wrap; }
-  /* Roomier than btn-sm: these are the row's main actions */
-  .fc-actions .btn { padding: 10px 24px; font-size: 13.5px; border-radius: 10px; }
+  /* Equal-width main actions spread across the row */
+  .fc-actions { display: flex; gap: 14px; flex-wrap: wrap; }
+  .fc-actions > .btn, .fc-actions .dd { flex: 1 1 0; max-width: 230px; min-width: 120px; }
+  .fc-actions .dd > .btn { width: 100%; }
+  .fc-actions .btn { padding: 10px 18px; font-size: 13.5px; border-radius: 10px; }
   .fc-pen-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .fc-pen-label {
     font-size: 9.5px; font-weight: 600; text-transform: uppercase;
@@ -654,13 +661,11 @@
 
     /* Font rows stack: name on top, details below */
     .font-card { flex-direction: column; align-items: stretch; gap: 12px; padding: 16px; }
-    .fc-name-wrap { flex: none; min-width: 0; }
+    .fc-name-wrap { flex: none; min-width: 0; min-height: 64px; }
     .font-card-name { font-size: 24px; }
-    .font-card-name.has-face { font-size: 40px; }
     .fc-actions { gap: 8px; }
-    .fc-actions .btn { flex: 1 1 auto; padding: 10px 14px; }
-    .fc-actions .dd { flex: 1 1 auto; }
-    .fc-actions .dd > .btn { width: 100%; }
+    .fc-actions > .btn, .fc-actions .dd { flex: 1 1 auto; max-width: none; min-width: 0; }
+    .fc-actions .btn { padding: 10px 14px; }
 
     /* Draw: stack canvas above panel */
     .draw-layout { flex-direction: column; gap: 10px; }
@@ -3327,8 +3332,39 @@ function applySavedFontFace(jobId, fontName, nameEl) {
       `@font-face{font-family:'${family}';src:url('${API}/fonts/${jobId}/${encodeURIComponent(safe)}.otf') format('opentype');font-display:swap;}\n`;
   }
   nameEl.style.fontFamily = `'${family}', var(--font-serif)`;
-  nameEl.classList.add('has-face');   /* size set in CSS so mobile can shrink it */
+  nameEl.classList.add('has-face');
+  // Size the preview to fill its box: fit now with the fallback face, then
+  // re-fit once the real OTF finishes loading (its metrics differ).
+  fitFontName(nameEl);
+  if (document.fonts && document.fonts.load) {
+    document.fonts.load(`64px '${family}'`).then(() => fitFontName(nameEl)).catch(() => {});
+  }
 }
+
+// Scale a font-row name so it fills the name column: start from the max
+// size and shrink proportionally until the (nowrap) text fits the space
+// left of the rename pencil.
+function fitFontName(nameEl) {
+  const wrap = nameEl.parentElement;
+  if (!wrap) return;
+  const MAX = 72, MIN = 26;
+  const siblings = [...wrap.children].filter((c) => c !== nameEl)
+    .reduce((s, c) => s + c.offsetWidth, 0);
+  const avail = wrap.clientWidth - siblings - 12;
+  if (avail <= 0) return;   // wrap not laid out (page hidden) — keep current size
+  nameEl.style.fontSize = MAX + 'px';
+  const w = nameEl.scrollWidth;
+  if (w > avail) nameEl.style.fontSize = Math.max(MIN, Math.floor(MAX * avail / w)) + 'px';
+}
+
+// Names are sized to their column, so re-fit when the viewport changes.
+let fitNamesTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(fitNamesTimer);
+  fitNamesTimer = setTimeout(() => {
+    document.querySelectorAll('.font-card-name.has-face').forEach(fitFontName);
+  }, 150);
+});
 
 async function renameSavedFont(jobId, btn) {
   const card = btn.closest('.font-card');
@@ -3373,6 +3409,7 @@ function renderSavedFonts(fonts) {
     card.innerHTML = `
       <div class="fc-name-wrap">
         <div class="font-card-name">${escHtml(f.font_name)}</div>
+        ${f.job_exists ? `<button class="rename-btn" title="Rename this font" onclick="renameSavedFont('${f.job_id}', this)">✎</button>` : ''}
       </div>
       <div class="fc-body">
         <div class="fc-meta-row">
@@ -3380,7 +3417,6 @@ function renderSavedFonts(fonts) {
           <span class="badge ${bold ? 'badge-bold' : 'badge-fine'}">${bold ? 'bold' : 'fine'} pen</span>
           <span class="fc-glyphs">${f.glyph_count} glyph${f.glyph_count !== 1 ? 's' : ''}</span>
           <span class="fc-spacer"></span>
-          ${f.job_exists ? `<button class="rename-btn" title="Rename this font" onclick="renameSavedFont('${f.job_id}', this)">✎</button>` : ''}
           <button class="btn-delete" title="Remove from this list" onclick="deleteSavedFont('${f.job_id}', this)">&#x2715;</button>
         </div>
         ${f.job_exists ? `
