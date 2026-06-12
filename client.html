@@ -211,6 +211,13 @@ input[type=range]::-moz-range-thumb{ width:24px; height:24px; border-radius:50%;
 /* shorter nav buttons on the draw screen to claw back vertical room */
 body.on-draw .navrow .btn{ padding:11px 22px; }
 
+/* On the draw screen, banners float as a fixed toast near the top instead of
+   sitting in the flex column — otherwise showing one shrinks the writing
+   block (the canvas flexes to make room). Out of flow → canvas stays put. */
+body.on-draw .banner{ position:fixed; top:52px; left:50%; transform:translateX(-50%);
+  width:calc(100% - 28px); max-width:452px; margin:0; z-index:60;
+  box-shadow:0 8px 24px rgba(91,65,52,.22); }
+
 /* Resume card — surfaced on the landing when an in-progress draft exists, so
    a returning user never loses the letters they already drew. */
 .resume-card{ display:flex; align-items:center; gap:14px; flex-wrap:wrap;
@@ -459,31 +466,31 @@ function glyphIdFor(char, slot){
   return `${base}_${slot}`;
 }
 
-// Placement hints — the valuable part for foolproof punctuation. The dash
-// hints in particular fix the recurring em/en placement confusion.
+// Placement hints — kept short. The dash hints in particular fix the
+// recurring em/en placement confusion.
 const HINTS = {
-  '-': 'A short bar sitting on the <strong>middle line</strong>.',
-  '–': 'En dash. A little <strong>longer than a hyphen</strong>, centred on the <strong>middle line</strong>.',
-  '—': 'Em dash. The <strong>longest</strong> dash. Draw a wide bar on the <strong>middle line</strong>, nearly cell-width.',
-  '_': 'Underscore. A flat bar <strong>on the baseline</strong> (the solid line).',
-  '.': 'A single dot resting <strong>on the baseline</strong>.',
-  ',': 'A comma <strong>on the baseline</strong> with a small tail dipping below it.',
-  ';': 'A dot on the baseline with a tail below, like a comma stacked under a dot.',
-  ':': 'Two dots stacked between the <strong>baseline and the middle</strong>.',
-  "'": 'An apostrophe hangs <strong>up near the top</strong> line.',
-  '"': 'Two marks hanging <strong>up near the top</strong> line.',
-  '*': 'An asterisk sits <strong>high</strong>, near the top line.',
-  '^': 'A caret sits <strong>high</strong>, near the top line.',
-  '`': 'A backtick hangs <strong>up near the top</strong> line.',
-  '~': 'A tilde wave centred on the <strong>middle line</strong>.',
-  '0': 'A zero sits <strong>like a capital</strong> on the baseline. Draw a tall, narrow oval, slimmer than a capital O.',
+  '-': 'Short bar on the <strong>middle line</strong>.',
+  '–': 'En dash — longer, on the <strong>middle line</strong>.',
+  '—': 'Em dash — widest, on the <strong>middle line</strong>.',
+  '_': 'Flat bar <strong>on the baseline</strong>.',
+  '.': 'A dot <strong>on the baseline</strong>.',
+  ',': 'A tail dipping <strong>below the baseline</strong>.',
+  ';': 'A dot with a tail below.',
+  ':': 'Two dots, <strong>baseline to middle</strong>.',
+  "'": 'A mark <strong>up near the top</strong>.',
+  '"': 'Two marks <strong>up near the top</strong>.',
+  '*': 'Sits <strong>high</strong>, near the top.',
+  '^': 'Sits <strong>high</strong>, near the top.',
+  '`': 'A mark <strong>up near the top</strong>.',
+  '~': 'A wave on the <strong>middle line</strong>.',
+  '0': 'Tall oval, <strong>top line to baseline</strong>.',
 };
 function hintFor(char){
   if (HINTS[char]) return HINTS[char];
-  if (char>='A'&&char<='Z') return 'Fill from the <strong>top dashed line</strong> down to the <strong>baseline</strong>.';
-  if (char>='a'&&char<='z') return 'Small letters reach the <strong>middle line</strong>. Tails on g, j, p, q, y drop to the <strong>bottom dashed line</strong>.';
-  if (char>='0'&&char<='9') return 'Numbers sit <strong>like capitals</strong>. Fill from the <strong>top line</strong> down to the <strong>baseline</strong>, never below it.';
-  return 'Follow the faint grey guide for size and position.';
+  if (char>='A'&&char<='Z') return 'Fill from the <strong>top line</strong> to the <strong>baseline</strong>.';
+  if (char>='a'&&char<='z') return 'Body to the <strong>middle line</strong>; tails dip to the <strong>bottom line</strong>.';
+  if (char>='0'&&char<='9') return 'Fill from the <strong>top line</strong> to the <strong>baseline</strong>.';
+  return 'Follow the faint guide for size and placement.';
 }
 
 // Build the ordered list of cells to draw.
@@ -791,6 +798,12 @@ function drawGuidelines(ctx){
     ctx.setLineDash(dash); ctx.strokeStyle=color;
     ctx.beginPath(); ctx.moveTo(SAFE.left,y); ctx.lineTo(SAFE.right,y); ctx.stroke();
   }
+  // label the solid line as the base, so it's never mistaken for a mid-cell
+  // line — letters sit ON it.
+  ctx.setLineDash([]);
+  ctx.font='600 13px Inter,sans-serif'; ctx.textAlign='left'; ctx.textBaseline='bottom';
+  ctx.fillStyle='rgba(110,143,179,0.85)';
+  ctx.fillText('baseline', SAFE.left+3, GUIDELINES.baseline-3);
   // dash centre line — only for dash/tilde glyphs, so it doesn't clutter letters
   const ch=cur().char;
   if(['-','–','—','~','+','=','<','>'].includes(ch)){
@@ -800,30 +813,47 @@ function drawGuidelines(ctx){
   ctx.restore();
 }
 
-// Placement guide — NOT a traceable letter. We used to render the actual
-// glyph at 10% opacity, but people instinctively traced it and got back a
-// font that looked like the reference face, not their own hand. Instead we
-// softly shade the height BAND the letter body should fill (cap→baseline for
-// capitals/digits, x-height→baseline for lowercase) and emphasise its top and
-// bottom lines. The big prompt glyph above the canvas shows the SHAPE; this
-// band shows the SIZE and VERTICAL placement — with nothing to trace.
+// Lowercase letters whose tails drop below the baseline into the descender.
+const DESCENDERS = new Set(['g','j','p','q','y']);
+
+// Placement guide.
+//   • Letters & digits: a NON-traceable height band showing the size and
+//     vertical placement (the big prompt glyph above shows the shape). People
+//     used to trace the old ghost letter and get back the reference face, not
+//     their own hand — the band fixes that.
+//   • Special characters: a faint reference GLYPH. These are easy to misplace
+//     (where does a comma or quote sit?) and tracing a punctuation mark does
+//     no harm, so showing the real shape is the clearest guide.
 function drawGhost(ctx){
   const ch=cur().char;
   const isLower  = ch>='a'&&ch<='z';
   const isCapNum = (ch>='A'&&ch<='Z')||(ch>='0'&&ch<='9');
-  let top=null;
-  if(isLower)       top=GUIDELINES.xheight;   // small letters reach the middle line
-  else if(isCapNum) top=GUIDELINES.cap;       // capitals & numbers fill from the top
-  // Punctuation has no body band — its placement comes from the guidelines,
-  // the centre line and the written hint.
-  if(top==null) return;
+
+  if(!isLower && !isCapNum){
+    ctx.save();
+    ctx.beginPath(); ctx.rect(SAFE.left,SAFE.top,SAFE.right-SAFE.left,SAFE.bottom-SAFE.top); ctx.clip();
+    ctx.font = `300 300px ${ghostFontReady?"'Cormorant Garamond',serif":'Georgia,serif'}`;
+    ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+    ctx.fillStyle='rgba(34,32,30,0.13)';
+    ctx.fillText(ch, DRAW_W/2, GUIDELINES.baseline);
+    ctx.restore();
+    return;
+  }
+
+  const top = isLower ? GUIDELINES.xheight : GUIDELINES.cap;
+  const x=SAFE.left, w=SAFE.right-SAFE.left;
   ctx.save();
-  const x=SAFE.left, w=SAFE.right-SAFE.left, h=GUIDELINES.baseline-top;
-  // soft teal wash for the target zone
+  // body band → baseline
   ctx.fillStyle='rgba(107,199,193,0.12)';
-  ctx.fillRect(x, top, w, h);
-  // slightly stronger lines bracketing the zone, so "this tall, sitting here"
-  // reads at a glance
+  ctx.fillRect(x, top, w, GUIDELINES.baseline-top);
+  // descender letters: a lighter extension down to the bottom line, so the
+  // tail zone for g/j/p/q/y reads as part of the target — it used to look
+  // like those letters got cut off at the baseline.
+  if(isLower && DESCENDERS.has(ch)){
+    ctx.fillStyle='rgba(107,199,193,0.07)';
+    ctx.fillRect(x, GUIDELINES.baseline, w, GUIDELINES.descender-GUIDELINES.baseline);
+  }
+  // emphasise the top of the body band
   ctx.strokeStyle='rgba(107,199,193,0.55)'; ctx.lineWidth=1.5; ctx.setLineDash([]);
   ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x+w, top); ctx.stroke();
   ctx.restore();
@@ -998,7 +1028,7 @@ function renderPrompt(){
   // buttons don't shift between a letter and its alternate.
   document.getElementById('prompt-alt').style.visibility = c.alt?'visible':'hidden';
   document.getElementById('prompt-hint').innerHTML    = c.alt
-    ? 'Draw <strong>'+c.char+'</strong> again, a little differently. This gives your font natural variety.'
+    ? 'Draw <strong>'+c.char+'</strong> again, a little differently — adds natural variety.'
     : hintFor(c.char);
   document.getElementById('prog-section').textContent = c.section;
   document.getElementById('prog-count').textContent   = `${seqIndex+1} / ${SEQUENCE.length}`;
@@ -1040,10 +1070,15 @@ function clearCurrent(){ const {char,slot}=cur(); const s=getStrokes(char,slot);
   getRedoStack(char,slot).push(...s.splice(0)); renderCanvas(); updateToolButtons(); scheduleSave(); }
 
 function skipCell(){ advance(1); }
+let _warnTimer=null;
+function flashWarn(msg){
+  showBanner('draw-warn', msg);
+  clearTimeout(_warnTimer); _warnTimer=setTimeout(()=>hideBanner('draw-warn'), 3500);
+}
 function navCell(dir){
   const c=cur();
   if(dir>0 && c.required && getStrokes(c.char,c.slot).length===0){
-    showBanner('draw-warn', 'Please draw <strong>'+charName(c.char)+'</strong> before moving on. Your font needs it.');
+    flashWarn('Please draw <strong>'+charName(c.char)+'</strong> first.');
     return;
   }
   if(dir>0 && seqIndex===SEQUENCE.length-1){ finishDrawing(); return; }
