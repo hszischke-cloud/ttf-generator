@@ -267,22 +267,26 @@
   .dd-menu button:hover { background: rgba(107,199,193,.16); }
 
   /* Font list — one full-width row per saved font */
-  .fonts-list { display: flex; flex-direction: column; gap: 12px; }
+  .fonts-list { display: flex; flex-direction: column; gap: 14px; }
   .font-card {
     background: var(--input-bg); border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg); padding: 18px 20px;
-    display: flex; gap: 22px; align-items: center;
+    border-radius: var(--radius-lg); padding: 24px 28px;
+    display: flex; gap: 30px; align-items: center;
   }
-  .fc-name-wrap { flex: 0 1 270px; min-width: 150px; }
+  .fc-name-wrap { flex: 0 1 360px; min-width: 200px; }
   .font-card-name {
-    font-family: var(--font-serif); font-size: 26px; font-weight: 600;
+    font-family: var(--font-serif); font-size: 30px; font-weight: 600;
     color: var(--brown); line-height: 1.2; word-break: break-word;
   }
-  .fc-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+  /* Once the saved OTF loads, the name is the hero preview — render it big */
+  .font-card-name.has-face { font-size: 56px; font-weight: 400; line-height: 1.25; }
+  .fc-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 13px; }
   .fc-meta-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .fc-glyphs { font-size: 12px; color: var(--ink-light); }
   .fc-spacer { flex: 1; }
-  .fc-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .fc-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+  /* Roomier than btn-sm: these are the row's main actions */
+  .fc-actions .btn { padding: 10px 24px; font-size: 13.5px; border-radius: 10px; }
   .fc-pen-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .fc-pen-label {
     font-size: 9.5px; font-weight: 600; text-transform: uppercase;
@@ -299,8 +303,8 @@
   /* Pen weight — segmented radio-style pills; current weight is selected */
   .pen-seg { display: flex; gap: 6px; }
   .pen-opt {
-    display: inline-flex; align-items: center; gap: 6px; padding: 5px 13px;
-    border-radius: 9999px; font-size: 12px; font-weight: 500; font-family: var(--font-sans);
+    display: inline-flex; align-items: center; gap: 7px; padding: 7px 17px;
+    border-radius: 9999px; font-size: 12.5px; font-weight: 500; font-family: var(--font-sans);
     border: 1.5px solid var(--border-color); background: transparent;
     color: var(--ink-light); cursor: pointer; transition: all 0.12s;
   }
@@ -652,7 +656,9 @@
     .font-card { flex-direction: column; align-items: stretch; gap: 12px; padding: 16px; }
     .fc-name-wrap { flex: none; min-width: 0; }
     .font-card-name { font-size: 24px; }
-    .fc-actions .btn { flex: 1 1 auto; }
+    .font-card-name.has-face { font-size: 40px; }
+    .fc-actions { gap: 8px; }
+    .fc-actions .btn { flex: 1 1 auto; padding: 10px 14px; }
     .fc-actions .dd { flex: 1 1 auto; }
     .fc-actions .dd > .btn { width: 100%; }
 
@@ -3321,7 +3327,7 @@ function applySavedFontFace(jobId, fontName, nameEl) {
       `@font-face{font-family:'${family}';src:url('${API}/fonts/${jobId}/${encodeURIComponent(safe)}.otf') format('opentype');font-display:swap;}\n`;
   }
   nameEl.style.fontFamily = `'${family}', var(--font-serif)`;
-  nameEl.style.fontSize = '38px';
+  nameEl.classList.add('has-face');   /* size set in CSS so mobile can shrink it */
 }
 
 async function renameSavedFont(jobId, btn) {
