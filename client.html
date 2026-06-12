@@ -141,11 +141,16 @@ input[type=range]::-moz-range-thumb{ width:24px; height:24px; border-radius:50%;
 
 /* Fixed-height prompt block: the alternate chip's slot is always reserved
    (visibility, not display) so the canvas and buttons never jump between a
-   letter and its alternate. */
-.prompt{ text-align:center; }
+   letter and its alternate. Undo/Redo and Clear flank the prompt up here —
+   far from the Next button, and dropping their old row below the canvas
+   gives the writing box that vertical space. */
+.prompt{ display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:6px; text-align:center; }
+.prompt .tools-side{ display:flex; gap:6px; min-width:0; }
+.prompt .tools-left{ justify-self:start; }
+.prompt .tools-right{ justify-self:end; }
 .prompt .glyph{ font-family:var(--font-serif); font-size:2.1rem; font-weight:400; line-height:1.05;
   font-feature-settings:'lnum' 1; font-variant-numeric:lining-nums; }
-.prompt .name{ font-size:.95rem; color:var(--ink-light); margin-top:1px; }
+.prompt .name{ font-size:.95rem; color:var(--ink-light); margin-top:1px; white-space:nowrap; }
 .prompt .alt-chip{ display:inline-block; visibility:hidden; margin-top:4px; font-size:.7rem; font-weight:600; letter-spacing:.04em;
   text-transform:uppercase; color:#2f6f6a; background:rgba(107,199,193,.20); border-radius:9999px; padding:2px 11px; }
 
@@ -153,16 +158,18 @@ input[type=range]::-moz-range-thumb{ width:24px; height:24px; border-radius:50%;
    frame's exact px size each layout so the 3:4 cell is bounded by HEIGHT, not
    width — that's what keeps everything on one screen. */
 .canvas-stage{ flex:1 1 auto; min-height:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-.canvas-frame{ position:relative; width:100%; max-width:340px; aspect-ratio:3/4; }
+.canvas-frame{ position:relative; width:100%; max-width:420px; aspect-ratio:3/4; }
 #draw-canvas{ width:100%; height:100%; display:block; background:#fff; border:1px solid var(--border-color);
   border-radius:var(--radius-sm); touch-action:none; cursor:crosshair; }
 
+/* The hint text lives in an inner <span>: .hint is a flex container, and flex
+   drops whitespace-only text nodes between items — setting mixed text/<strong>
+   HTML directly on it ate the spaces around the bold words. */
 .hint{ font-size:.82rem; line-height:1.3; color:var(--ink-light); text-align:center; margin:0 auto; max-width:360px; height:34px; overflow:hidden; display:flex; align-items:center; justify-content:center; }
 .hint strong{ color:var(--ink); font-weight:600; }
 
-.tools{ display:flex; gap:8px; justify-content:center; margin:0; }
-.tool-btn{ font-family:var(--font-sans); font-size:.85rem; font-weight:500; color:var(--ink-light);
-  background:transparent; border:2px solid var(--border-color); border-radius:9999px; padding:8px 16px; cursor:pointer; transition:all .2s; }
+.tool-btn{ font-family:var(--font-sans); font-size:.8rem; font-weight:500; color:var(--ink-light); white-space:nowrap;
+  background:transparent; border:2px solid var(--border-color); border-radius:9999px; padding:7px 13px; cursor:pointer; transition:all .2s; }
 .tool-btn:not(:disabled):hover{ border-color:var(--ink); color:var(--ink); }
 .tool-btn:disabled{ opacity:.4; cursor:not-allowed; }
 .tool-btn.active-pen{ border-color:var(--ink); background:var(--ink); color:var(--paper); }
@@ -232,6 +239,12 @@ body.on-draw .banner{ position:fixed; top:52px; left:50%; transform:translateX(-
   .wrap{padding:24px 18px 56px;}
   body.on-draw .wrap{padding:6px 14px 12px;}
 }
+/* very narrow phones: shrink the flanking tool buttons so the longest
+   character names ("close parenthesis") still fit between them */
+@media (max-width:370px){
+  .tool-btn{ font-size:.75rem; padding:6px 9px; }
+  .prompt .name{ font-size:.85rem; }
+}
 </style>
 </head>
 <body>
@@ -290,9 +303,18 @@ body.on-draw .banner{ position:fixed; top:52px; left:50%; transform:translateX(-
   <div class="progress-track"><div class="progress-fill" id="prog-fill"></div></div>
 
   <div class="prompt">
-    <div class="glyph" id="prompt-glyph">A</div>
-    <div class="name" id="prompt-name">capital A</div>
-    <div class="alt-chip" id="prompt-alt">Alternate</div>
+    <div class="tools-side tools-left">
+      <button class="tool-btn" id="undo-btn" onclick="undoStroke()">↶ Undo</button>
+      <button class="tool-btn" id="redo-btn" onclick="redoStroke()">↷ Redo</button>
+    </div>
+    <div class="prompt-center">
+      <div class="glyph" id="prompt-glyph">A</div>
+      <div class="name" id="prompt-name">capital A</div>
+      <div class="alt-chip" id="prompt-alt">Alternate</div>
+    </div>
+    <div class="tools-side tools-right">
+      <button class="tool-btn" id="clear-btn" onclick="clearCurrent()">Clear</button>
+    </div>
   </div>
 
   <div class="canvas-stage" id="canvas-stage">
@@ -301,13 +323,7 @@ body.on-draw .banner{ position:fixed; top:52px; left:50%; transform:translateX(-
     </div>
   </div>
 
-  <div class="hint" id="prompt-hint"></div>
-
-  <div class="tools">
-    <button class="tool-btn" id="undo-btn" onclick="undoStroke()">↶ Undo</button>
-    <button class="tool-btn" id="redo-btn" onclick="redoStroke()">↷ Redo</button>
-    <button class="tool-btn" id="clear-btn" onclick="clearCurrent()">Clear</button>
-  </div>
+  <div class="hint"><span id="prompt-hint"></span></div>
 
   <div class="navrow">
     <button class="btn btn-outline btn-back" id="back-btn" onclick="navCell(-1)">← Back</button>
@@ -663,7 +679,7 @@ function sizeCanvas(){
   if(!stage||!frame) return;
   const availW=stage.clientWidth, availH=stage.clientHeight;
   if(availW<=0||availH<=0) return;
-  let w=Math.min(availW, availH*3/4, 360);
+  let w=Math.min(availW, availH*3/4, 420);
   frame.style.width=w+'px';
   frame.style.maxWidth='none';
   frame.style.height=(w*4/3)+'px';
