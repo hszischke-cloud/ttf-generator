@@ -234,64 +234,84 @@
   .error-banner.show { display: block; }
 
   /* ── Dashboard ── */
-  #page-home { max-width: 1240px; }
+  #page-home { max-width: 980px; }
 
-  /* Sidebar (create actions) + main (fonts) */
-  .dash-layout { display: flex; gap: 22px; align-items: flex-start; margin-top: 4px; }
-  .dash-side {
-    width: 212px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px;
-    position: sticky; top: 16px;
-  }
-  .side-group {
-    background: var(--input-bg); border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg); padding: 14px;
-    display: flex; flex-direction: column; gap: 8px;
-  }
-  .side-label {
-    font-size: 9.5px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.1em; color: var(--ink-light);
-  }
-  .dash-side .btn { width: 100%; }
-  .dash-main { flex: 1; min-width: 0; }
-  .dash-section-head {
-    display: flex; align-items: baseline; gap: 12px;
-    margin: 0 0 14px; flex-wrap: wrap;
-  }
-  .dash-section-head h2 { margin-bottom: 0; font-size: 22px; }
-  .dash-section-head .count { font-size: 13px; color: var(--ink-light); }
+  /* Header row: title + count on the left, primary actions on the right */
+  .dash-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+  .dash-head-title { display: flex; align-items: baseline; gap: 10px; margin-right: auto; min-width: 0; }
+  .dash-head-title h1 { margin-bottom: 0; font-size: 28px; }
+  .dash-head-title .count { font-size: 13px; color: var(--ink-light); white-space: nowrap; }
+  .dash-head-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
-  /* Font cards grid */
-  .fonts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
+  /* Outlined accent buttons (download = coral family, edit = teal family) */
+  .btn-coral-o { background: var(--cream); color: #c2453f; border-color: var(--coral); }
+  .btn-coral-o:not(:disabled):hover { background: rgba(253,108,102,.10); }
+  .btn-teal-o { background: var(--cream); color: var(--teal-deep); border-color: var(--teal); }
+  .btn-teal-o:not(:disabled):hover { background: rgba(107,199,193,.14); }
+
+  /* Dropdown menus (new-font picker + per-card download/edit/proof) */
+  .dd { position: relative; display: inline-block; }
+  .dd-caret { font-size: 9px; opacity: .75; margin-left: 2px; }
+  .dd-menu {
+    display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
+    min-width: 185px; background: var(--input-bg); border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm); box-shadow: 0 10px 26px rgba(91,65,52,.20);
+    padding: 5px; flex-direction: column; gap: 2px;
+  }
+  .dd.open .dd-menu { display: flex; }
+  .dd-menu button {
+    text-align: left; background: none; border: none; cursor: pointer;
+    padding: 8px 11px; border-radius: 6px; font-family: var(--font-sans);
+    font-size: 13px; font-weight: 500; color: var(--ink); white-space: nowrap;
+  }
+  .dd-menu button:hover { background: rgba(107,199,193,.16); }
+
+  /* Font list — one full-width row per saved font */
+  .fonts-list { display: flex; flex-direction: column; gap: 12px; }
   .font-card {
-    position: relative; background: var(--input-bg); border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg); padding: 16px 16px 14px;
-    display: flex; flex-direction: column; gap: 11px;
+    background: var(--input-bg); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: 18px 20px;
+    display: flex; gap: 22px; align-items: center;
   }
+  .fc-name-wrap { flex: 0 1 270px; min-width: 150px; }
   .font-card-name {
-    font-family: var(--font-serif); font-size: 21px; font-weight: 600;
-    color: var(--brown); line-height: 1.2; padding-right: 30px; word-break: break-word;
+    font-family: var(--font-serif); font-size: 26px; font-weight: 600;
+    color: var(--brown); line-height: 1.2; word-break: break-word;
   }
-  .font-card-meta {
-    font-size: 12px; color: var(--ink-light); margin-top: 5px;
-    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  .fc-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+  .fc-meta-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .fc-glyphs { font-size: 12px; color: var(--ink-light); }
+  .fc-spacer { flex: 1; }
+  .fc-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .fc-pen-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .fc-pen-label {
+    font-size: 9.5px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--ink-light);
   }
-  .font-card .btn-delete { position: absolute; top: 12px; right: 10px; }
+  .fc-date { font-size: 12px; color: var(--ink-light); white-space: nowrap; }
   .font-card.expired { opacity: 0.6; }
   .font-card.expired .font-card-name::after {
     content: ' (expired)'; font-size: 12px; color: var(--coral);
     font-family: var(--font-sans); font-weight: 400;
   }
   .fc-expired-note { font-size: 12.5px; color: var(--ink-light); font-style: italic; }
-  .fc-rows { display: flex; flex-direction: column; gap: 9px; }
-  .fc-row { display: flex; align-items: center; gap: 10px; }
-  .fc-label {
-    width: 76px; flex-shrink: 0; font-size: 9.5px; font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-light);
+
+  /* Pen weight — segmented radio-style pills; current weight is selected */
+  .pen-seg { display: flex; gap: 6px; }
+  .pen-opt {
+    display: inline-flex; align-items: center; gap: 6px; padding: 5px 13px;
+    border-radius: 9999px; font-size: 12px; font-weight: 500; font-family: var(--font-sans);
+    border: 1.5px solid var(--border-color); background: transparent;
+    color: var(--ink-light); cursor: pointer; transition: all 0.12s;
   }
-  .fc-btns { display: flex; gap: 6px; flex-wrap: wrap; }
-  /* Segmented choices (pen weight): the CURRENT option is rendered as a
-     disabled primary button — it should read as "selected", not greyed out. */
-  .fc-btns .btn-primary:disabled { opacity: 1; cursor: default; }
+  .pen-opt::before {
+    content: ''; width: 9px; height: 9px; border-radius: 50%;
+    border: 1.5px solid currentColor; box-sizing: border-box; flex-shrink: 0;
+  }
+  .pen-opt:not(:disabled):hover { border-color: var(--ink); color: var(--ink); }
+  .pen-opt.active { border-color: var(--coral); background: rgba(253,108,102,.12); color: #9a3b36; cursor: default; }
+  .pen-opt.active::before { background: currentColor; }
+  .pen-opt:disabled:not(.active) { opacity: 0.4; cursor: wait; }
 
   /* ── Draw mode layout ── */
   .draw-layout { display: flex; gap: 18px; align-items: flex-start; }
@@ -547,7 +567,6 @@
   .ink-swatch.active { box-shadow: 0 0 0 2.5px var(--brown); }
 
   /* ── Rename (saved-font cards) ── */
-  .font-card-name-row { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
   .rename-btn {
     flex: 0 0 auto; background: none; border: none; color: var(--ink-light);
     font-size: 14px; cursor: pointer; padding: 3px 6px; border-radius: 6px;
@@ -621,13 +640,21 @@
 
     h1 { font-size: 26px; }
 
-    /* Dashboard: sidebar collapses to a compact row above the fonts */
-    .dash-layout { flex-direction: column; gap: 12px; }
-    .dash-side { width: 100%; position: static; flex-direction: row; gap: 10px; }
-    .side-group { flex: 1; padding: 10px; }
-    .dash-side .btn { padding: 9px 10px; font-size: 13px; }
-    .fonts-grid { grid-template-columns: 1fr; }
-    .fc-label { width: 72px; }
+    /* Dashboard: header actions wrap to full-width rows under the title */
+    .dash-head { gap: 12px; }
+    .dash-head-title { width: 100%; }
+    .dash-head-actions { width: 100%; }
+    .dash-head-actions .dd { flex: 1 1 100%; }
+    .dash-head-actions .dd > .btn { width: 100%; }
+    .dash-head-actions > .btn { flex: 1 1 calc(50% - 4px); padding: 10px 8px; font-size: 13px; }
+
+    /* Font rows stack: name on top, details below */
+    .font-card { flex-direction: column; align-items: stretch; gap: 12px; padding: 16px; }
+    .fc-name-wrap { flex: none; min-width: 0; }
+    .font-card-name { font-size: 24px; }
+    .fc-actions .btn { flex: 1 1 auto; }
+    .fc-actions .dd { flex: 1 1 auto; }
+    .fc-actions .dd > .btn { width: 100%; }
 
     /* Draw: stack canvas above panel */
     .draw-layout { flex-direction: column; gap: 10px; }
@@ -711,33 +738,28 @@
     </div>
   </div>
 
-  <div class="dash-layout">
+  <!-- Header row: title on the left, every way to start/share on the right -->
+  <div class="dash-head" id="create-section">
+    <div class="dash-head-title">
+      <h1>My fonts</h1>
+      <span class="count" id="fonts-count"></span>
+    </div>
+    <div class="dash-head-actions">
+      <div class="dd">
+        <button class="btn btn-primary dd-toggle" onclick="toggleDD(this)">＋ New font <span class="dd-caret">▾</span></button>
+        <div class="dd-menu">
+          <button onclick="startDrawMode('print')">✍️ Print</button>
+          <button onclick="startDrawMode('cursive')">Cursive</button>
+        </div>
+      </div>
+      <a class="btn btn-outline" id="open-create-link" href="/create" target="_blank" rel="noopener" title="Open the guided client creator">Share with client ↗</a>
+      <button class="btn btn-outline" onclick="copyCreateLink(this)">Copy share link</button>
+    </div>
+  </div>
 
-    <!-- Sidebar: every way to start a font -->
-    <aside class="dash-side" id="create-section">
-      <div class="side-group">
-        <span class="side-label">New font</span>
-        <button class="btn btn-primary" onclick="startDrawMode('print')">✍️ Print</button>
-        <button class="btn btn-outline" onclick="startDrawMode('cursive')">Cursive</button>
-      </div>
-      <div class="side-group">
-        <span class="side-label">Share with a client</span>
-        <a class="btn btn-teal" id="open-create-link" href="/create" target="_blank" rel="noopener">Open ↗</a>
-        <button class="btn btn-outline" onclick="copyCreateLink(this)">Copy link</button>
-      </div>
-    </aside>
-
-    <!-- Main: all saved fonts -->
-    <main class="dash-main">
-      <div class="dash-section-head">
-        <h2>My fonts</h2>
-        <span class="count" id="fonts-count"></span>
-      </div>
-      <div id="saved-fonts-list" class="fonts-grid">
-        <p class="saved-fonts-empty">Loading…</p>
-      </div>
-    </main>
-
+  <!-- All saved fonts -->
+  <div id="saved-fonts-list" class="fonts-list">
+    <p class="saved-fonts-empty">Loading…</p>
   </div>
 </div>
 
@@ -3299,7 +3321,7 @@ function applySavedFontFace(jobId, fontName, nameEl) {
       `@font-face{font-family:'${family}';src:url('${API}/fonts/${jobId}/${encodeURIComponent(safe)}.otf') format('opentype');font-display:swap;}\n`;
   }
   nameEl.style.fontFamily = `'${family}', var(--font-serif)`;
-  nameEl.style.fontSize = '26px';
+  nameEl.style.fontSize = '38px';
 }
 
 async function renameSavedFont(jobId, btn) {
@@ -3343,51 +3365,62 @@ function renderSavedFonts(fonts) {
     card.className = 'font-card' + (f.job_exists ? '' : ' expired');
     card.dataset.fontName = f.font_name;
     card.innerHTML = `
-      <button class="btn-delete" title="Remove from this list" onclick="deleteSavedFont('${f.job_id}', this)">&#x2715;</button>
-      <div>
-        <div class="font-card-name-row">
-          <div class="font-card-name">${escHtml(f.font_name)}</div>
-          ${f.job_exists ? `<button class="rename-btn" title="Rename this font" onclick="renameSavedFont('${f.job_id}', this)">✎</button>` : ''}
-        </div>
-        <div class="font-card-meta">
+      <div class="fc-name-wrap">
+        <div class="font-card-name">${escHtml(f.font_name)}</div>
+      </div>
+      <div class="fc-body">
+        <div class="fc-meta-row">
           <span class="badge badge-${f.mode}">${f.mode}</span>
           <span class="badge ${bold ? 'badge-bold' : 'badge-fine'}">${bold ? 'bold' : 'fine'} pen</span>
-          <span>${f.glyph_count} glyph${f.glyph_count !== 1 ? 's' : ''} &middot; saved ${date}</span>
+          <span class="fc-glyphs">${f.glyph_count} glyph${f.glyph_count !== 1 ? 's' : ''}</span>
+          <span class="fc-spacer"></span>
+          ${f.job_exists ? `<button class="rename-btn" title="Rename this font" onclick="renameSavedFont('${f.job_id}', this)">✎</button>` : ''}
+          <button class="btn-delete" title="Remove from this list" onclick="deleteSavedFont('${f.job_id}', this)">&#x2715;</button>
         </div>
+        ${f.job_exists ? `
+        <div class="fc-actions">
+          ${f.has_line_font ? `
+          <div class="dd">
+            <button class="btn btn-coral-o btn-sm dd-toggle" onclick="toggleDD(this)">Download <span class="dd-caret">▾</span></button>
+            <div class="dd-menu">
+              <button onclick="downloadSavedFont('${f.job_id}','${escHtml(f.font_name)}',false)" title="Download the normal OTF">OTF</button>
+              <button onclick="downloadSavedFont('${f.job_id}','${escHtml(f.font_name)}',true)" title="Single-line OTF for pen plotters">Line OTF (pen plotter)</button>
+            </div>
+          </div>` : `
+          <button class="btn btn-coral-o btn-sm" onclick="downloadSavedFont('${f.job_id}','${escHtml(f.font_name)}',false)" title="Download the normal OTF">Download</button>`}
+          <div class="dd">
+            <button class="btn btn-teal-o btn-sm dd-toggle" onclick="toggleDD(this)">Edit <span class="dd-caret">▾</span></button>
+            <div class="dd-menu">
+              <button onclick="openSavedFont('${f.job_id}')" title="Redraw or add letters on the canvas">Glyphs</button>
+              <button onclick="openSavedFontSpacing('${f.job_id}','${escHtml(f.font_name)}','${f.mode}')" title="Adjust spacing with a live preview, then re-download">Spacing</button>
+              ${f.mode === 'print' ? `<button onclick="openBordersEditor('${f.job_id}','${escHtml(f.font_name)}')" title="Fine-tune each letter's left/right borders">Borders</button>` : ''}
+            </div>
+          </div>
+          ${f.has_line_font ? `
+          <div class="dd">
+            <button class="btn btn-outline btn-sm dd-toggle" onclick="toggleDD(this)">Proof <span class="dd-caret">▾</span></button>
+            <div class="dd-menu">
+              <button onclick="window.open('${API}/process/${f.job_id}/proof?font=dimensional','_blank')" title="Contact sheet rendered from the actual OTF">Normal ↗</button>
+              <button onclick="window.open('${API}/process/${f.job_id}/proof?font=line','_blank')" title="Contact sheet for the single-line OTF">Line ↗</button>
+            </div>
+          </div>` : `
+          <button class="btn btn-outline btn-sm" onclick="window.open('${API}/process/${f.job_id}/proof?font=dimensional','_blank')" title="Contact sheet rendered from the actual OTF">Proof ↗</button>`}
+        </div>
+        <div class="fc-pen-row">
+          <span class="fc-pen-label">Pen</span>
+          <div class="pen-seg">
+            <button class="pen-opt${!bold ? ' active' : ''}" ${!bold ? 'disabled' : ''} onclick="setSavedPenStyle('${f.job_id}','realistic',this)" title="Re-ink every letter at the fine weight (true to the drawn pen)">Fine</button>
+            <button class="pen-opt${bold ? ' active' : ''}" ${bold ? 'disabled' : ''} onclick="setSavedPenStyle('${f.job_id}','realistic-bold',this)" title="Re-ink every letter slightly thicker">Bold</button>
+          </div>
+          <span class="fc-spacer"></span>
+          <span class="fc-date">saved ${date}</span>
+        </div>` : `
+        <div class="fc-expired-note">Expired. The drawing data is gone, so this font can no longer be edited or downloaded.</div>
+        <div class="fc-pen-row">
+          <span class="fc-spacer"></span>
+          <span class="fc-date">saved ${date}</span>
+        </div>`}
       </div>
-      ${f.job_exists ? `
-      <div class="fc-rows">
-        <div class="fc-row">
-          <span class="fc-label">Download</span>
-          <div class="fc-btns">
-            <button class="btn btn-primary btn-sm" onclick="downloadSavedFont('${f.job_id}','${escHtml(f.font_name)}',false)" title="Download the normal OTF">OTF</button>
-            ${f.has_line_font ? `<button class="btn btn-outline btn-sm" onclick="downloadSavedFont('${f.job_id}','${escHtml(f.font_name)}',true)" title="Single-line OTF for pen plotters">Line OTF</button>` : ''}
-          </div>
-        </div>
-        <div class="fc-row">
-          <span class="fc-label">Edit</span>
-          <div class="fc-btns">
-            <button class="btn btn-teal btn-sm" onclick="openSavedFont('${f.job_id}')" title="Redraw or add letters on the canvas">Glyphs</button>
-            <button class="btn btn-teal btn-sm" onclick="openSavedFontSpacing('${f.job_id}','${escHtml(f.font_name)}','${f.mode}')" title="Adjust spacing with a live preview, then re-download">Spacing</button>
-            ${f.mode === 'print' ? `<button class="btn btn-teal btn-sm" onclick="openBordersEditor('${f.job_id}','${escHtml(f.font_name)}')" title="Fine-tune each letter's left/right borders">Borders</button>` : ''}
-          </div>
-        </div>
-        <div class="fc-row">
-          <span class="fc-label">Pen</span>
-          <div class="fc-btns">
-            <button class="btn ${!bold ? 'btn-primary' : 'btn-outline'} btn-sm" ${!bold ? 'disabled' : ''} onclick="setSavedPenStyle('${f.job_id}','realistic',this)" title="Re-ink every letter at the fine weight (true to the drawn pen)">Fine</button>
-            <button class="btn ${bold ? 'btn-primary' : 'btn-outline'} btn-sm" ${bold ? 'disabled' : ''} onclick="setSavedPenStyle('${f.job_id}','realistic-bold',this)" title="Re-ink every letter slightly thicker">Bold</button>
-          </div>
-        </div>
-        <div class="fc-row">
-          <span class="fc-label">Proof</span>
-          <div class="fc-btns">
-            <button class="btn btn-outline btn-sm" onclick="window.open('${API}/process/${f.job_id}/proof?font=dimensional','_blank')" title="Contact sheet rendered from the actual OTF">Normal ↗</button>
-            ${f.has_line_font ? `<button class="btn btn-outline btn-sm" onclick="window.open('${API}/process/${f.job_id}/proof?font=line','_blank')" title="Contact sheet for the single-line OTF">Line ↗</button>` : ''}
-          </div>
-        </div>
-      </div>` : `
-      <div class="fc-expired-note">Expired. The drawing data is gone, so this font can no longer be edited or downloaded.</div>`}
     `;
     container.appendChild(card);
     // Show the name in the font itself (lazy, CDN-cached; falls back to the
@@ -3397,6 +3430,22 @@ function renderSavedFonts(fonts) {
     }
   }
 }
+
+// ── Dropdown menus (dashboard header + font-row actions) ──
+function toggleDD(btn) {
+  const dd = btn.closest('.dd');
+  const wasOpen = dd.classList.contains('open');
+  closeAllDD();
+  if (!wasOpen) dd.classList.add('open');
+}
+function closeAllDD() {
+  document.querySelectorAll('.dd.open').forEach((d) => d.classList.remove('open'));
+}
+// Any click that isn't on a toggle closes every open menu — this covers both
+// clicking outside and selecting a menu item (the item's own onclick runs first).
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.dd-toggle')) closeAllDD();
+});
 
 // ── Dashboard nav helpers ──────────────────────────────────
 
@@ -3414,7 +3463,7 @@ async function copyCreateLink(btn) {
   } catch {
     window.prompt('Copy this link', url);
   }
-  setTimeout(() => { btn.textContent = 'Copy link'; }, 1800);
+  setTimeout(() => { btn.textContent = 'Copy share link'; }, 1800);
 }
 
 function escHtml(s) {
