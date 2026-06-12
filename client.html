@@ -63,7 +63,9 @@ body.on-draw .topbar{ padding:10px 18px 2px; }
 #screen-draw.active{
   display:flex; flex-direction:column; gap:6px;
   height:calc(100vh - 58px);
-  height:calc(100dvh - 58px);
+  height:calc(100svh - 58px);   /* svh = stable small viewport — does NOT grow
+                                   when the address bar hides on scroll, so the
+                                   canvas no longer jumps size mid-scroll */
   min-height:0;
 }
 
@@ -133,7 +135,7 @@ input[type=range]::-moz-range-thumb{ width:24px; height:24px; border-radius:50%;
 .timehint{ font-family:var(--font-sans); font-size:.9rem; color:var(--ink-light); margin-top:8px; }
 
 /* ───────────────────────── Draw screen ───────────────────────── */
-.progress-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; font-size:.85rem; color:var(--ink-light); }
+.progress-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:0; font-size:.85rem; color:var(--ink-light); }
 .progress-track{ width:100%; height:8px; border-radius:9999px; background:var(--beige); overflow:hidden; margin-bottom:0; }
 .progress-fill{ height:100%; background:var(--sage); border-radius:9999px; transition:width .3s ease; width:0%; }
 
@@ -155,7 +157,7 @@ input[type=range]::-moz-range-thumb{ width:24px; height:24px; border-radius:50%;
 #draw-canvas{ width:100%; height:100%; display:block; background:#fff; border:1px solid var(--border-color);
   border-radius:var(--radius-sm); touch-action:none; cursor:crosshair; }
 
-.hint{ font-size:.85rem; line-height:1.35; color:var(--ink-light); text-align:center; margin:0 auto; max-width:360px; height:42px; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+.hint{ font-size:.82rem; line-height:1.3; color:var(--ink-light); text-align:center; margin:0 auto; max-width:360px; height:34px; overflow:hidden; display:flex; align-items:center; justify-content:center; }
 .hint strong{ color:var(--ink); font-weight:600; }
 
 .tools{ display:flex; gap:8px; justify-content:center; margin:0; }
@@ -165,9 +167,6 @@ input[type=range]::-moz-range-thumb{ width:24px; height:24px; border-radius:50%;
 .tool-btn:disabled{ opacity:.4; cursor:not-allowed; }
 .tool-btn.active-pen{ border-color:var(--ink); background:var(--ink); color:var(--paper); }
 .tool-btn.active-pen:disabled{ opacity:1; cursor:default; }
-.pen-style-row{ display:flex; gap:8px; justify-content:center; align-items:center; margin:0; }
-.pen-style-row .pen-label{ font-size:.78rem; color:var(--ink-light); text-transform:uppercase; letter-spacing:.06em; }
-
 .navrow{ display:flex; gap:12px; align-items:center; margin-top:0; }
 .navrow .btn-back{ flex:0 0 auto; }
 .navrow .spacer{ flex:1; }
@@ -308,14 +307,6 @@ body.on-draw .banner{ position:fixed; top:52px; left:50%; transform:translateX(-
     <button class="tool-btn" id="undo-btn" onclick="undoStroke()">↶ Undo</button>
     <button class="tool-btn" id="redo-btn" onclick="redoStroke()">↷ Redo</button>
     <button class="tool-btn" id="clear-btn" onclick="clearCurrent()">Clear</button>
-  </div>
-  <!-- Pen weight. Every font is inked with the realistic pen (speed-driven
-       width, ink pooling, round tips, flick tails); this picks fine vs
-       slightly thicker. -->
-  <div class="pen-style-row">
-    <span class="pen-label">Pen</span>
-    <button class="tool-btn" id="pen-fine-btn" onclick="setPenStyle('realistic')" title="Realistic ink, true to your drawn pen size">Fine</button>
-    <button class="tool-btn" id="pen-bold-btn" onclick="setPenStyle('realistic-bold')" title="Realistic ink with a slightly thicker tip">Bold</button>
   </div>
 
   <div class="navrow">
@@ -487,9 +478,9 @@ const HINTS = {
 };
 function hintFor(char){
   if (HINTS[char]) return HINTS[char];
-  if (char>='A'&&char<='Z') return 'Fill from the <strong>top line</strong> to the <strong>baseline</strong>.';
-  if (char>='a'&&char<='z') return 'Body to the <strong>middle line</strong>; tails dip to the <strong>bottom line</strong>.';
-  if (char>='0'&&char<='9') return 'Fill from the <strong>top line</strong> to the <strong>baseline</strong>.';
+  // letters & digits — the shaded zone shows the exact size/placement.
+  if ((char>='A'&&char<='Z')||(char>='a'&&char<='z')||(char>='0'&&char<='9'))
+    return 'Fill the <strong>shaded zone</strong>, resting on the <strong>baseline</strong>.';
   return 'Follow the faint guide for size and placement.';
 }
 
@@ -516,9 +507,10 @@ const drawState = {
   lastPoint:null, smoothedPoint:null,
   currentForm:'iso',
 };
-// penStyle picks the pen WEIGHT — every font is inked with the realistic
-// pen: 'realistic' (fine, default) or 'realistic-bold' (slightly thicker).
-const fontSettings = { tool:'pen', toolSize:6, color:[34,32,30], penStyle:'realistic' };
+// Every font is inked with the realistic pen at the bold weight
+// ('realistic-bold'). The fine/bold selector was removed — one weight keeps
+// the flow simple and the canvas/OTF identical.
+const fontSettings = { tool:'pen', toolSize:6, color:[34,32,30], penStyle:'realistic-bold' };
 
 let seqIndex = 0;
 let jobId = null;
@@ -600,7 +592,6 @@ function restoreDraft(d){
       }
     }
   }
-  fontSettings.penStyle = d.penStyle==='realistic-bold' ? 'realistic-bold' : 'realistic';
   seqIndex = Math.max(0, Math.min(SEQUENCE.length-1, d.seqIndex||0));
 }
 function maybeShowResume(){
@@ -616,7 +607,6 @@ function resumeCreate(){
   drawState.currentStroke=[]; jobId=null; approvedIds=[]; otfUrl=null;
   letterSpacing=0; spaceWidth=600;
   restoreDraft(d);
-  updatePenStyleButtons();
   showScreen('screen-draw');
   setTimeout(initCanvas, 30);
 }
@@ -648,8 +638,6 @@ function startCreate(){
   drawState.strokes={}; drawState.redoStacks={}; drawState.currentStroke=[];
   seqIndex=0; jobId=null; approvedIds=[]; otfUrl=null;
   letterSpacing=0; spaceWidth=600;
-  fontSettings.penStyle='realistic';
-  updatePenStyleButtons();
   showScreen('screen-draw');
   setTimeout(initCanvas, 30);
 }
@@ -675,14 +663,19 @@ function sizeCanvas(){
   if(!stage||!frame) return;
   const availW=stage.clientWidth, availH=stage.clientHeight;
   if(availW<=0||availH<=0) return;
-  let w=Math.min(availW, availH*3/4, 340);
+  let w=Math.min(availW, availH*3/4, 360);
   frame.style.width=w+'px';
   frame.style.maxWidth='none';
   frame.style.height=(w*4/3)+'px';
+  _lastW=window.innerWidth;
 }
-let _resizeTimer=null;
+let _resizeTimer=null, _lastW=0;
 window.addEventListener('resize', ()=>{
   if(!document.body.classList.contains('on-draw')) return;
+  // Ignore pure HEIGHT changes (the address bar showing/hiding on scroll) —
+  // only relayout when the WIDTH actually changes (rotation / window resize).
+  // This is what stops the box from jumping size as you scroll.
+  if(window.innerWidth===_lastW) return;
   clearTimeout(_resizeTimer); _resizeTimer=setTimeout(sizeCanvas, 120);
 });
 // Flush the draft synchronously on unload so the last stroke is never lost
@@ -798,11 +791,13 @@ function drawGuidelines(ctx){
     ctx.setLineDash(dash); ctx.strokeStyle=color;
     ctx.beginPath(); ctx.moveTo(SAFE.left,y); ctx.lineTo(SAFE.right,y); ctx.stroke();
   }
-  // label the solid line as the base, so it's never mistaken for a mid-cell
-  // line — letters sit ON it.
+  // name the two key lines so the writing area teaches itself: the solid line
+  // is the base letters sit on; the middle line is where x-height letters reach.
   ctx.setLineDash([]);
-  ctx.font='600 13px Inter,sans-serif'; ctx.textAlign='left'; ctx.textBaseline='bottom';
-  ctx.fillStyle='rgba(110,143,179,0.85)';
+  ctx.font='600 12px Inter,sans-serif'; ctx.textAlign='left'; ctx.textBaseline='bottom';
+  ctx.fillStyle='rgba(150,138,116,0.85)';
+  ctx.fillText('middle', SAFE.left+3, GUIDELINES.xheight-3);
+  ctx.fillStyle='rgba(110,143,179,0.9)';
   ctx.fillText('baseline', SAFE.left+3, GUIDELINES.baseline-3);
   // dash centre line — only for dash/tilde glyphs, so it doesn't clutter letters
   const ch=cur().char;
@@ -813,7 +808,10 @@ function drawGuidelines(ctx){
   ctx.restore();
 }
 
-// Lowercase letters whose tails drop below the baseline into the descender.
+// Lowercase shape classes — used to size the placement zone to each letter's
+// REAL extent. Ascenders rise to the top line; descenders drop to the bottom
+// line; the rest live in the x-height band.
+const ASCENDERS  = new Set(['b','d','f','h','k','l','t']);
 const DESCENDERS = new Set(['g','j','p','q','y']);
 
 // Placement guide.
@@ -840,20 +838,18 @@ function drawGhost(ctx){
     return;
   }
 
-  const top = isLower ? GUIDELINES.xheight : GUIDELINES.cap;
+  // One uniform zone sized to this letter's real top and bottom.
+  let top, bottom=GUIDELINES.baseline;
+  if(isCapNum){ top=GUIDELINES.cap; }                      // caps & digits: full height
+  else if(ASCENDERS.has(ch)){ top=GUIDELINES.cap; }        // b d f h k l t rise to the top
+  else { top=GUIDELINES.xheight; }                         // x-height letters
+  if(isLower && DESCENDERS.has(ch)){ bottom=GUIDELINES.descender; } // g j p q y tails drop
+
   const x=SAFE.left, w=SAFE.right-SAFE.left;
   ctx.save();
-  // body band → baseline
-  ctx.fillStyle='rgba(107,199,193,0.12)';
-  ctx.fillRect(x, top, w, GUIDELINES.baseline-top);
-  // descender letters: a lighter extension down to the bottom line, so the
-  // tail zone for g/j/p/q/y reads as part of the target — it used to look
-  // like those letters got cut off at the baseline.
-  if(isLower && DESCENDERS.has(ch)){
-    ctx.fillStyle='rgba(107,199,193,0.07)';
-    ctx.fillRect(x, GUIDELINES.baseline, w, GUIDELINES.descender-GUIDELINES.baseline);
-  }
-  // emphasise the top of the body band
+  ctx.fillStyle='rgba(107,199,193,0.13)';
+  ctx.fillRect(x, top, w, bottom-top);
+  // emphasise the top edge of the zone
   ctx.strokeStyle='rgba(107,199,193,0.55)'; ctx.lineWidth=1.5; ctx.setLineDash([]);
   ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x+w, top); ctx.stroke();
   ctx.restore();
@@ -1049,18 +1045,6 @@ function updateToolButtons(){
   document.getElementById('undo-btn').disabled  = getStrokes(char,slot).length===0;
   document.getElementById('redo-btn').disabled  = getRedoStack(char,slot).length===0;
   document.getElementById('clear-btn').disabled = getStrokes(char,slot).length===0;
-}
-function setPenStyle(style){
-  fontSettings.penStyle = style==='realistic-bold' ? 'realistic-bold' : 'realistic';
-  updatePenStyleButtons();
-  if(drawCtx) renderCanvas();
-  scheduleSave();
-}
-function updatePenStyleButtons(){
-  const f=document.getElementById('pen-fine-btn'), b=document.getElementById('pen-bold-btn');
-  if(!f||!b) return;
-  const bold=fontSettings.penStyle==='realistic-bold';
-  f.classList.toggle('active-pen',!bold); b.classList.toggle('active-pen',bold);
 }
 function undoStroke(){ const {char,slot}=cur(); const s=getStrokes(char,slot); if(!s.length) return;
   getRedoStack(char,slot).push(s.pop()); renderCanvas(); updateToolButtons(); scheduleSave(); }
