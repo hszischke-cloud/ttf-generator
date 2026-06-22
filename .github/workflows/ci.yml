@@ -16,9 +16,10 @@ jobs:
           python-version: "3.11"
 
       # The test suite stubs supabase_client, so the supabase SDK itself
-      # isn't needed — keeps CI installs fast.
+      # isn't needed — keeps CI installs fast. The image stack (pillow/numpy/
+      # scipy/scikit-image) + python-multipart back the pen-plotter tools tests.
       - name: Install dependencies
-        run: pip install fastapi uvicorn "fonttools[woff]" brotli httpx pytest
+        run: pip install fastapi uvicorn "fonttools[woff]" brotli httpx pytest python-multipart pillow numpy scipy scikit-image
 
       - name: Run backend tests
         working-directory: backend

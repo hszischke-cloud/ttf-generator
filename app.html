@@ -725,7 +725,64 @@
     /* Resume card stacks */
     .resume-card { flex-direction: column; align-items: stretch; }
     .resume-actions .btn { flex: 1 1 auto; }
+
+    /* Tools: stack panel above preview */
+    .tool-layout { grid-template-columns: 1fr; }
   }
+
+  /* ===================== PLOTTER / CRICUT TOOLS ===================== */
+  .tools-section { margin-top: 44px; }
+  .tools-h2 { font-family: var(--font-display); font-weight: 400; font-size: 22px;
+    color: var(--ink); margin: 0 0 6px; }
+  .tools-sub { color: var(--ink-light); font-size: 14px; margin: 0 0 16px; }
+  .tools-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+  .tool-card { display: flex; gap: 14px; align-items: flex-start; text-align: left;
+    padding: 18px; background: var(--input-bg); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); cursor: pointer; font: inherit;
+    transition: transform .12s, box-shadow .12s, border-color .12s; }
+  .tool-card:hover { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(91,65,52,.12);
+    border-color: var(--sage); }
+  .tool-card-ic { font-size: 30px; line-height: 1; }
+  .tool-card-title { font-weight: 700; color: var(--ink); margin-bottom: 4px; font-size: 17px; }
+  .tool-card-desc { color: var(--ink-light); font-size: 14px; line-height: 1.4; }
+
+  .tool-layout { display: grid; grid-template-columns: 350px 1fr; gap: 24px; align-items: start; }
+  .tool-panel, .tool-stage { background: var(--input-bg); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: 18px; }
+  .tool-field { margin-bottom: 16px; }
+  .tool-field > label { display: block; font-weight: 600; color: var(--ink); font-size: 14px; margin-bottom: 6px; }
+  .tool-field .hint { display: block; color: var(--ink-light); font-size: 12px; margin-top: 4px; line-height: 1.35; }
+  .tool-field select, .tool-field input[type="text"], .tool-field input[type="number"] {
+    width: 100%; padding: 9px 10px; border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm); background: #fff; color: var(--ink); font: inherit; font-size: 14px; }
+  .tool-field input[type="range"] { width: 100%; }
+  .tool-field input[type="color"] { width: 48px; height: 34px; padding: 2px; vertical-align: middle;
+    border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: #fff; }
+
+  .seg { display: inline-flex; width: 100%; gap: 4px; padding: 4px; background: var(--beige); border-radius: var(--radius-btn); }
+  .seg button { flex: 1; border: none; background: transparent; padding: 10px 8px; border-radius: 9px;
+    cursor: pointer; font: inherit; font-size: 14px; font-weight: 600; color: var(--ink-light); transition: background .12s, color .12s; }
+  .seg button.active { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(91,65,52,.18); }
+
+  .tool-check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); cursor: pointer; }
+  .tool-adv { margin-top: 6px; border-top: 1px dashed var(--border-color); padding-top: 12px; }
+  .tool-adv summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--ink-light); list-style: revert; }
+  .tool-adv[open] summary { margin-bottom: 12px; }
+
+  .tool-drop { border: 2px dashed var(--border-color); border-radius: var(--radius); background: #fff;
+    padding: 28px 18px; text-align: center; cursor: pointer; color: var(--ink-light); font-size: 14px;
+    transition: border-color .12s, background .12s; }
+  .tool-drop.drag { border-color: var(--sage); background: #f3fbfa; }
+  .tool-drop strong { color: var(--ink); }
+  .tool-preview { margin-top: 14px; background: #fff; border: 1px solid var(--border-color);
+    border-radius: var(--radius); min-height: 230px; display: flex; align-items: center; justify-content: center;
+    padding: 12px; overflow: auto; }
+  .tool-preview svg, .tool-preview img { max-width: 100%; max-height: 60vh; height: auto; }
+  .tool-preview .placeholder { color: var(--ink-light); font-size: 14px; }
+  .tool-meta { font-size: 13px; color: var(--ink-light); margin-top: 10px; }
+  .tool-result-big { font-family: var(--font-display); font-size: 22px; color: var(--teal-deep); margin: 6px 0 2px; }
+  .tool-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .tool-busy { display: none; font-size: 13px; color: var(--ink-light); margin-left: 4px; align-self: center; }
 </style>
 </head>
 <body>
@@ -771,6 +828,28 @@
   <!-- All saved fonts -->
   <div id="saved-fonts-list" class="fonts-list">
     <p class="saved-fonts-empty">Loading…</p>
+  </div>
+
+  <!-- Pen-plotter / Cricut tools -->
+  <div class="tools-section">
+    <h2 class="tools-h2">Plotter &amp; Cricut tools</h2>
+    <p class="tools-sub">Free tools for pen plotters, AxiDraw, Cricut and Silhouette — no font needed.</p>
+    <div class="tools-grid">
+      <button class="tool-card" onclick="openTraceTool()">
+        <div class="tool-card-ic">🖊️</div>
+        <div class="tool-card-body">
+          <div class="tool-card-title">Image → SVG</div>
+          <div class="tool-card-desc">Turn any drawing, logo or photo into a clean SVG — one pen line to <em>draw</em>, or an outline to <em>cut</em>.</div>
+        </div>
+      </button>
+      <button class="tool-card" onclick="openPlotterTool()">
+        <div class="tool-card-ic">🐢</div>
+        <div class="tool-card-body">
+          <div class="tool-card-title">Speed up a plot</div>
+          <div class="tool-card-desc">Reorder an SVG so your plotter or Cricut draws it with the least wasted pen travel.</div>
+        </div>
+      </button>
+    </div>
   </div>
 </div>
 
@@ -1089,6 +1168,179 @@
   <div class="error-banner" id="borders-error"></div>
 </div>
 
+<!-- ===================== TOOL: IMAGE → SVG ===================== -->
+<div class="page" id="page-trace">
+  <span class="back-link" onclick="goHome()">← Dashboard</span>
+  <div class="step-header">
+    <div class="step-num">🖊️</div>
+    <div>
+      <h1>Image → SVG</h1>
+      <p class="sub" style="margin:0">Upload a drawing, logo or photo. Get a clean SVG: a single line your pen plotter <em>draws</em>, or an outline your machine <em>cuts</em>.</p>
+    </div>
+  </div>
+
+  <div class="tool-layout">
+    <!-- Controls -->
+    <div class="tool-panel">
+      <div class="tool-field">
+        <label>What do you want to make?</label>
+        <div class="seg" id="trace-mode">
+          <button type="button" data-mode="line"    class="active" onclick="traceSetMode('line')">🖊️ Draw / pen line</button>
+          <button type="button" data-mode="outline"                onclick="traceSetMode('outline')">✂️ Cut outline</button>
+        </div>
+        <span class="hint" id="trace-mode-hint">One line down the middle of each stroke — for pens, plotters, foil &amp; scoring.</span>
+      </div>
+
+      <div class="tool-field">
+        <label for="trace-preset">Start from a preset</label>
+        <select id="trace-preset" onchange="traceApplyPreset(this.value)">
+          <option value="lineart">Clean line art / logo</option>
+          <option value="sketch">Pencil sketch or photo of a drawing</option>
+          <option value="axidraw">Pen plotter (AxiDraw)</option>
+          <option value="cricut-pen">Cricut Draw (pen)</option>
+          <option value="cricut-cut">Cricut Cut (vinyl / paper)</option>
+        </select>
+        <span class="hint">Sensible defaults — tweak anything below.</span>
+      </div>
+
+      <div class="tool-field">
+        <label id="trace-color-label" for="trace-color">Line colour</label>
+        <input type="color" id="trace-color" value="#5B4134">
+      </div>
+
+      <div class="tool-field" id="trace-thickness-field">
+        <label for="trace-thickness">Line thickness</label>
+        <select id="trace-thickness">
+          <option value="">Auto (match the drawing)</option>
+          <option value="2">Thin</option>
+          <option value="4">Medium</option>
+          <option value="8">Thick</option>
+        </select>
+      </div>
+
+      <div class="tool-field">
+        <label for="trace-smooth">Smoothness</label>
+        <input type="range" id="trace-smooth" min="0" max="100" step="5" value="70">
+        <span class="hint">Sharp &amp; exact ↔ smooth &amp; flowing.</span>
+      </div>
+
+      <div class="tool-field">
+        <label for="trace-specks">Clean up specks</label>
+        <select id="trace-specks">
+          <option value="0">Off</option>
+          <option value="8">Light</option>
+          <option value="20" selected>Medium</option>
+          <option value="50">Heavy</option>
+        </select>
+        <span class="hint">Removes little dots and scanner noise.</span>
+      </div>
+
+      <div class="tool-field">
+        <label class="tool-check"><input type="checkbox" id="trace-invert"> My lines are light on a dark background</label>
+      </div>
+
+      <details class="tool-adv">
+        <summary>Advanced settings</summary>
+        <div class="tool-field" style="margin-top:12px;">
+          <label class="tool-check"><input type="checkbox" id="trace-thr-auto" checked onchange="document.getElementById('trace-threshold').disabled=this.checked"> Auto ink detection</label>
+          <input type="range" id="trace-threshold" min="0" max="255" step="5" value="128" disabled style="margin-top:8px;">
+          <span class="hint">Ink vs paper cutoff. Turn off Auto to set it by hand.</span>
+        </div>
+        <div class="tool-field">
+          <label for="trace-merge">Connect lines through junctions</label>
+          <input type="range" id="trace-merge" min="0" max="179" step="5" value="75">
+          <span class="hint">Higher keeps a line going straight through a crossing (line mode).</span>
+        </div>
+        <div class="tool-field">
+          <label for="trace-spur">Trim stray bits</label>
+          <input type="range" id="trace-spur" min="0" max="20" step="1" value="6">
+          <span class="hint">Removes little barbs left by tracing (line mode).</span>
+        </div>
+        <div class="tool-field">
+          <label for="trace-detail">Detail</label>
+          <input type="range" id="trace-detail" min="0.2" max="5" step="0.2" value="1.5">
+          <span class="hint">Lower = follow the drawing more tightly (more points).</span>
+        </div>
+        <div class="tool-field" style="margin-bottom:0;">
+          <label for="trace-minlen">Ignore tiny paths</label>
+          <input type="range" id="trace-minlen" min="0" max="40" step="1" value="5">
+        </div>
+      </details>
+    </div>
+
+    <!-- Upload + preview -->
+    <div class="tool-stage">
+      <div class="tool-drop" id="trace-drop" onclick="document.getElementById('trace-file').click()">
+        <input type="file" id="trace-file" accept="image/*" hidden onchange="traceFilePicked(this.files[0])">
+        <div id="trace-drop-label"><strong>Drop an image here</strong> or click to choose<br><span style="font-size:12px;">PNG, JPG, GIF, BMP, WEBP · up to 25 MB</span></div>
+      </div>
+      <div class="tool-actions">
+        <button class="btn btn-primary" id="trace-go" onclick="traceConvert()" disabled>Convert to SVG</button>
+        <span class="tool-busy" id="trace-busy">Tracing…</span>
+      </div>
+
+      <div class="tool-preview" id="trace-preview"><span class="placeholder">Your SVG preview will appear here</span></div>
+      <div class="tool-meta" id="trace-meta"></div>
+      <div class="tool-actions" id="trace-result-actions" style="display:none;">
+        <button class="btn btn-primary" onclick="traceDownload()">Download SVG</button>
+        <button class="btn btn-teal" onclick="traceSendToPlotter()" title="Reorder it for fastest plotting">Send to plotter optimizer →</button>
+      </div>
+      <div class="error-banner" id="trace-error"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== TOOL: PLOTTER OPTIMIZER ===================== -->
+<div class="page" id="page-plotter">
+  <span class="back-link" onclick="goHome()">← Dashboard</span>
+  <div class="step-header">
+    <div class="step-num">🐢</div>
+    <div>
+      <h1>Speed up a plot</h1>
+      <p class="sub" style="margin:0">Upload an SVG. We reorder its strokes so your pen plotter or Cricut draws it with the least wasted travel — the drawing itself doesn't change.</p>
+    </div>
+  </div>
+
+  <div class="tool-layout">
+    <div class="tool-panel">
+      <div class="tool-field">
+        <label class="tool-check"><input type="checkbox" id="plot-group" checked> Keep same colours together</label>
+        <span class="hint">Fewer pen swaps on a multi-pen plotter.</span>
+      </div>
+      <details class="tool-adv">
+        <summary>Advanced settings</summary>
+        <div class="tool-field" style="margin-top:12px;">
+          <label class="tool-check"><input type="checkbox" id="plot-reverse" checked> Allow drawing strokes backwards</label>
+          <span class="hint">Lets the pen enter a line at whichever end is closer.</span>
+        </div>
+        <div class="tool-field" style="margin-bottom:0;">
+          <label class="tool-check"><input type="checkbox" id="plot-twoopt" checked> Thorough mode</label>
+          <span class="hint">A second pass that untangles crossings (slower, tighter; auto-skips huge files).</span>
+        </div>
+      </details>
+    </div>
+
+    <div class="tool-stage">
+      <div class="tool-drop" id="plot-drop" onclick="document.getElementById('plot-file').click()">
+        <input type="file" id="plot-file" accept=".svg,image/svg+xml" hidden onchange="plotFilePicked(this.files[0])">
+        <div id="plot-drop-label"><strong>Drop an SVG here</strong> or click to choose<br><span style="font-size:12px;">SVG files · up to 25 MB</span></div>
+      </div>
+      <div class="tool-actions">
+        <button class="btn btn-primary" id="plot-go" onclick="plotOptimize()" disabled>Optimize draw order</button>
+        <span class="tool-busy" id="plot-busy">Reordering…</span>
+      </div>
+
+      <div class="tool-result-big" id="plot-result" style="display:none;"></div>
+      <div class="tool-preview" id="plot-preview"><span class="placeholder">Your optimized SVG preview will appear here</span></div>
+      <div class="tool-meta" id="plot-meta"></div>
+      <div class="tool-actions" id="plot-result-actions" style="display:none;">
+        <button class="btn btn-primary" onclick="plotDownload()">Download optimized SVG</button>
+      </div>
+      <div class="error-banner" id="plot-error"></div>
+    </div>
+  </div>
+</div>
+
 <!-- ===================== BUILD OVERLAY ===================== -->
 <!-- Full-screen "building your font" state shared by every rebuild
      (review → generate, spacing bake, border apply). -->
@@ -1118,6 +1370,8 @@ const PAGE_TITLES = {
   'page-review':   'Review your letters · snailmail.eco',
   'page-download': 'Your font is ready · snailmail.eco',
   'page-borders':  'Adjust letter borders · snailmail.eco',
+  'page-trace':    'Image → SVG · snailmail.eco',
+  'page-plotter':  'Speed up a plot · snailmail.eco',
 };
 function goTo(pageId) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -4291,6 +4545,242 @@ window.addEventListener('beforeunload', (e) => {
     e.returnValue = '';
   }
 });
+
+// ── Plotter / Cricut tools ─────────────────────────────────
+// Two stateless tools sharing the studio shell: Image→SVG (line/outline) and
+// the pen-plotter draw-order optimizer. No job state — straight fetch + render.
+
+function openTraceTool()   { resetTraceTool(); goTo('page-trace'); }
+function openPlotterTool() { goTo('page-plotter'); }
+
+function downloadText(filename, text, mime) {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function toolSetError(id, msg) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = msg || '';
+  el.style.display = msg ? 'block' : 'none';
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Wire a dropzone to a hidden file input (drag highlight + drop handling).
+function wireDropzone(dropId, onFile) {
+  const dz = document.getElementById(dropId);
+  if (!dz) return;
+  ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => {
+    e.preventDefault(); dz.classList.add('drag');
+  }));
+  ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => {
+    e.preventDefault(); dz.classList.remove('drag');
+  }));
+  dz.addEventListener('drop', e => {
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) onFile(f);
+  });
+}
+
+function renderSvgInto(boxId, svg) {
+  const box = document.getElementById(boxId);
+  box.innerHTML = svg;
+  const el = box.querySelector('svg');
+  if (el) { el.style.maxWidth = '100%'; el.style.height = 'auto'; }
+}
+
+// ── Image → SVG ──
+let traceMode = 'line';
+let traceFile = null, traceFileName = 'drawing', traceResultSvg = '';
+
+const TRACE_PRESETS = {
+  lineart:      { mode: 'line',    smooth: 60, specks: '20', detail: 1.5, thickness: '',  invert: false },
+  sketch:       { mode: 'line',    smooth: 85, specks: '20', detail: 2.4, thickness: '',  invert: false },
+  axidraw:      { mode: 'line',    smooth: 70, specks: '8',  detail: 1.5, thickness: '2', invert: false },
+  'cricut-pen': { mode: 'line',    smooth: 70, specks: '20', detail: 1.5, thickness: '4', invert: false },
+  'cricut-cut': { mode: 'outline', smooth: 40, specks: '20', detail: 1.2, thickness: '',  invert: false },
+};
+
+function resetTraceTool() {
+  traceFile = null; traceResultSvg = '';
+  document.getElementById('trace-go').disabled = true;
+  document.getElementById('trace-result-actions').style.display = 'none';
+  document.getElementById('trace-meta').textContent = '';
+  document.getElementById('trace-preview').innerHTML =
+    '<span class="placeholder">Your SVG preview will appear here</span>';
+  document.getElementById('trace-drop-label').innerHTML =
+    '<strong>Drop an image here</strong> or click to choose<br><span style="font-size:12px;">PNG, JPG, GIF, BMP, WEBP · up to 25 MB</span>';
+  toolSetError('trace-error', '');
+}
+
+function traceSetMode(mode) {
+  traceMode = mode;
+  document.querySelectorAll('#trace-mode button').forEach(b =>
+    b.classList.toggle('active', b.dataset.mode === mode));
+  document.getElementById('trace-mode-hint').textContent = mode === 'outline'
+    ? 'Traces the outside edge as a filled shape — for cutting machines and vinyl.'
+    : 'One line down the middle of each stroke — for pens, plotters, foil & scoring.';
+  document.getElementById('trace-color-label').textContent = mode === 'outline' ? 'Fill colour' : 'Line colour';
+  document.getElementById('trace-thickness-field').style.display = mode === 'outline' ? 'none' : '';
+}
+
+function traceApplyPreset(name) {
+  const p = TRACE_PRESETS[name];
+  if (!p) return;
+  document.getElementById('trace-smooth').value = p.smooth;
+  document.getElementById('trace-specks').value = p.specks;
+  document.getElementById('trace-detail').value = p.detail;
+  document.getElementById('trace-thickness').value = p.thickness;
+  document.getElementById('trace-invert').checked = p.invert;
+  traceSetMode(p.mode);
+}
+
+function traceFilePicked(file) {
+  if (!file) return;
+  traceFile = file;
+  traceFileName = (file.name || 'drawing').replace(/\.[^.]+$/, '') || 'drawing';
+  document.getElementById('trace-drop-label').innerHTML =
+    '<strong>' + escapeHtml(file.name) + '</strong><br><span style="font-size:12px;">Click to choose a different image</span>';
+  document.getElementById('trace-go').disabled = false;
+  toolSetError('trace-error', '');
+}
+
+async function traceConvert() {
+  if (!traceFile) return;
+  toolSetError('trace-error', '');
+  const go = document.getElementById('trace-go');
+  go.disabled = true;
+  document.getElementById('trace-busy').style.display = 'inline';
+
+  const thrAuto = document.getElementById('trace-thr-auto').checked;
+  const fd = new FormData();
+  fd.append('file', traceFile);
+  fd.append('mode', traceMode);
+  fd.append('threshold', thrAuto ? 'auto' : document.getElementById('trace-threshold').value);
+  fd.append('invert', document.getElementById('trace-invert').checked ? 'true' : 'false');
+  fd.append('min_object_size', document.getElementById('trace-specks').value);
+  fd.append('merge_angle', document.getElementById('trace-merge').value);
+  fd.append('spur_length', document.getElementById('trace-spur').value);
+  fd.append('simplify', document.getElementById('trace-detail').value);
+  fd.append('smoothing', (parseInt(document.getElementById('trace-smooth').value, 10) / 100).toFixed(2));
+  fd.append('min_path_length', document.getElementById('trace-minlen').value);
+  fd.append('stroke_width', document.getElementById('trace-thickness').value);
+  fd.append('stroke_color', document.getElementById('trace-color').value);
+
+  try {
+    const res = await fetch(`${API}/tools/image-to-svg`, { method: 'POST', body: fd });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Conversion failed (${res.status}).`);
+    }
+    const data = await res.json();
+    traceResultSvg = data.svg;
+    renderSvgInto('trace-preview', data.svg);
+    document.getElementById('trace-meta').textContent =
+      `${data.path_count} path${data.path_count === 1 ? '' : 's'} · ${data.width}×${data.height}px · ` +
+      (traceMode === 'outline' ? 'cut outline' : 'single line');
+    document.getElementById('trace-result-actions').style.display = 'flex';
+    if (data.path_count === 0) {
+      toolSetError('trace-error', 'No paths found. Try a clearer image, turn off “light on dark”, or raise the ink detection.');
+    }
+  } catch (e) {
+    toolSetError('trace-error', e.message || 'Conversion failed.');
+  } finally {
+    go.disabled = false;
+    document.getElementById('trace-busy').style.display = 'none';
+  }
+}
+
+function traceDownload() {
+  if (traceResultSvg) downloadText(`${traceFileName}-${traceMode}.svg`, traceResultSvg, 'image/svg+xml');
+}
+
+function traceSendToPlotter() {
+  if (!traceResultSvg) return;
+  plotIncomingSvg = traceResultSvg;
+  plotIncomingName = `${traceFileName}-${traceMode}`;
+  plotFile = null;
+  document.getElementById('plot-drop-label').innerHTML =
+    '<strong>Loaded from Image → SVG</strong><br><span style="font-size:12px;">or drop a different SVG to replace it</span>';
+  document.getElementById('plot-go').disabled = false;
+  document.getElementById('plot-result').style.display = 'none';
+  document.getElementById('plot-result-actions').style.display = 'none';
+  document.getElementById('plot-preview').innerHTML =
+    '<span class="placeholder">Your optimized SVG preview will appear here</span>';
+  document.getElementById('plot-meta').textContent = '';
+  toolSetError('plot-error', '');
+  goTo('page-plotter');
+}
+
+// ── Plotter optimizer ──
+let plotFile = null, plotIncomingSvg = null, plotIncomingName = 'drawing', plotResultSvg = '';
+
+function plotFilePicked(file) {
+  if (!file) return;
+  plotFile = file;
+  plotIncomingSvg = null;
+  plotIncomingName = (file.name || 'drawing').replace(/\.[^.]+$/, '') || 'drawing';
+  document.getElementById('plot-drop-label').innerHTML =
+    '<strong>' + escapeHtml(file.name) + '</strong><br><span style="font-size:12px;">Click to choose a different SVG</span>';
+  document.getElementById('plot-go').disabled = false;
+  toolSetError('plot-error', '');
+}
+
+async function plotOptimize() {
+  if (!plotFile && !plotIncomingSvg) return;
+  toolSetError('plot-error', '');
+  const go = document.getElementById('plot-go');
+  go.disabled = true;
+  document.getElementById('plot-busy').style.display = 'inline';
+
+  const fd = new FormData();
+  if (plotFile) {
+    fd.append('file', plotFile);
+  } else {
+    fd.append('file', new Blob([plotIncomingSvg], { type: 'image/svg+xml' }), `${plotIncomingName}.svg`);
+  }
+  fd.append('allow_reverse', document.getElementById('plot-reverse').checked ? 'true' : 'false');
+  fd.append('group_by_color', document.getElementById('plot-group').checked ? 'true' : 'false');
+  fd.append('two_opt', document.getElementById('plot-twoopt').checked ? 'true' : 'false');
+
+  try {
+    const res = await fetch(`${API}/tools/optimize-svg`, { method: 'POST', body: fd });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Optimization failed (${res.status}).`);
+    }
+    const data = await res.json();
+    plotResultSvg = data.svg;
+    renderSvgInto('plot-preview', data.svg);
+    const pct = (data.stats && data.stats.improvement_pct) || 0;
+    const resEl = document.getElementById('plot-result');
+    resEl.textContent = pct > 0 ? `Pen travel cut by ${pct}%` : 'Already well-ordered — no improvement found';
+    resEl.style.display = 'block';
+    document.getElementById('plot-meta').textContent =
+      `${data.path_count} stroke${data.path_count === 1 ? '' : 's'} · travel ${Math.round(data.original_travel)} → ${Math.round(data.optimized_travel)} units`;
+    document.getElementById('plot-result-actions').style.display = data.path_count ? 'flex' : 'none';
+  } catch (e) {
+    toolSetError('plot-error', e.message || 'Optimization failed.');
+  } finally {
+    go.disabled = false;
+    document.getElementById('plot-busy').style.display = 'none';
+  }
+}
+
+function plotDownload() {
+  if (plotResultSvg) downloadText(`${plotIncomingName}-optimized.svg`, plotResultSvg, 'image/svg+xml');
+}
+
+wireDropzone('trace-drop', traceFilePicked);
+wireDropzone('plot-drop', plotFilePicked);
 
 // ── Page init ──────────────────────────────────────────────
 updatePenStyleButtons();

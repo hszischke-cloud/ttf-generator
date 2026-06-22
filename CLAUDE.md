@@ -43,8 +43,26 @@ backend/
     ├── autospace.py         — optical side-bearing suggestions
     ├── centerline.py        — pen_paths → single-line SVG for the line OTF
     ├── perturb.py           — legacy outline jitter (permanently off)
-    └── proof_sheet.py       — OTF → SVG proof sheet
+    ├── proof_sheet.py       — OTF → SVG proof sheet
+    ├── plotter_opt.py       — SVG draw-order optimizer (NN + 2-opt, pen-up travel)
+    └── image_trace/         — image → SVG tracer (vendored): centerline (line)
+                               OR find_contours (outline); shared RDP + Bézier
 ```
+
+## Pen-plotter / Cricut tools (standalone, stateless)
+Two pure-function tools share the studio shell, aimed at the plotter/Cricut
+audience — no font or job state involved:
+- `POST /tools/image-to-svg` — upload an image, get a single-line **(mode=line,
+  centerline)** SVG for pens/plotters OR a filled **(mode=outline, even-odd)**
+  SVG for cutting. Backed by `processing/image_trace/` (PIL + scikit-image:
+  threshold→despeckle→skeletonize/centerline or find_contours/outline).
+- `POST /tools/optimize-svg` — reorder an SVG's strokes to minimise pen-up
+  travel (`processing/plotter_opt.py`). Returns original/optimized travel.
+
+Both run in a threadpool, lazily import the image stack, cap uploads at 25 MB,
+and downscale large inputs. UI: dashboard cards → `page-trace` / `page-plotter`
+in app.html (friendly presets + plain-language toggles; "Send to optimizer"
+hands the traced SVG straight to the optimizer).
 
 ## Pen weights (dimensional OTF)
 Every glyph stores `pen_paths` (raw centerline strokes, points
@@ -103,6 +121,8 @@ kept forever.
 | GET  | `/health` | |
 | GET  | `/`, `/ui` | studio (app.html; `/` redirects to `/ui`) |
 | GET  | `/create` | guided client creator (client.html) |
+| POST | `/tools/image-to-svg` | image → single-line (`mode=line`) or outline (`mode=outline`) SVG |
+| POST | `/tools/optimize-svg` | reorder SVG strokes to cut pen-plotter travel |
 | POST | `/draw/create` | new empty job |
 | POST | `/draw/{id}/glyph` | single glyph upsert (legacy) |
 | POST | `/draw/{id}/glyphs/batch` | **preferred** — one manifest write for N glyphs |
