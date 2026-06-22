@@ -25,7 +25,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from fastapi import (
+    BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile,
+)
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, Response
@@ -129,6 +131,130 @@ async def serve_client():
     """The locked-down guided creator for clients: intro screen, one prompted
     letter at a time, build, name + spacing, download. No dashboard access."""
     return _serve_html("client.html")
+
+
+# ---------------------------------------------------------------------------
+# Pen-plotter / Cricut tools — stateless image→SVG + plotter reorder.
+# These are pure functions (no job state / Supabase). Heavy CPU work runs in a
+# threadpool; image-stack imports are lazy so font-only usage never loads them.
+# ---------------------------------------------------------------------------
+
+MAX_TOOL_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
+
+
+def _tool_opt_int(value: Optional[str]) -> Optional[int]:
+    if value is None or value == "" or value.lower() == "auto":
+        return None
+    return int(value)
+
+
+def _tool_opt_float(value: Optional[str]) -> Optional[float]:
+    if value is None or value == "" or value.lower() == "auto":
+        return None
+    return float(value)
+
+
+@app.post("/tools/image-to-svg")
+async def tools_image_to_svg(
+    file: UploadFile = File(...),
+    mode: str = Form("line"),
+    threshold: Optional[str] = Form(None),
+    invert: bool = Form(False),
+    min_object_size: int = Form(12),
+    merge_angle: float = Form(75.0),
+    spur_length: int = Form(6),
+    simplify: float = Form(1.5),
+    smoothing: float = Form(1.0),
+    min_path_length: int = Form(5),
+    stroke_width: Optional[str] = Form(None),
+    stroke_color: str = Form("#5B4134"),
+):
+    """Convert an uploaded image into a single-line (pen) or outline (cut) SVG."""
+    from PIL import Image, UnidentifiedImageError
+    from processing.image_trace import TraceParams, trace
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Empty file.")
+    if len(raw) > MAX_TOOL_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 25 MB).")
+    try:
+        image = Image.open(io.BytesIO(raw))
+        image.load()
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(status_code=400, detail="Unsupported or corrupt image.")
+
+    params = TraceParams(
+        mode="outline" if str(mode).lower() == "outline" else "line",
+        threshold=_tool_opt_int(threshold),
+        invert=invert,
+        min_object_size=max(0, min_object_size),
+        merge_angle=min(max(merge_angle, 0.0), 179.0),
+        spur_length=max(0, spur_length),
+        simplify=max(0.0, simplify),
+        smoothing=min(max(smoothing, 0.0), 1.0),
+        min_path_length=max(0, min_path_length),
+        stroke_width=_tool_opt_float(stroke_width),
+        stroke_color=stroke_color,
+    )
+    try:
+        result = await run_in_threadpool(trace, image, params)
+    except Exception as exc:  # surface engine errors cleanly
+        raise HTTPException(status_code=500, detail=f"Tracing failed: {exc}")
+
+    return {
+        "svg": result.svg,
+        "width": result.width,
+        "height": result.height,
+        "path_count": result.path_count,
+        "stroke_width": result.stroke_width,
+        "stats": result.stats,
+    }
+
+
+@app.post("/tools/optimize-svg")
+async def tools_optimize_svg(
+    file: UploadFile = File(...),
+    allow_reverse: bool = Form(True),
+    group_by_color: bool = Form(True),
+    two_opt: bool = Form(True),
+):
+    """Reorder an SVG's strokes to minimise pen-plotter pen-up travel."""
+    from processing.plotter_opt import optimize_svg
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Empty file.")
+    if len(raw) > MAX_TOOL_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 25 MB).")
+    try:
+        svg_text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File is not a text/SVG file.")
+
+    try:
+        result = await run_in_threadpool(
+            lambda: optimize_svg(
+                svg_text,
+                allow_reverse=allow_reverse,
+                group_by_color=group_by_color,
+                two_opt=two_opt,
+            )
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # surface engine errors cleanly
+        raise HTTPException(status_code=500, detail=f"Reordering failed: {exc}")
+
+    return {
+        "svg": result.svg,
+        "width": result.width,
+        "height": result.height,
+        "path_count": result.path_count,
+        "original_travel": round(result.original_travel, 2),
+        "optimized_travel": round(result.optimized_travel, 2),
+        "stats": result.stats,
+    }
 
 
 @app.post("/draw/create")

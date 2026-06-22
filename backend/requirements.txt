@@ -3,3 +3,9 @@ uvicorn[standard]==0.32.1
 fonttools[woff]==4.55.3
 brotli==1.1.0
 supabase>=2.10.0
+python-multipart>=0.0.9
+# Pen-plotter / Cricut tools: image→SVG centerline + outline tracing.
+pillow>=10.0
+numpy>=1.24
+scipy>=1.10
+scikit-image>=0.22
