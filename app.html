@@ -4553,6 +4553,31 @@ window.addEventListener('beforeunload', (e) => {
 function openTraceTool()   { resetTraceTool(); goTo('page-trace'); }
 function openPlotterTool() { goTo('page-plotter'); }
 
+// Upload limits — fetched from the backend so the UI matches the server caps.
+let toolLimits = {
+  max_image_mb: 15, max_image_megapixels: 40, max_svg_mb: 5,
+  allowed_image_label: 'PNG, JPG, GIF, BMP, WEBP, TIFF',
+};
+async function loadToolLimits() {
+  try {
+    const r = await fetch(`${API}/tools/limits`);
+    if (r.ok) toolLimits = await r.json();
+  } catch (e) { /* keep sensible defaults */ }
+  const tl = document.getElementById('trace-drop-label');
+  if (tl) tl.innerHTML = traceDropDefault();
+  const pl = document.getElementById('plot-drop-label');
+  if (pl) pl.innerHTML = plotDropDefault();
+}
+function traceDropDefault() {
+  return '<strong>Drop an image here</strong> or click to choose<br>' +
+    '<span style="font-size:12px;">' + escapeHtml(toolLimits.allowed_image_label) +
+    ' · up to ' + toolLimits.max_image_mb + ' MB / ' + Math.round(toolLimits.max_image_megapixels) + ' MP</span>';
+}
+function plotDropDefault() {
+  return '<strong>Drop an SVG here</strong> or click to choose<br>' +
+    '<span style="font-size:12px;">SVG files · up to ' + toolLimits.max_svg_mb + ' MB</span>';
+}
+
 function downloadText(filename, text, mime) {
   const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -4616,8 +4641,7 @@ function resetTraceTool() {
   document.getElementById('trace-meta').textContent = '';
   document.getElementById('trace-preview').innerHTML =
     '<span class="placeholder">Your SVG preview will appear here</span>';
-  document.getElementById('trace-drop-label').innerHTML =
-    '<strong>Drop an image here</strong> or click to choose<br><span style="font-size:12px;">PNG, JPG, GIF, BMP, WEBP · up to 25 MB</span>';
+  document.getElementById('trace-drop-label').innerHTML = traceDropDefault();
   toolSetError('trace-error', '');
 }
 
@@ -4645,6 +4669,21 @@ function traceApplyPreset(name) {
 
 function traceFilePicked(file) {
   if (!file) return;
+  // Friendly client-side pre-checks; the server re-validates everything.
+  const looksImage = /^image\//.test(file.type) || /\.(png|jpe?g|gif|bmp|webp|tiff?)$/i.test(file.name);
+  if (!looksImage) {
+    traceFile = null;
+    document.getElementById('trace-go').disabled = true;
+    toolSetError('trace-error', 'That doesn’t look like an image. Supported types: ' + toolLimits.allowed_image_label + '.');
+    return;
+  }
+  if (file.size > toolLimits.max_image_mb * 1024 * 1024) {
+    traceFile = null;
+    document.getElementById('trace-go').disabled = true;
+    toolSetError('trace-error', 'That image is ' + (file.size / 1048576).toFixed(1) + ' MB, over the ' +
+      toolLimits.max_image_mb + ' MB limit. Export it smaller and try again.');
+    return;
+  }
   traceFile = file;
   traceFileName = (file.name || 'drawing').replace(/\.[^.]+$/, '') || 'drawing';
   document.getElementById('trace-drop-label').innerHTML =
@@ -4725,6 +4764,20 @@ let plotFile = null, plotIncomingSvg = null, plotIncomingName = 'drawing', plotR
 
 function plotFilePicked(file) {
   if (!file) return;
+  const looksSvg = /svg/i.test(file.type) || /\.svg$/i.test(file.name);
+  if (!looksSvg) {
+    plotFile = null;
+    document.getElementById('plot-go').disabled = true;
+    toolSetError('plot-error', 'That doesn’t look like an SVG. Choose a .svg file (the kind a plotter or Cricut uses).');
+    return;
+  }
+  if (file.size > toolLimits.max_svg_mb * 1024 * 1024) {
+    plotFile = null;
+    document.getElementById('plot-go').disabled = true;
+    toolSetError('plot-error', 'That SVG is ' + (file.size / 1048576).toFixed(1) + ' MB, over the ' +
+      toolLimits.max_svg_mb + ' MB limit.');
+    return;
+  }
   plotFile = file;
   plotIncomingSvg = null;
   plotIncomingName = (file.name || 'drawing').replace(/\.[^.]+$/, '') || 'drawing';
@@ -4786,6 +4839,7 @@ wireDropzone('plot-drop', plotFilePicked);
 updatePenStyleButtons();
 updateResumeCard();
 loadSavedFonts();
+loadToolLimits();
 // Point the share-with-a-client link at the backend origin (API is '' when
 // this page is served by the backend itself, so the relative href works).
 // /create serves the locked-down guided creator (client.html).

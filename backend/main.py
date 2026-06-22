@@ -137,9 +137,12 @@ async def serve_client():
 # Pen-plotter / Cricut tools — stateless image→SVG + plotter reorder.
 # These are pure functions (no job state / Supabase). Heavy CPU work runs in a
 # threadpool; image-stack imports are lazy so font-only usage never loads them.
+# Upload caps + friendly errors live in processing/tool_limits.py.
 # ---------------------------------------------------------------------------
 
-MAX_TOOL_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
+from processing import tool_limits
+
+_MB = 1024 * 1024
 
 
 def _tool_opt_int(value: Optional[str]) -> Optional[int]:
@@ -152,6 +155,12 @@ def _tool_opt_float(value: Optional[str]) -> Optional[float]:
     if value is None or value == "" or value.lower() == "auto":
         return None
     return float(value)
+
+
+@app.get("/tools/limits")
+async def tools_limits():
+    """Upload limits, so the browser can pre-check files and show the rules."""
+    return tool_limits.public_limits()
 
 
 @app.post("/tools/image-to-svg")
@@ -173,16 +182,55 @@ async def tools_image_to_svg(
     from PIL import Image, UnidentifiedImageError
     from processing.image_trace import TraceParams, trace
 
+    # Guard PIL's decompression-bomb handling for this request.
+    Image.MAX_IMAGE_PIXELS = tool_limits.PIL_MAX_IMAGE_PIXELS
+
     raw = await file.read()
     if not raw:
-        raise HTTPException(status_code=400, detail="Empty file.")
-    if len(raw) > MAX_TOOL_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="File too large (max 25 MB).")
+        raise HTTPException(status_code=400, detail="That file was empty — please choose an image to convert.")
+    if len(raw) > tool_limits.MAX_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"That image is {len(raw) / _MB:.1f} MB, over the "
+                f"{tool_limits.public_limits()['max_image_mb']} MB limit. "
+                "Export it smaller (a JPG or PNG usually shrinks it a lot) and try again."
+            ),
+        )
+
     try:
         image = Image.open(io.BytesIO(raw))
-        image.load()
     except (UnidentifiedImageError, OSError):
-        raise HTTPException(status_code=400, detail="Unsupported or corrupt image.")
+        raise HTTPException(
+            status_code=415,
+            detail=f"We couldn't read that as an image. Supported types: {tool_limits.ALLOWED_IMAGE_LABEL}.",
+        )
+
+    fmt = (image.format or "").upper()
+    if fmt and fmt not in tool_limits.ALLOWED_IMAGE_FORMATS:
+        raise HTTPException(
+            status_code=415,
+            detail=f"That's a {fmt} file, which we can't trace. Supported types: {tool_limits.ALLOWED_IMAGE_LABEL}.",
+        )
+
+    # Reject oversized images from the header before decoding the pixels.
+    megapixels = (image.size[0] * image.size[1]) / 1_000_000
+    if megapixels > tool_limits.MAX_IMAGE_MEGAPIXELS:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"That image is {megapixels:.0f} megapixels "
+                f"({image.size[0]}×{image.size[1]}), over the "
+                f"{tool_limits.MAX_IMAGE_MEGAPIXELS:.0f} MP limit. Resize it smaller and try again."
+            ),
+        )
+
+    try:
+        image.load()
+    except Image.DecompressionBombError:
+        raise HTTPException(status_code=422, detail="That image is too large to process safely. Resize it smaller and try again.")
+    except OSError:
+        raise HTTPException(status_code=400, detail="That image looks corrupt or incomplete — try re-exporting it.")
 
     params = TraceParams(
         mode="outline" if str(mode).lower() == "outline" else "line",
@@ -196,6 +244,7 @@ async def tools_image_to_svg(
         min_path_length=max(0, min_path_length),
         stroke_width=_tool_opt_float(stroke_width),
         stroke_color=stroke_color,
+        max_dimension=tool_limits.MAX_TRACE_DIMENSION,
     )
     try:
         result = await run_in_threadpool(trace, image, params)
@@ -224,13 +273,22 @@ async def tools_optimize_svg(
 
     raw = await file.read()
     if not raw:
-        raise HTTPException(status_code=400, detail="Empty file.")
-    if len(raw) > MAX_TOOL_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="File too large (max 25 MB).")
+        raise HTTPException(status_code=400, detail="That file was empty — please choose an SVG file.")
+    if len(raw) > tool_limits.MAX_SVG_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"That SVG is {len(raw) / _MB:.1f} MB, over the "
+                f"{tool_limits.public_limits()['max_svg_mb']} MB limit."
+            ),
+        )
     try:
         svg_text = raw.decode("utf-8")
     except UnicodeDecodeError:
-        raise HTTPException(status_code=400, detail="File is not a text/SVG file.")
+        raise HTTPException(
+            status_code=415,
+            detail="That isn't a plain-text SVG. Export it as an uncompressed .svg (not .svgz or a binary) and try again.",
+        )
 
     try:
         result = await run_in_threadpool(
@@ -241,8 +299,11 @@ async def tools_optimize_svg(
                 two_opt=two_opt,
             )
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="We couldn't read that SVG. Make sure it's a valid, uncompressed .svg file.",
+        )
     except Exception as exc:  # surface engine errors cleanly
         raise HTTPException(status_code=500, detail=f"Reordering failed: {exc}")
 

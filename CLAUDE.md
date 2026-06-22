@@ -121,6 +121,7 @@ kept forever.
 | GET  | `/health` | |
 | GET  | `/`, `/ui` | studio (app.html; `/` redirects to `/ui`) |
 | GET  | `/create` | guided client creator (client.html) |
+| GET  | `/tools/limits` | upload caps for the tools (UI fetches these) |
 | POST | `/tools/image-to-svg` | image → single-line (`mode=line`) or outline (`mode=outline`) SVG |
 | POST | `/tools/optimize-svg` | reorder SVG strokes to cut pen-plotter travel |
 | POST | `/draw/create` | new empty job |
@@ -206,6 +207,11 @@ of app.html on every push/PR (`.github/workflows/ci.yml`).
 |-----|---------|
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | required by the backend |
 | `ALLOWED_ORIGINS` (default `*`) | CORS |
+| `TOOL_MAX_IMAGE_BYTES` (15 MB), `TOOL_MAX_IMAGE_MEGAPIXELS` (40), `TOOL_MAX_TRACE_DIMENSION` (2000), `TOOL_MAX_SVG_BYTES` (5 MB) | tool upload caps (`processing/tool_limits.py`) |
+
+Setup runbook, upload-limit details, and ready-to-paste SQL for future
+Supabase tables (rate-limiting, analytics, accounts) live in
+`docs/OPERATIONS.md`.
 
 ## Working preferences
 
