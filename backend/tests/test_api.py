@@ -107,9 +107,14 @@ def test_full_build_serve_and_bearing_override(client):
     assert s["status"] == "complete", s
 
     # font served via redirect to the content-versioned public URL
-    res = client.get(f"/fonts/{job_id}/Test_Font.otf", follow_redirects=False)
+    res = client.get(f"/fonts/{job_id}/Test_Font.ttf", follow_redirects=False)
     assert res.status_code == 302
     assert "/storage/v1/object/public/" in res.headers["location"]
+
+    # older jobs still request the .otf name; the "-Line" marker resolution
+    # maps it onto the same stored object, so it must still redirect.
+    res_legacy = client.get(f"/fonts/{job_id}/Test_Font.otf", follow_redirects=False)
+    assert res_legacy.status_code == 302
 
     # override round-trips into the bearings editor payload
     b = client.get(f"/process/{job_id}/bearings").json()
@@ -126,6 +131,41 @@ def test_full_build_serve_and_bearing_override(client):
     # settings reflect the latest build
     settings = client.get(f"/process/{job_id}/settings").json()
     assert settings["letter_spacing"] == 80
+
+
+def test_built_font_is_truetype_installable(client):
+    """The built font must be an installable TrueType (glyf) flavour — not the
+    CFF + COLR/CPAL flavour desktop OS installers reject."""
+    import io
+    from fontTools.ttLib import TTFont
+    from job_store import job_store
+
+    job_id = create_job(client)
+    client.post(f"/draw/{job_id}/glyphs/batch", json={"glyphs": make_glyphs()})
+    finalize(client, job_id)
+    assert wait_complete(client, job_id)["status"] == "complete"
+
+    state = job_store.get_state(job_id)
+    for kind in ("otf", "otf_line"):
+        path = state.get("font_files", {}).get(kind)
+        if not path:
+            continue
+        data = job_store.download_path(path)
+        assert data, f"{kind} font bytes missing from storage"
+        f = TTFont(io.BytesIO(data))
+        # TrueType sfnt — the byte OS installers validate.
+        assert f.sfntVersion == "\x00\x01\x00\x00", f"{kind} not TrueType"
+        # glyf outlines, none of the rejected CFF/colour tables.
+        assert "glyf" in f and "loca" in f
+        for banned in ("CFF ", "CFF2", "COLR", "CPAL"):
+            assert banned not in f, f"{kind} still carries {banned}"
+        # A Macintosh (1,0) cmap subtable beside the Windows one (Windows
+        # installer disliked its absence).
+        plats = {(s.platformID, s.platEncID) for s in f["cmap"].tables}
+        assert (1, 0) in plats and (3, 1) in plats
+        # a real 4-char vendor id, and a re-parseable glyph order.
+        assert f["OS/2"].achVendID.strip()
+        assert f.getGlyphOrder()
 
 
 def test_save_rename_delete(client):

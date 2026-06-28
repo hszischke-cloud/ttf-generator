@@ -387,7 +387,7 @@ body.on-draw .banner{ position:fixed; top:52px; left:50%; transform:translateX(-
     <div class="fc-sample" id="done-sample">Hello! Aa Bb Cc 123</div>
   </div>
   <div class="center">
-    <button class="btn btn-secondary btn-block btn-lg" id="done-download" onclick="downloadFont()">Download font (.otf)</button>
+    <button class="btn btn-secondary btn-block btn-lg" id="done-download" onclick="downloadFont()">Download font (.ttf)</button>
     <button class="btn btn-ghost" style="margin-top:10px" onclick="restart()">Create another font</button>
   </div>
 </section>
@@ -1258,6 +1258,12 @@ async function loadPreviewFont(){
   }catch(_){ /* preview will fall back to serif */ }
   const pv=document.getElementById('adj-preview');
   pv.style.fontFamily=`'${fam}', var(--font-serif)`;
+  // The font is monochrome (no baked-in COLR colour), so paint the preview in
+  // the chosen pen colour via CSS to match what the glyphs were drawn with.
+  if(Array.isArray(fontSettings.color)){
+    const [r,g,b]=fontSettings.color;
+    pv.style.color=`rgb(${r},${g},${b})`;
+  }
 }
 function onNameInput(){
   const v=document.getElementById('adj-name').value.trim();
@@ -1298,6 +1304,10 @@ async function finishAndSave(){
   document.getElementById('done-name').textContent=fontName;
   const sample=document.getElementById('done-sample');
   sample.style.fontFamily=`'${previewFontFamily}', var(--font-serif)`;
+  if(Array.isArray(fontSettings.color)){
+    const [r,g,b]=fontSettings.color;
+    sample.style.color=`rgb(${r},${g},${b})`;
+  }
   sample.textContent='Hello! Aa Bb Cc 123';
   showScreen('screen-done');
 }
@@ -1305,7 +1315,7 @@ function downloadFont(){
   // Use the authoritative URL the backend returned at finalize (its filename
   // only swaps spaces for underscores — reconstructing it here would mismatch
   // for names with punctuation).
-  const dl = (fontName.replace(/\s+/g,'_') || 'MyFont') + '.otf';
+  const dl = (fontName.replace(/\s+/g,'_') || 'MyFont') + '.ttf';
   const a=document.createElement('a');
   a.href=`${API}${otfUrl}`;
   a.download=dl;

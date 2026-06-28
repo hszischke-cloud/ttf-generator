@@ -306,8 +306,8 @@ async def finalize(job_id: str, req: FinalizeRequest, background_tasks: Backgrou
     safe_name = font_name.replace(" ", "_")
     return FinalizeResponse(
         job_id=job_id,
-        otf_url=f"{base}/{safe_name}.otf",
-        otf_line_url=f"{base}/{safe_name}-Line.otf",
+        otf_url=f"{base}/{safe_name}.ttf",
+        otf_line_url=f"{base}/{safe_name}-Line.ttf",
     )
 
 
@@ -340,11 +340,11 @@ async def proof_sheet(job_id: str, font: str = "line"):
     is_line = font == "line"
 
     if is_line:
-        filename = f"{safe_name}-Line.otf"
+        filename = f"{safe_name}-Line.ttf"
         title = f"{font_name} — Line (single-line proof)"
         skipped = state.get("line_skipped_glyphs") or []
     else:
-        filename = f"{safe_name}.otf"
+        filename = f"{safe_name}.ttf"
         title = f"{font_name} — Regular (proof)"
         skipped = []
 
@@ -376,14 +376,19 @@ def _resolve_font_path(state: dict, job_id: str, filename: str) -> str:
     Map a requested font filename to its actual storage path.
 
     The build records content-versioned paths in state["font_files"]
-    ({"otf": ".../<hash>/Name.otf", "otf_line": ...}). We resolve against that
+    ({"otf": ".../<hash>/Name.ttf", "otf_line": ...}). We resolve against that
     so the served path always points at the current build's immutable, cacheable
     object. Falls back to the legacy unversioned path for jobs built before
     versioning existed.
+
+    The line font is matched by the "-Line" marker in the requested filename
+    rather than a fixed extension, so this resolves whether the client asks for
+    "Name-Line.ttf" (current) or "Name-Line.otf" (older jobs / the proof
+    sheet's internal lookups).
     """
     clean_name = filename.split("?")[0]
     font_files = state.get("font_files") or {}
-    kind = "otf_line" if clean_name.endswith("-Line.otf") else "otf"
+    kind = "otf_line" if "-Line" in clean_name else "otf"
     path = font_files.get(kind)
     if path:
         return path
@@ -987,6 +992,24 @@ def _build_font_job(job_id: str):
             job_store.update_state(job_id, progress_pct=70)
             line_otf_bytes, line_fea_warning = line_future.result()
 
+        # Self-check: re-parse each built font from its raw bytes before it's
+        # ever uploaded or marked complete. build_otf rewrites the font into an
+        # installable TrueType (glyf) flavour; if a build somehow produced an
+        # unparseable file or didn't end up TrueType, fail the job instead of
+        # shipping a font the OS would reject. Cheap insurance against a future
+        # regression silently offering a broken download again.
+        from fontTools.ttLib import TTFont as _TTFont
+        for _label, _bytes in (("regular", otf_bytes), ("line", line_otf_bytes)):
+            if not _bytes:
+                continue
+            try:
+                _probe = _TTFont(io.BytesIO(_bytes))
+                _probe.getGlyphOrder()
+                if _probe.sfntVersion != "\x00\x01\x00\x00":
+                    raise ValueError(f"unexpected sfntVersion {_probe.sfntVersion!r}")
+            except Exception as _exc:
+                raise RuntimeError(f"built {_label} font failed validation: {_exc}")
+
         job_store.update_state(job_id, progress_pct=85)
 
         safe_name = font_name.replace(" ", "_")
@@ -1001,12 +1024,14 @@ def _build_font_job(job_id: str):
         def _upload(filename, data):
             version = hashlib.sha1(data).hexdigest()[:12]
             return job_store.upload_font_file(
-                job_id, filename, data, "font/otf", version=version
+                job_id, filename, data, "font/ttf", version=version
             )
 
-        uploads = [(f"{safe_name}.otf", otf_bytes)]
+        # Files are now installable TrueType (.ttf); the font_files dict keys
+        # stay "otf"/"otf_line" (internal labels) so older jobs resolve too.
+        uploads = [(f"{safe_name}.ttf", otf_bytes)]
         if line_otf_bytes:
-            uploads.append((f"{safe_name}-Line.otf", line_otf_bytes))
+            uploads.append((f"{safe_name}-Line.ttf", line_otf_bytes))
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             paths = list(pool.map(lambda t: _upload(*t), uploads))

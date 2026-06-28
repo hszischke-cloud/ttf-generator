@@ -968,7 +968,7 @@
   </div>
 
   <div class="download-btns" style="margin-top:20px;">
-    <button id="otf-btn" class="btn btn-primary" onclick="downloadFont('otf')">Download OTF</button>
+    <button id="otf-btn" class="btn btn-primary" onclick="downloadFont('ttf')">Download Font</button>
     <button id="proof-btn" class="btn btn-teal" onclick="openProofSheet('dimensional')" style="margin-left:4px;">Proof sheet ↗</button>
     <button id="borders-edit-btn" class="btn btn-teal" onclick="openBordersEditor(jobId, currentFontName)" style="margin-left:4px;">Adjust borders</button>
     <button id="save-font-btn" class="btn btn-teal" onclick="saveFont()" style="margin-left:4px;">Save to My Fonts</button>
@@ -978,17 +978,17 @@
   <div id="line-section" class="line-section">
     <div class="ls-title">Single-line version (for pen plotters)</div>
     <p style="margin:0 0 12px 0;">
-      Each stroke is a centerline path, so when you convert the OTF to SVG the pen plotter
+      Each stroke is a centerline path, so when you convert the font to SVG the pen plotter
       draws each letter as one line instead of tracing both edges. Preview above shows the
       dimensional version; the line font may not render correctly in browsers.
     </p>
     <div class="download-btns" style="margin:0;">
-      <button id="otf-line-btn" class="btn btn-primary" onclick="downloadFont('otf', true)">Download Line OTF</button>
+      <button id="otf-line-btn" class="btn btn-primary" onclick="downloadFont('ttf', true)">Download Line Font</button>
       <button id="proof-line-btn" class="btn btn-teal" onclick="openProofSheet('line')">Verify line glyphs ↗</button>
       <span id="line-skipped-note" class="warn-note"></span>
     </div>
     <p style="font-size:12px;margin:8px 0 0 0;">
-      “Verify line glyphs” opens a proof sheet rendered from the actual OTF outlines so you can
+      “Verify line glyphs” opens a proof sheet rendered from the actual font outlines so you can
       check every single-line glyph rendered correctly (degenerate or missing glyphs are flagged).
     </p>
     <div id="line-unavailable" class="warn-note" style="display:none;margin-top:10px;">
@@ -1000,9 +1000,9 @@
   <details class="install-help">
     <summary>How do I install my font?</summary>
     <div class="install-help-body">
-      <p><strong>Mac:</strong> double-click the downloaded <code>.otf</code> → click <em>Install Font</em>. It appears in every app's font menu.</p>
-      <p><strong>Windows:</strong> right-click the <code>.otf</code> → <em>Install</em> (or <em>Install for all users</em>).</p>
-      <p><strong>iPhone / iPad:</strong> install a font manager like <em>iFont</em> from the App Store, open the <code>.otf</code> with it, then allow the profile in Settings.</p>
+      <p><strong>Mac:</strong> double-click the downloaded <code>.ttf</code> → click <em>Install Font</em>. It appears in every app's font menu.</p>
+      <p><strong>Windows:</strong> right-click the <code>.ttf</code> → <em>Install</em> (or <em>Install for all users</em>).</p>
+      <p><strong>iPhone / iPad:</strong> install a font manager like <em>iFont</em> from the App Store, open the <code>.ttf</code> with it, then allow the profile in Settings.</p>
       <p><strong>In documents:</strong> after installing, pick the font by the name you gave it. Alternates cycle automatically in apps that support contextual alternates (Pages, Word, browsers).</p>
     </div>
   </details>
@@ -1392,7 +1392,7 @@ async function finalize() {
 // ── Download page ─────────────────────────────────────────────
 async function showDownloadPage(feaWarning, cacheBust, lineInfo) {
   const v = cacheBust || Date.now();
-  const otfUrl = `${API}/fonts/${jobId}/${fontSafeName}.otf?v=${v}`;
+  const otfUrl = `${API}/fonts/${jobId}/${fontSafeName}.ttf?v=${v}`;
 
   // Cursive: hide the letter-spacing slider (adjusting it breaks connections)
   // and seed a multi-word phrase that exercises init/medi/fina rules so the
@@ -1463,7 +1463,7 @@ async function showDownloadPage(feaWarning, cacheBust, lineInfo) {
     style.id = 'preview-style';
     document.head.appendChild(style);
   }
-  style.textContent = `@font-face { font-family: '${family}'; src: url('${otfUrl}') format('opentype'); }`;
+  style.textContent = `@font-face { font-family: '${family}'; src: url('${otfUrl}') format('truetype'); }`;
 
   try {
     // Trigger load and wait — this resolves only when the font is fully decoded
@@ -3329,7 +3329,7 @@ function applySavedFontFace(jobId, fontName, nameEl) {
   if (!savedFaceCss.textContent.includes(family)) {
     const safe = fontName.replace(/\s+/g, '_');
     savedFaceCss.textContent +=
-      `@font-face{font-family:'${family}';src:url('${API}/fonts/${jobId}/${encodeURIComponent(safe)}.otf') format('opentype');font-display:swap;}\n`;
+      `@font-face{font-family:'${family}';src:url('${API}/fonts/${jobId}/${encodeURIComponent(safe)}.ttf') format('truetype');font-display:swap;}\n`;
   }
   nameEl.style.fontFamily = `'${family}', var(--font-serif)`;
   nameEl.classList.add('has-face');
@@ -3425,11 +3425,11 @@ function renderSavedFonts(fonts) {
           <div class="dd">
             <button class="btn btn-coral-o btn-sm dd-toggle" onclick="toggleDD(this)">Download <span class="dd-caret">▾</span></button>
             <div class="dd-menu">
-              <button onclick="downloadSavedFont('${f.job_id}','${escHtml(f.font_name)}',false)" title="Download the normal OTF">OTF</button>
-              <button onclick="downloadSavedFont('${f.job_id}','${escHtml(f.font_name)}',true)" title="Single-line OTF for pen plotters">Line OTF (pen plotter)</button>
+              <button onclick="downloadSavedFont('${f.job_id}','${escHtml(f.font_name)}',false)" title="Download the font (.ttf)">Font (.ttf)</button>
+              <button onclick="downloadSavedFont('${f.job_id}','${escHtml(f.font_name)}',true)" title="Single-line font for pen plotters">Line font (pen plotter)</button>
             </div>
           </div>` : `
-          <button class="btn btn-coral-o btn-sm" onclick="downloadSavedFont('${f.job_id}','${escHtml(f.font_name)}',false)" title="Download the normal OTF">Download</button>`}
+          <button class="btn btn-coral-o btn-sm" onclick="downloadSavedFont('${f.job_id}','${escHtml(f.font_name)}',false)" title="Download the font (.ttf)">Download</button>`}
           <div class="dd">
             <button class="btn btn-teal-o btn-sm dd-toggle" onclick="toggleDD(this)">Edit <span class="dd-caret">▾</span></button>
             <div class="dd-menu">
@@ -3579,7 +3579,7 @@ async function saveFont() {
 
 function downloadSavedFont(jobId, fontName, line) {
   const safe = fontName.replace(/\s+/g, '_');
-  const filename = line ? `${safe}-Line.otf` : `${safe}.otf`;
+  const filename = line ? `${safe}-Line.ttf` : `${safe}.ttf`;
   const a = document.createElement('a');
   a.href = `${API}/fonts/${jobId}/${encodeURIComponent(filename)}?v=${Date.now()}`;
   a.download = filename;

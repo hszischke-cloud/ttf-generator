@@ -832,9 +832,203 @@ def build_otf(
             fea_warning = str(e)
             print(f"Warning: feaLib error (features skipped): {e}")
 
+    # Rewrite into an installable TrueType (glyf) font. The CFF + COLR/CPAL
+    # colour-font flavour fontBuilder emits renders fine in browsers (they run
+    # every font through the OpenType Sanitizer first) but the Windows and
+    # macOS installers validate the raw bytes far more strictly and reject it
+    # ("not a valid font file"). Converting to plain glyf outlines and filling
+    # in the tables real installable fonts carry is what makes the downloaded
+    # file installable. The baked ink colour is dropped with COLR/CPAL — the
+    # web preview paints the chosen colour via CSS instead.
+    _finalize_truetype(fb.font)
+
     buf = io.BytesIO()
     fb.font.save(buf)
     return buf.getvalue(), fea_warning
+
+
+# ---------------------------------------------------------------------------
+# TrueType finalization — make the font installable on desktop OSes
+# ---------------------------------------------------------------------------
+
+# cu2qu approximates each CFF cubic with TrueType quadratics to within this
+# error (UPM units). 1.0 at UPM 1000 is visually lossless while keeping the
+# converted point count reasonable.
+_CU2QU_MAX_ERR = 1.0
+
+# 4-char OpenType vendor id stamped into OS/2.achVendID. Real fonts carry one;
+# some validators flag the all-spaces default.
+_VENDOR_ID = "SNML"
+
+
+def _finalize_truetype(font) -> None:
+    """
+    Rewrite an in-memory CFF/OTF font (as produced by build_otf) into a
+    structurally complete TrueType (glyf) font that desktop OS font installers
+    accept, mutating *font* in place.
+
+    Browsers run every font through the OpenType Sanitizer first and happily
+    render the CFF + COLR/CPAL colour-font flavour build_otf emits, but the
+    Windows and macOS installers validate the raw bytes far more strictly and
+    refuse that flavour. This:
+
+      * converts CFF cubic outlines to TrueType glyf quadratics (cu2qu, with
+        reversed winding since TrueType fills the opposite direction) and drops
+        the CFF / CFF2 / VORG / COLR / CPAL tables,
+      * promotes maxp 0.5 → 1.0 and fixes up head (loca format, lowest PPEM,
+        flags, revision, bbox),
+      * sets left side bearings to xMin (the glyf convention) WITHOUT touching
+        advance widths, so spacing/bearings never shift,
+      * adds a Macintosh (1,0) cmap subtable beside the Windows one and maps
+        non-breaking-space to the space glyph,
+      * adds a gasp table (gridfit + grayscale at all sizes),
+      * fills OS/2 Windows-compatibility fields (cp1252 code-page bit, a real
+        vendor id, Unicode-range bits recomputed from the cmap), and
+      * adds the name records validators expect (unique id 3, version 5,
+        typographic family/subfamily 16/17).
+
+    Outlines, advance widths, cmap mappings and OpenType (GSUB) features are all
+    preserved, so spacing and shaping are unchanged. Side effect: the baked ink
+    colour is gone (COLR/CPAL stripped); the web preview applies it via CSS.
+    """
+    from fontTools.pens.cu2quPen import Cu2QuPen
+    from fontTools.pens.ttGlyphPen import TTGlyphPen
+    from fontTools.ttLib import newTable
+    from fontTools.ttLib.tables._c_m_a_p import CmapSubtable
+
+    glyph_order = font.getGlyphOrder()
+
+    # 1) CFF cubic outlines → TrueType glyf quadratics. TrueType fills with the
+    #    opposite winding to CFF, so reverse each contour during conversion.
+    if "CFF " in font or "CFF2" in font:
+        glyph_set = font.getGlyphSet()
+        glyf = newTable("glyf")
+        glyf.glyphOrder = glyph_order
+        glyphs = {}
+        for name in glyph_order:
+            tt_pen = TTGlyphPen(glyphs)
+            cu2qu = Cu2QuPen(tt_pen, _CU2QU_MAX_ERR, reverse_direction=True)
+            glyph_set[name].draw(cu2qu)
+            glyphs[name] = tt_pen.glyph()
+        glyf.glyphs = glyphs
+        font["glyf"] = glyf
+        # loca is filled from glyf at compile time, but the object must exist.
+        font["loca"] = newTable("loca")
+
+    # Drop the CFF / colour / vertical-origin tables that don't belong in glyf.
+    for tag in ("CFF ", "CFF2", "VORG", "COLR", "CPAL"):
+        if tag in font:
+            del font[tag]
+
+    glyf = font["glyf"]
+    hmtx = font["hmtx"]
+
+    # 2) Recompute per-glyph bounds; left side bearing = xMin (the glyf
+    #    convention head.flags bit 1 asserts). Advance widths stay exactly as
+    #    computed so spacing/bearings never move.
+    xs_min, ys_min, xs_max, ys_max = [], [], [], []
+    for name in glyph_order:
+        g = glyf[name]
+        g.recalcBounds(glyf)
+        adv = hmtx[name][0]
+        if getattr(g, "numberOfContours", 0) == 0:
+            hmtx[name] = (adv, 0)              # empty glyph (space): lsb 0
+            continue
+        hmtx[name] = (adv, g.xMin)
+        xs_min.append(g.xMin); ys_min.append(g.yMin)
+        xs_max.append(g.xMax); ys_max.append(g.yMax)
+
+    # 3) sfnt version → TrueType. This is the byte the OS installer checks.
+    font.sfntVersion = "\x00\x01\x00\x00"
+
+    # 4) maxp 0.5 → 1.0. The glyf-derived maxima (maxPoints, maxContours, …)
+    #    are recomputed from the glyf table when maxp compiles; we just need the
+    #    version bumped and the static TrueType fields present.
+    maxp = font["maxp"]
+    maxp.tableVersion = 0x00010000
+    for fieldname, default in (
+        ("maxZones", 1), ("maxTwilightPoints", 0), ("maxStorage", 0),
+        ("maxFunctionDefs", 0), ("maxInstructionDefs", 0),
+        ("maxStackElements", 0), ("maxSizeOfInstructions", 0),
+        ("maxComponentElements", 0), ("maxComponentDepth", 0),
+    ):
+        if not hasattr(maxp, fieldname):
+            setattr(maxp, fieldname, default)
+
+    # 5) head fix-ups.
+    head = font["head"]
+    if xs_min:
+        head.xMin, head.yMin = min(xs_min), min(ys_min)
+        head.xMax, head.yMax = max(xs_max), max(ys_max)
+    head.glyphDataFormat = 0
+    head.indexToLocFormat = 0       # loca.compile bumps to 1 (long) if needed
+    head.lowestRecPPEM = 8
+    head.flags |= 0x000B            # baseline@0, lsb@xMin, integer ppem
+    head.fontRevision = 1.0
+
+    # 6) post: keep glyph names (format 2.0). CFF fonts emit post 3.0 (names
+    #    live in the CFF, which we just deleted); without names the proof sheet
+    #    and any name-based tooling would see synthetic "glyphNNN" names after a
+    #    round-trip.
+    post = font["post"]
+    if post.formatType != 2.0:
+        post.formatType = 2.0
+        post.extraNames = []
+        post.mapping = {}
+        post.glyphOrder = None
+
+    # 7) cmap: keep the Unicode/Windows subtables and ADD a Macintosh (1,0)
+    #    one — its absence was one thing the Windows installer disliked. Also
+    #    map non-breaking-space to the space glyph.
+    best = dict(font.getBestCmap())
+    if "space" in glyph_order:
+        best.setdefault(0x00A0, "space")
+    cmap = newTable("cmap")
+    cmap.tableVersion = 0
+    sub_uni = CmapSubtable.newSubtable(4)
+    sub_uni.platformID, sub_uni.platEncID, sub_uni.format, sub_uni.language = 0, 3, 4, 0
+    sub_uni.cmap = dict(best)
+    sub_win = CmapSubtable.newSubtable(4)
+    sub_win.platformID, sub_win.platEncID, sub_win.format, sub_win.language = 3, 1, 4, 0
+    sub_win.cmap = dict(best)
+    sub_mac = CmapSubtable.newSubtable(0)
+    sub_mac.platformID, sub_mac.platEncID, sub_mac.format, sub_mac.language = 1, 0, 0, 0
+    sub_mac.cmap = {cp: n for cp, n in best.items() if cp < 256}
+    cmap.tables = [sub_mac, sub_uni, sub_win]
+    font["cmap"] = cmap
+
+    # 8) gasp: gridfit + grayscale at every size.
+    gasp = newTable("gasp")
+    gasp.version = 1
+    gasp.gaspRange = {0xFFFF: 0x000F}
+    font["gasp"] = gasp
+
+    # 9) OS/2 Windows-compatibility fields.
+    os2 = font["OS/2"]
+    os2.achVendID = _VENDOR_ID
+    if hasattr(os2, "ulCodePageRange1"):
+        os2.ulCodePageRange1 |= 0x00000001        # Latin-1 / cp1252
+    for recalc in ("recalcUnicodeRanges", "recalcAvgCharWidth"):
+        fn = getattr(os2, recalc, None)
+        if fn is not None:
+            try:
+                fn(font)
+            except Exception:
+                pass
+
+    # 10) name records validators expect: unique id (3), version (5), and
+    #     typographic family/subfamily (16/17, mirroring 1/2). Set on both the
+    #     Windows (3,1,0x409) and Macintosh (1,0,0) platforms.
+    name = font["name"]
+    family = name.getDebugName(1) or "Font"
+    subfamily = name.getDebugName(2) or "Regular"
+    ps_name = name.getDebugName(6) or family.replace(" ", "")
+    unique_id = f"{_VENDOR_ID};1.000;{ps_name}"
+    for plat, enc, lang in ((3, 1, 0x409), (1, 0, 0)):
+        name.setName(unique_id, 3, plat, enc, lang)
+        name.setName("Version 1.000", 5, plat, enc, lang)
+        name.setName(family, 16, plat, enc, lang)
+        name.setName(subfamily, 17, plat, enc, lang)
 
 
 # ---------------------------------------------------------------------------

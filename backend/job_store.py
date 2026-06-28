@@ -226,7 +226,7 @@ class JobStore:
         """
         Return full paths of every object under *prefix*, descending into
         subfolders. Font output now lives in content-versioned subfolders
-        ({job_id}/output/{version}/Name.otf), so a single non-recursive list of
+        ({job_id}/output/{version}/Name.ttf), so a single non-recursive list of
         {job_id}/output only yields folder placeholders and would leak the
         actual objects on cleanup.
         """

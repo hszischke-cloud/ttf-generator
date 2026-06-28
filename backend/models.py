@@ -85,6 +85,9 @@ class PenStyleRequest(BaseModel):
 
 class FinalizeResponse(BaseModel):
     job_id: str
+    # Download URLs for the built fonts. The files are installable TrueType
+    # (.ttf) now — the field names stay otf_* for backward compatibility with
+    # existing clients that read them.
     otf_url: str
     otf_line_url: str
 
