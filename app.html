@@ -3318,8 +3318,14 @@ async function loadSavedFonts() {
 // Render a saved font's name in the font itself — lazy @font-face against the
 // stored OTF (cached by the CDN, fetched only when the browser paints it).
 let savedFaceCss = null;
-function applySavedFontFace(jobId, fontName, nameEl) {
+function applySavedFontFace(jobId, fontName, nameEl, penColor) {
   if (!nameEl) return;
+  // The served .ttf is monochrome (COLR/CPAL stripped so it installs on
+  // desktop OSes), so paint the card name in the font's ink colour via CSS.
+  if (Array.isArray(penColor)) {
+    const [r, g, b] = penColor;
+    nameEl.style.color = `rgb(${r},${g},${b})`;
+  }
   if (!savedFaceCss) {
     savedFaceCss = document.createElement('style');
     savedFaceCss.id = 'saved-faces';
@@ -3468,7 +3474,7 @@ function renderSavedFonts(fonts) {
     // Show the name in the font itself (lazy, CDN-cached; falls back to the
     // serif while the OTF loads or if the job has expired).
     if (f.job_exists) {
-      applySavedFontFace(f.job_id, f.font_name, card.querySelector('.font-card-name'));
+      applySavedFontFace(f.job_id, f.font_name, card.querySelector('.font-card-name'), f.pen_color);
     }
   }
 }
@@ -3759,7 +3765,7 @@ async function openBordersEditor(savedJobId, fontName) {
   fontSafeName     = currentFontName.replace(/\s+/g, '_');
   approvedGlyphIds = data.approved_glyph_ids || bordersList.map(g => g.glyph_id);
   drawMode         = 'print';
-  fontSettings     = { tool: 'pen', toolSize: 6, color: [38, 32, 28] };
+  fontSettings     = { tool: 'pen', toolSize: 6, color: data.pen_color || [38, 32, 28] };
 
   // Keep the spacing sliders in sync so a later spacing tweak preserves them.
   document.getElementById('letter-spacing').value = data.letter_spacing ?? 60;
@@ -4184,7 +4190,8 @@ async function openSavedFontSpacing(savedJobId, fontName, mode) {
   fontSafeName = currentFontName.replace(/\s+/g, '_');
   approvedGlyphIds = settings.approved_glyph_ids || [];
   drawMode = mode || 'print';
-  fontSettings = { tool: 'pen', toolSize: 6, color: [38, 32, 28],
+  fontSettings = { tool: 'pen', toolSize: 6,
+                   color: settings.pen_color || [38, 32, 28],
                    penStyle: normalizePenStyle(settings.pen_style) };
   currentPenStyle = normalizePenStyle(settings.pen_style);
   document.getElementById('font-name').value = currentFontName;

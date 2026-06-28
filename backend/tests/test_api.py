@@ -120,6 +120,9 @@ def test_full_build_serve_and_bearing_override(client):
     b = client.get(f"/process/{job_id}/bearings").json()
     i_g = next(g for g in b["glyphs"] if g["glyph_id"] == "i_0")
     assert i_g["lsb"] == 40 and i_g["is_override"]
+    # the now-monochrome .ttf preview gets its ink colour via CSS, so the
+    # editor payloads must carry the font-wide pen colour
+    assert len(b["pen_color"]) == 3
 
     # a plain spacing re-finalize must NOT wipe the stored override
     finalize(client, job_id, letter_spacing=80)
@@ -131,6 +134,24 @@ def test_full_build_serve_and_bearing_override(client):
     # settings reflect the latest build
     settings = client.get(f"/process/{job_id}/settings").json()
     assert settings["letter_spacing"] == 80
+    assert len(settings["pen_color"]) == 3
+
+
+def test_resolve_font_path_line_marker(client):
+    """A regular font whose name ends in / contains '-Line' must not misroute to
+    the line font; classification matches the exact line filename."""
+    import main
+    reg = {"font_name": "Multi-Liner",
+           "font_files": {"otf": "REG", "otf_line": "LINE"}}
+    assert main._resolve_font_path(reg, "j", "Multi-Liner.ttf") == "REG"
+    assert main._resolve_font_path(reg, "j", "Multi-Liner-Line.ttf") == "LINE"
+
+    ends = {"font_name": "My-Line",
+            "font_files": {"otf": "REG", "otf_line": "LINE"}}
+    assert main._resolve_font_path(ends, "j", "My-Line.ttf") == "REG"
+    assert main._resolve_font_path(ends, "j", "My-Line-Line.ttf") == "LINE"
+    # older jobs request the .otf name; it still resolves to the line object.
+    assert main._resolve_font_path(ends, "j", "My-Line-Line.otf") == "LINE"
 
 
 def test_built_font_is_truetype_installable(client):

@@ -381,14 +381,23 @@ def _resolve_font_path(state: dict, job_id: str, filename: str) -> str:
     object. Falls back to the legacy unversioned path for jobs built before
     versioning existed.
 
-    The line font is matched by the "-Line" marker in the requested filename
-    rather than a fixed extension, so this resolves whether the client asks for
-    "Name-Line.ttf" (current) or "Name-Line.otf" (older jobs / the proof
-    sheet's internal lookups).
+    The line font's filename is exactly "{safe_name}-Line.<ext>". We classify
+    line vs regular by matching that exact name (reconstructed from the job's
+    font_name in state), NOT by a "-Line" substring/suffix test — otherwise a
+    user-chosen font name that itself ends in or contains "-Line" (e.g.
+    "My-Line", "Multi-Liner") would misroute its REGULAR download to the line
+    font. Both .ttf (current) and .otf (older jobs / the proof sheet's internal
+    lookups) names resolve. When font_name is unavailable we fall back to an
+    anchored "-Line" suffix check.
     """
     clean_name = filename.split("?")[0]
     font_files = state.get("font_files") or {}
-    kind = "otf_line" if "-Line" in clean_name else "otf"
+    safe = (state.get("font_name") or "").replace(" ", "_")
+    if safe:
+        is_line = clean_name in (f"{safe}-Line.ttf", f"{safe}-Line.otf")
+    else:
+        is_line = clean_name.endswith("-Line.ttf") or clean_name.endswith("-Line.otf")
+    kind = "otf_line" if is_line else "otf"
     path = font_files.get(kind)
     if path:
         return path
@@ -398,7 +407,7 @@ def _resolve_font_path(state: dict, job_id: str, filename: str) -> str:
 @app.get("/fonts/{job_id}/{filename}")
 async def serve_font(job_id: str, filename: str, request: Request):
     state = await run_in_threadpool(
-        job_store.get_state_fields, job_id, ["status", "font_files"])
+        job_store.get_state_fields, job_id, ["status", "font_files", "font_name"])
     if state is None:
         raise HTTPException(404, "Job not found")
 
@@ -452,13 +461,14 @@ async def list_saved_fonts():
         annotated = []
         for f in fonts:
             fields = job_store.get_state_fields(
-                f["job_id"], ["has_line_font", "pen_style"])
+                f["job_id"], ["has_line_font", "pen_style", "font_color"])
             annotated.append({
                 **f,
                 "job_exists": fields is not None,
                 "has_line_font": bool(fields and fields.get("has_line_font")),
                 "pen_style": _normalize_pen_style(
                     fields.get("pen_style") if fields else None) or "realistic",
+                "pen_color": (fields.get("font_color") if fields else None) or [38, 32, 28],
             })
         return annotated
     return {"fonts": await run_in_threadpool(_annotate)}
@@ -666,6 +676,14 @@ async def get_bearings(job_id: str):
             "image_url":     _thumb_url(job_id, entry),
         })
 
+    # Font-wide ink colour for the now-monochrome .ttf preview (painted via
+    # CSS). Prefer the value persisted at build time; fall back to the
+    # manifest's pen colour, then the default ink.
+    pen_color = state.get("font_color")
+    if not pen_color:
+        pen_color = next((e["pen_color"] for e in manifest if e.get("pen_color")), None)
+    pen_color = pen_color or [38, 32, 28]
+
     return {
         "job_id":         job_id,
         "mode":           mode,
@@ -676,6 +694,7 @@ async def get_bearings(job_id: str):
         "space_width":    state.get("space_width", 600),
         "approved_glyph_ids": state.get("approved_glyph_ids", []),
         "has_line_font":  state.get("has_line_font", False),
+        "pen_color":      pen_color,
         "glyphs":         glyphs,
     }
 
@@ -706,7 +725,8 @@ async def get_job_settings(job_id: str):
     fields = await run_in_threadpool(
         job_store.get_state_fields, job_id,
         ["font_name", "font_style", "approved_glyph_ids",
-         "letter_spacing", "space_width", "has_line_font", "pen_style"],
+         "letter_spacing", "space_width", "has_line_font", "pen_style",
+         "font_color"],
     )
     if fields is None:
         raise HTTPException(404, "Job not found")
@@ -718,6 +738,8 @@ async def get_job_settings(job_id: str):
         "space_width":        fields.get("space_width") or 600,
         "has_line_font":      bool(fields.get("has_line_font")),
         "pen_style":          _normalize_pen_style(fields.get("pen_style")) or "realistic",
+        # Font-wide ink colour for the now-monochrome .ttf preview (CSS).
+        "pen_color":          fields.get("font_color") or [38, 32, 28],
     }
 
 
@@ -1054,6 +1076,11 @@ def _build_font_job(job_id: str):
             progress_pct=100,
             font_files=font_files,
             has_line_font=bool(line_otf_bytes),
+            # Persist the font-wide ink colour. The built .ttf is monochrome
+            # (COLR/CPAL stripped so it installs on desktop OSes), so the web
+            # previews paint this colour via CSS; the saved-font spacing/border
+            # editors read it back from /settings and /bearings.
+            font_color=list(font_base_color),
             **extra,
         )
 
