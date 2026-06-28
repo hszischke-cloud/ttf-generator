@@ -951,12 +951,22 @@ def _build_font_job(job_id: str):
             # notches, pooling are baked into the stroked outlines), so the
             # UPM-space perturbation/divot pass is always skipped — running
             # both would double-texture every edge.
+            #
+            # remove_overlaps unions each glyph's stroke contours into clean,
+            # non-overlapping outlines. Overlapping strokes (an 'x' crossing, a
+            # 't' crossbar over the stem, a 'b' bowl meeting the stem, a loop
+            # folding back) otherwise leave white slivers wherever a renderer
+            # uses the even-odd fill rule. Advance widths are computed
+            # separately, so spacing/bearings are unaffected. The single-line
+            # OTF below deliberately keeps its overlaps (a plotter traces each
+            # thin stroke).
             return build_otf(
                 dimensional_glyphs, font_name, font_style, letter_spacing, space_width,
                 positional=positional or None,
                 perturb=False,
                 forced_advances=dim_advances,
                 base_color=font_base_color,
+                remove_overlaps=True,
             )
 
         def _build_line():

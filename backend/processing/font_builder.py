@@ -579,6 +579,7 @@ def build_otf(
     base_color: Tuple[int, int, int] = (38, 32, 28),
     pool_color: Optional[Tuple[int, int, int]] = None,
     speck_color: Optional[Tuple[int, int, int]] = None,
+    remove_overlaps: bool = False,
 ) -> bytes:
     """
     Assemble an OTF font from a list of vectorized glyphs.
@@ -593,6 +594,11 @@ def build_otf(
             computation.  Keys are glyph names; "space" overrides the space
             advance.  Use this to guarantee that two fonts (e.g. regular and
             single-line) share exactly the same spacing.
+        remove_overlaps: when True, each glyph's stroke contours are boolean-
+            unioned into clean, non-overlapping outlines (see
+            _remove_overlaps_to_pen).  Used for the dimensional/filled OTF so
+            overlapping strokes don't leave white slivers; must stay False for
+            the single-line plotter OTF, whose thin strokes are meant to overlap.
 
     Returns:
         Raw OTF bytes.
@@ -676,6 +682,7 @@ def build_otf(
             glyph_name=g.glyph_name,
             x_offset_override=x_off_ov,
             advance_override=adv_ov,
+            remove_overlaps=remove_overlaps,
         )
         # Determine final advance: forced_advances wins, otherwise add letter_spacing.
         if forced_advances is not None and g.glyph_name in forced_advances:
@@ -936,6 +943,70 @@ class _DeferredPen:
     def endPath(self): self.ops.append(("endPath",))
 
 
+def _remove_overlaps_to_pen(contours: List[list], out_pen) -> bool:
+    """
+    Boolean-union a glyph's stroke contours and replay the merged, non-overlapping
+    outline to *out_pen*.
+
+    Every realistic-ink stroke is emitted as its own closed contour, so a glyph's
+    strokes overlap wherever the pen crossed its own path: the centre of an 'x',
+    a 't' crossbar over the stem, the bowl of a 'b' meeting the stem, a loop that
+    folds back on itself. Overlapping contours fill solid under the non-zero
+    winding rule but leave white slivers under an even-odd rule, and overlaps in
+    general trip up design/print tooling. Merging the strokes into clean,
+    non-overlapping outlines makes the glyph render identically (and correctly)
+    under both fill rules. Genuine counters — the holes in 'o', 'e', 'a', 'b', … —
+    are preserved because each stroke keeps its own winding.
+
+    Advance widths are computed elsewhere and are untouched, so spacing/bearings
+    never shift.
+
+    Returns True when the union was applied. On any failure — including
+    skia-pathops not being installed — it replays the original contours unchanged
+    and returns False, so the build never regresses relative to the raw outline.
+    """
+    try:
+        import pathops
+    except Exception:
+        for c in contours:
+            _CollectingPen._replay_contour(c, out_pen)
+        return False
+
+    def _feed(contour: list, pen) -> None:
+        # Feed a contour to a pathops pen. A fill outline is always closed, so we
+        # drop any closePath/endPath op and close explicitly at the end (pathops
+        # boolean ops require closed contours).
+        started = False
+        for op in contour:
+            kind = op[0]
+            if kind == 'moveTo':
+                pen.moveTo(op[1]); started = True
+            elif kind == 'lineTo':
+                pen.lineTo(op[1])
+            elif kind == 'curveTo':
+                pen.curveTo(*op[1:])
+        if started:
+            pen.closePath()
+
+    try:
+        operands = []
+        for c in contours:
+            sp = pathops.Path()
+            _feed(c, sp.getPen())
+            operands.append(sp)
+        merged = pathops.Path()
+        pathops.union(operands, merged.getPen())
+        if any(True for _ in merged.contours):
+            merged.draw(out_pen)
+            return True
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        print(f"[font_builder] remove_overlaps failed ({exc}); using raw outline")
+
+    for c in contours:
+        _CollectingPen._replay_contour(c, out_pen)
+    return False
+
+
 def _build_charstring_from_svg(
     svg_paths: List[str],
     svg_width: int,
@@ -952,6 +1023,7 @@ def _build_charstring_from_svg(
     glyph_name: str = "",
     x_offset_override: Optional[float] = None,
     advance_override: Optional[int] = None,
+    remove_overlaps: bool = False,
 ) -> Tuple["T2CharString", int, List[list]]:
     """
     Build a CFF T2CharString by drawing SVG paths.
@@ -1012,6 +1084,18 @@ def _build_charstring_from_svg(
         # are already baked in, and we don't want pool patches placed on
         # the divot edges.
         contours = perturbed
+    elif remove_overlaps:
+        # Collect the stroke outlines, then boolean-union them so overlapping
+        # strokes merge into clean, non-overlapping contours (no white slivers
+        # under even-odd renderers, no overlap artifacts in print/design tools).
+        collector = _CollectingPen()
+        _draw_svg_paths_to_pen(
+            collector, svg_paths, svg_width, svg_height,
+            baseline_y_in_svg, upscale_factor=upscale_factor, form=form,
+            entry_x=entry_x, exit_x=exit_x, x_offset_override=x_offset_override,
+        )
+        collector._flush()
+        _remove_overlaps_to_pen(collector._contours, real_pen)
     else:
         _draw_svg_paths_to_pen(
             real_pen, svg_paths, svg_width, svg_height,

@@ -70,6 +70,19 @@ shifts). `FinalizeRequest.pen_style=None` preserves the job's current weight.
 UI: Fine/Bold selector on the draw page (canvas previews the full ink model
 live), toggle on the download page and per saved font card.
 
+**Overlap removal (dimensional OTF only).** Each stroke is emitted as its own
+closed contour, so strokes overlap wherever the pen crossed its own path (the
+centre of an `x`, a `t` crossbar over the stem, a `b` bowl meeting the stem, a
+loop folding back). Overlapping contours fill solid under the non-zero winding
+rule but leave white slivers under an even-odd renderer (and trip up
+print/design tooling), so the dimensional build boolean-unions each glyph's
+strokes into clean, non-overlapping outlines (`build_otf(..., remove_overlaps=
+True)` → `_remove_overlaps_to_pen`, via `skia-pathops`). Counters (the holes in
+`o`/`e`/`a`/…) are preserved — each stroke keeps its own winding — and advance
+widths are computed separately, so spacing/bearings never shift. The single-line
+plotter OTF keeps its overlaps (a plotter traces each thin stroke). If
+skia-pathops is unavailable the build falls back to the raw outline (no crash).
+
 ## Auto-borders on first build
 A print job's FIRST build computes the optical margin-equalizing side
 bearings (`processing/autospace.py`) and persists them as `glyph_bearings`,

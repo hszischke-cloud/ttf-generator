@@ -18,7 +18,7 @@ jobs:
       # The test suite stubs supabase_client, so the supabase SDK itself
       # isn't needed — keeps CI installs fast.
       - name: Install dependencies
-        run: pip install fastapi uvicorn "fonttools[woff]" brotli httpx pytest
+        run: pip install fastapi uvicorn "fonttools[woff]" skia-pathops brotli httpx pytest
 
       - name: Run backend tests
         working-directory: backend
