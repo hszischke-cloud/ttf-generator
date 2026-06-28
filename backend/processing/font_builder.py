@@ -988,6 +988,15 @@ def _remove_overlaps_to_pen(contours: List[list], out_pen) -> bool:
         if started:
             pen.closePath()
 
+    # Compute everything that can fail (union + recording the merged outline)
+    # into a buffer first, and only touch the real pen once at the end. That
+    # keeps the raw-outline fallback clean: a failure can never leave half of
+    # the merged outline on out_pen that the fallback would then draw over.
+    # RecordingPen (not _CollectingPen) is the buffer because pathops' draw can
+    # emit qCurveTo, which RecordingPen and T2CharStringPen both handle.
+    from fontTools.pens.recordingPen import RecordingPen
+
+    merged_rec = None
     try:
         operands = []
         for c in contours:
@@ -997,11 +1006,16 @@ def _remove_overlaps_to_pen(contours: List[list], out_pen) -> bool:
         merged = pathops.Path()
         pathops.union(operands, merged.getPen())
         if any(True for _ in merged.contours):
-            merged.draw(out_pen)
-            return True
+            rec = RecordingPen()
+            merged.draw(rec)
+            merged_rec = rec
     except Exception as exc:  # pragma: no cover - defensive fallback
         print(f"[font_builder] remove_overlaps failed ({exc}); using raw outline")
+        merged_rec = None
 
+    if merged_rec is not None:
+        merged_rec.replay(out_pen)
+        return True
     for c in contours:
         _CollectingPen._replay_contour(c, out_pen)
     return False
