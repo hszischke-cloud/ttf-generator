@@ -751,10 +751,13 @@ def _build_font_job(job_id: str):
     """
     Build dimensional OTF + line OTF from the job's drawn glyphs.
 
-    Both share the same family name and OpenType features. The line font
-    uses each glyph's pen_paths (raw cursor track from the canvas) which is
-    a perfect lossless centerline. If pen_paths is missing for a glyph,
-    we emit it only into the dimensional font.
+    Both share the same OpenType features and spacing. The line font is
+    given its own family name ("<name>-Line") so it installs as a separate
+    font on the desktop instead of being grouped under the dimensional
+    font's family. The line font uses each glyph's pen_paths (raw cursor
+    track from the canvas) which is a perfect lossless centerline. If
+    pen_paths is missing for a glyph, we emit it only into the dimensional
+    font.
     """
     try:
         state = job_store.get_state(job_id)
@@ -999,8 +1002,15 @@ def _build_font_job(job_id: str):
         def _build_line():
             if not line_glyphs:
                 return b"", None
+            # Give the single-line font its OWN family name ("<name>-Line")
+            # rather than sharing the dimensional font's family with a "Line"
+            # style. Sharing a family makes desktop OSes group both files under
+            # one entry (both show as "<name>" when installed); a distinct
+            # family installs as a clearly separate font and mirrors the
+            # "<name>-Line.ttf" download filename. Spacing is untouched —
+            # forced_advances keeps both fonts byte-for-byte identical in width.
             return build_otf(
-                line_glyphs, font_name, "Line", letter_spacing, space_width,
+                line_glyphs, f"{font_name}-Line", "Regular", letter_spacing, space_width,
                 positional=positional or None,
                 perturb=False,
                 forced_advances=dim_advances,
